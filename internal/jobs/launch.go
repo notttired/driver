@@ -1,0 +1,42 @@
+package jobs
+
+import (
+	"path/filepath"
+	"strings"
+
+	"driver/internal/store"
+)
+
+// ShellQuote wraps s in single quotes for sh, escaping embedded quotes.
+func ShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// LaunchCommand assembles the sh command a job's tmux session runs:
+//
+//	env DRIVER_JOB_DIR='<jobdir>' DRIVER_JOB_SLUG='<slug>' DRIVER_SERVE='http://127.0.0.1:<port>' \
+//	  <pi> --session '<jobdir>/session.jsonl' --name '<slug>' [--model '<model>'] \
+//	  -e '<home>/ext/driver.ts' <DRIVER_PI_FLAGS>
+//
+// No prompt: pi opens at its editor and the job is briefed in its pane. The
+// same command serves a submit (a fresh session file) and a reactivate (pi
+// resumes the existing one).
+func (c Config) LaunchCommand(j *store.Job, piBin, jobDir string) string {
+	words := []string{
+		"env",
+		"DRIVER_JOB_DIR=" + ShellQuote(jobDir),
+		"DRIVER_JOB_SLUG=" + ShellQuote(j.Slug),
+		"DRIVER_SERVE=" + ShellQuote(c.ServeURL()),
+		ShellQuote(piBin),
+		"--session", ShellQuote(filepath.Join(jobDir, "session.jsonl")),
+		"--name", ShellQuote(j.Slug),
+	}
+	if j.Model != "" {
+		words = append(words, "--model", ShellQuote(j.Model))
+	}
+	words = append(words, "-e", ShellQuote(c.ExtPath()))
+	for _, f := range c.PiFlags {
+		words = append(words, ShellQuote(f))
+	}
+	return strings.Join(words, " ")
+}

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>driver</title>
+    <script>
+      // Pre-paint theme stamp: <html data-theme="light"|"dark"> from the
+      // saved preference (or the OS), before the stylesheet paints anything.
+      // Exposed as window.driverTheme for the ThemeToggle.
+      (function () {
+        var KEY = "driver-theme";
+        var mq = window.matchMedia("(prefers-color-scheme: dark)");
+        function pref() {
+          try {
+            var v = localStorage.getItem(KEY);
+            return v === "light" || v === "dark" ? v : "system";
+          } catch (e) {
+            return "system";
+          }
+        }
+        function apply() {
+          var p = pref();
+          var resolved = p === "system" ? (mq.matches ? "dark" : "light") : p;
+          document.documentElement.setAttribute("data-theme", resolved);
+        }
+        apply();
+        if (mq.addEventListener) mq.addEventListener("change", apply);
+        window.driverTheme = {
+          get: pref,
+          set: function (p) {
+            try {
+              if (p === "system") localStorage.removeItem(KEY);
+              else localStorage.setItem(KEY, p);
+            } catch (e) {}
+            apply();
+          },
+        };
+      })();
+    </script>
+    <script>
+      // Pre-paint accent stamp: <html data-accent="…">. Violet is the
+      // stylesheet's default and is expressed as NO attribute.
+      (function () {
+        var KEY = "driver-accent";
+        var ACCENTS = ["violet", "cyan", "amber", "crimson", "green"];
+        function get() {
+          try {
+            var v = localStorage.getItem(KEY);
+            return v && ACCENTS.indexOf(v) >= 0 ? v : "violet";
+          } catch (e) {
+            return "violet";
+          }
+        }
+        function apply() {
+          var a = get();
+          if (a === "violet") document.documentElement.removeAttribute("data-accent");
+          else document.documentElement.setAttribute("data-accent", a);
+        }
+        apply();
+        window.driverHud = {
+          accents: ACCENTS,
+          getAccent: get,
+          setAccent: function (a) {
+            try {
+              if (a === "violet") localStorage.removeItem(KEY);
+              else localStorage.setItem(KEY, a);
+            } catch (e) {}
+            apply();
+          },
+        };
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

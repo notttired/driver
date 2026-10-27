@@ -1,0 +1,12 @@
+# build outputs
+/driver
+/bin/
+/web/_ui/dist/
+/web/_ui/node_modules/
+/macos/build/
+*.app
+# editor / os
+.DS_Store
+# local scratch
+/tmp/
+/macos/Driver.xcodeproj/

@@ -1,0 +1,70 @@
+name: Driver
+options:
+  bundleIdPrefix: dev.notttired
+  deploymentTarget:
+    macOS: "15.0"
+configs:
+  Debug: debug
+  Release: release
+targets:
+  # The macOS board app: a frameless native window over the web SPA that
+  # `driver serve` embeds — kraken's WKWebView shell, lifted and trimmed
+  # (docs/DESIGN.md). The window chrome IS the web chrome: traffic lights
+  # float in the SPA's own chrome row, drag/zoom ride a window-level event
+  # monitor, and everything else is the board the browser shows.
+  #
+  # Two builders read this file. On a Mac with Xcode: xcodegen + xcodebuild
+  # (the Makefile's `mac` / `install-mac` when DRIVER_MAC_BUILDER is xcode).
+  # With the Command Line Tools alone: build-without-xcode.sh, which greps the
+  # `KEY: value` lines below — so keep every setting on one line with its
+  # value, and keep this file the one source both read.
+  Driver:
+    type: application
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Driver
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.notttired.DriverMac
+        PRODUCT_NAME: Driver
+        # No Apple team here: the bundle is ad-hoc signed ("-") by both
+        # builders, so it runs where an ad-hoc signature may — this Mac, from
+        # wherever DRIVER_APP_DIR puts it.
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        # swiftc takes a language MODE (5 or 6); the CLT script passes the
+        # major of this value. Mode 5 on purpose — the shell's AppKit
+        # closures predate strict concurrency.
+        SWIFT_VERSION: "5.10"
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: "1.0"
+    # The icon is a classic .icns rendered from AppIcon-1024.png beside this
+    # file (make-icon.swift draws that PNG). No asset catalog and no Icon
+    # Composer bundle: actool ships only with Xcode, and this app must build
+    # without one. The CLT script renders the .icns itself; here the same
+    # sips + iconutil recipe runs as a post-build phase into the bundle's
+    # Resources (code signing runs after every phase, so it gets sealed).
+    postBuildScripts:
+      - name: Render AppIcon.icns
+        script: |
+          set -eu
+          iconset="$DERIVED_FILE_DIR/AppIcon.iconset"
+          rm -rf "$iconset"; mkdir -p "$iconset"
+          for px in 16 32 128 256 512; do
+            sips -z "$px" "$px" "$SRCROOT/AppIcon-1024.png" --out "$iconset/icon_${px}x${px}.png" >/dev/null
+            sips -z $((px * 2)) $((px * 2)) "$SRCROOT/AppIcon-1024.png" --out "$iconset/icon_${px}x${px}@2x.png" >/dev/null
+          done
+          iconutil -c icns "$iconset" -o "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/AppIcon.icns"
+    info:
+      path: Generated-Info.plist
+      properties:
+        CFBundleDisplayName: Driver
+        CFBundleIconFile: AppIcon
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # driver serve binds plain HTTP on loopback. macOS ATS blocks that
+        # without a declaration; NSAllowsLocalNetworking is the narrow one —
+        # loopback/local hosts only.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
