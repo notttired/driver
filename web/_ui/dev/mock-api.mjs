@@ -18,7 +18,7 @@ const jobs = [
   { slug: "search-reindex", dir: `${DEFAULT_DIR}/search`, model: "", color: "orange", state: "working", live: true, has_notes: false, mtime: now() - 60, started_at: now() - 600, pi: { state: "working", tool: "bash", ts: now() - 5 },
     links: [{ id: 1, kind: "github_pr", url: "https://github.com/acme/search/pull/482", status: "open", status_at: now() - 120 }] },
   { slug: "onboarding-copy", dir: `${DEFAULT_DIR}/web`, model: "", color: "pink", state: "blocked", live: true, has_notes: true, mtime: now() - 1800, started_at: now() - 7200, pi: { state: "idle", ts: now() - 1700 },
-    links: [{ id: 2, kind: "linear", url: "https://linear.app/acme/issue/WEB-231", label: "WEB-231" }] },
+    links: [{ id: 2, kind: "linear", url: "https://linear.app/acme/issue/WEB-231" }] },
   { slug: "rate-limits", dir: `${DEFAULT_DIR}/gateway`, model: "", color: "green", state: "done", live: false, has_notes: false, mtime: now() - 86400, started_at: now() - 90000, finished_at: now() - 86400, outcome: "accepted", reactivatable: true,
     links: [{ id: 3, kind: "github_pr", url: "https://github.com/acme/gateway/pull/77", status: "merged", status_at: now() - 80000 }] },
   { slug: "legacy-export", dir: `${DEFAULT_DIR}/exports`, model: "", color: "", state: "done", live: false, has_notes: false, mtime: now() - 172800, finished_at: now() - 172800, outcome: "accepted", reactivatable: false },
@@ -103,9 +103,8 @@ const server = http.createServer(async (req, res) => {
     case "/api/job/notes": { const f = forms.get(j.slug); if (f) f.notes = b.text ?? ""; touch(j, { has_notes: !!(b.text ?? "").trim() }); break; }
     case "/api/job/links": {
       j.links = j.links ?? [];
-      if (b.op === "add") { if (!/^https?:\/\//.test(b.url || "")) return err(res, 409, "bad URL"); const pr = /github\.com\/[^/]+\/[^/]+\/pull\/\d+/.test(b.url); const link = { id: nextLinkId++, kind: pr ? "github_pr" : /github\.com/.test(b.url) ? "github" : /slack\.com/.test(b.url) ? "slack" : /linear\.app/.test(b.url) ? "linear" : "url", url: b.url, ...(b.label ? { label: b.label } : {}), ...(pr ? { status: "open", status_at: now() } : {}) }; j.links.push(link); touch(j, {}); syncForm(j); return send(res, 200, { ok: true, link }); }
+      if (b.op === "add") { if (!/^https?:\/\//.test(b.url || "")) return err(res, 409, "bad URL"); const pr = /github\.com\/[^/]+\/[^/]+\/pull\/\d+/.test(b.url); const link = { id: nextLinkId++, kind: pr ? "github_pr" : /github\.com/.test(b.url) ? "github" : /slack\.com/.test(b.url) ? "slack" : /linear\.app/.test(b.url) ? "linear" : "url", url: b.url, ...(pr ? { status: "open", status_at: now() } : {}) }; j.links.push(link); touch(j, {}); syncForm(j); return send(res, 200, { ok: true, link }); }
       if (b.op === "remove") { j.links = j.links.filter((l) => l.id !== b.id); touch(j, {}); break; }
-      if (b.op === "label") { const l = j.links.find((l) => l.id === b.id); if (l) l.label = b.label; break; }
       return err(res, 400, "bad op");
     }
     case "/api/job/saveform": { const f = forms.get(j.slug); if (!f) return err(res, 404, "no such job"); if (!f.editable) return err(res, 409, "not editable"); if (b.mtime && b.mtime !== f.mtime) return err(res, 409, "edited elsewhere — reload"); Object.assign(f, { dir: b.dir ?? f.dir, model: b.model ?? f.model, spec: b.spec ?? f.spec }); touch(j, { dir: f.dir, model: f.model }); f.mtime = j.mtime; return send(res, 200, { ok: true, mtime: f.mtime }); }

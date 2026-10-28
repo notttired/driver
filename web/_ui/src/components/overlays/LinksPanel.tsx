@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { addJobLink, fetchTabs, removeJobLink } from "../../api/client.ts";
 import { isHttpUrl, linkLabel } from "../../lib/links.ts";
-import type { BrowserTab, TabsResponse, WebLink } from "../../lib/types.ts";
+import type { TabsResponse, WebLink } from "../../lib/types.ts";
 import { LinkChip } from "../board/chips/LinkChips.tsx";
 
 export interface LinksPanelProps {
@@ -22,17 +22,14 @@ function urlHost(url: string): string {
   }
 }
 
-/** A tab's title makes a decent label; keep it short enough for a chip. */
-const tabLabel = (t: BrowserTab) => t.title.trim().slice(0, 80) || undefined;
-
 /**
- * The sidebar's link list: add by URL (label optional), remove, PR status,
- * and a picker over the browser's open tabs (GET /api/tabs) so a page you
- * are looking at can be attached with one click.
+ * The sidebar's link list: add by URL, remove, PR status, and a picker over
+ * the browser's open tabs (GET /api/tabs) so a page you are looking at can
+ * be attached with one click. Links have no labels — a chip reads as the
+ * PR number or the host — and the daemon adds the URLs you send pi by itself.
  */
 export function LinksPanel({ slug, links, onChanged }: LinksPanelProps) {
   const [url, setUrl] = useState("");
-  const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [picker, setPicker] = useState(false);
@@ -42,11 +39,11 @@ export function LinksPanel({ slug, links, onChanged }: LinksPanelProps) {
 
   const canAdd = !busy && isHttpUrl(url.trim());
 
-  const attach = async (href: string, name?: string) => {
+  const attach = async (href: string) => {
     setBusy(true);
     setError("");
     try {
-      await addJobLink(slug, href, name);
+      await addJobLink(slug, href);
       onChanged();
       return true;
     } catch (e: unknown) {
@@ -59,10 +56,7 @@ export function LinksPanel({ slug, links, onChanged }: LinksPanelProps) {
 
   const add = async () => {
     if (!canAdd) return;
-    if (await attach(url.trim(), label.trim() || undefined)) {
-      setUrl("");
-      setLabel("");
-    }
+    if (await attach(url.trim())) setUrl("");
   };
 
   const remove = async (id: number) => {
@@ -126,7 +120,7 @@ export function LinksPanel({ slug, links, onChanged }: LinksPanelProps) {
           ))}
         </ul>
       ) : (
-        <div className="link-empty">no links yet — PRs the daemon spots land here</div>
+        <div className="link-empty">no links yet — URLs you send pi, and PRs it opens, land here</div>
       )}
       <div className="link-add">
         <input
@@ -140,21 +134,6 @@ export function LinksPanel({ slug, links, onChanged }: LinksPanelProps) {
             setUrl(e.target.value);
             setError("");
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void add();
-            }
-          }}
-        />
-        <input
-          className="link-input label"
-          type="text"
-          placeholder="label (optional)"
-          aria-label="link label"
-          spellCheck={false}
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
@@ -200,7 +179,7 @@ export function LinksPanel({ slug, links, onChanged }: LinksPanelProps) {
                       className={"tab-row" + (already ? " linked" : "") + (t.active ? " active" : "")}
                       title={t.url}
                       disabled={busy || already}
-                      onClick={() => void attach(t.url, tabLabel(t))}
+                      onClick={() => void attach(t.url)}
                     >
                       <span className="tab-dot" aria-hidden="true">
                         {t.active ? "●" : "○"}

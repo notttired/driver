@@ -2,8 +2,8 @@ import { isHttpUrl, KIND_GLYPH, linkLabel, prStatusClass } from "../../../lib/li
 import type { WebLink } from "../../../lib/types.ts";
 
 /** One chip per link on a card: a PR reads `#N` in its status colour, every
- *  other kind its label (or host) behind a kind glyph. Anchors stop the click
- *  so the card underneath does not open. */
+ *  other kind its host behind a kind glyph. Anchors stop the click so the
+ *  card underneath does not open. */
 export function LinkChips({ links }: { links: WebLink[] | undefined }) {
   if (!links?.length) return null;
   return (

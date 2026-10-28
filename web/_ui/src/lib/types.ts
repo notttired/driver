@@ -25,7 +25,6 @@ export interface WebLink {
   id: number;
   kind: LinkKind;
   url: string;
-  label?: string;
   status?: PRStatus;
   /** unix seconds */
   status_at?: number;

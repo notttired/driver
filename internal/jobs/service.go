@@ -430,12 +430,12 @@ func (s *Service) SetNotes(j *store.Job, text string) error {
 }
 
 // AddLink attaches a URL with its detected kind; a duplicate is a refusal.
-func (s *Service) AddLink(j *store.Job, rawURL, label string) (*store.Link, error) {
+func (s *Service) AddLink(j *store.Job, rawURL string) (*store.Link, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if !ValidLinkURL(rawURL) {
 		return nil, Refuse("bad URL (must be http or https)")
 	}
-	l, created, err := s.Store.AddLink(j.ID, LinkKind(rawURL), rawURL, strings.TrimSpace(label))
+	l, created, err := s.Store.AddLink(j.ID, LinkKind(rawURL), rawURL)
 	if err != nil {
 		return nil, err
 	}
@@ -452,17 +452,12 @@ func (s *Service) AttachPR(j *store.Job, rawURL string) (attached bool, err erro
 	if LinkKind(rawURL) != "github_pr" {
 		return false, Refuse("not a GitHub pull request URL")
 	}
-	_, created, err := s.Store.AddLink(j.ID, "github_pr", rawURL, "")
+	_, created, err := s.Store.AddLink(j.ID, "github_pr", rawURL)
 	return created, err
 }
 
 // RemoveLink deletes one of the job's links.
 func (s *Service) RemoveLink(j *store.Job, id int64) error { return s.Store.RemoveLink(j.ID, id) }
-
-// RelabelLink sets a link's label.
-func (s *Service) RelabelLink(j *store.Job, id int64, label string) error {
-	return s.Store.RelabelLink(j.ID, id, strings.TrimSpace(label))
-}
 
 // Reorder saves a column's full intended order; slugs whose display state no
 // longer matches the column are dropped silently.

@@ -102,10 +102,15 @@ cancel (close pi; the job goes back to not started) · reactivate · archive.
 Archived jobs free their slug and can be unarchived or deleted.
 
 **Notes and links.** Notes are yours — autosaved, never shown to pi. Links are
-any URL; GitHub PRs, GitHub, Slack and Linear are recognised by kind, PR status
-is polled with `gh`, and a PR the agent opens with `gh pr create` is attached
-automatically. Rename and recolour cards from the overlay; ⌘K searches the board.
-A notification arrives when a job turns blocked or its pi exits. The `⊞ tabs` button lists your browser's open tabs; click one to attach it with its title as the label. The first time, macOS asks whether driver may control Google Chrome — allow it, or flip it later under System Settings › Privacy & Security › Automation.
+any URL, shown as the PR number or the host (no labels); GitHub PRs, GitHub,
+Slack and Linear are recognised by kind and PR status is polled with `gh`. Every
+URL in a message you send pi lands in the job's links by itself, and so does a
+PR the agent opens with `gh pr create`; add others by hand, or remove any with ✕.
+Rename and recolour cards from the overlay; ⌘K searches the board. A
+notification arrives when a job turns blocked or its pi exits. The `⊞ tabs`
+button lists your browser's open tabs; click one to attach it. The first time,
+macOS asks whether driver may control Google Chrome — allow it, or flip it later
+under System Settings › Privacy & Security › Automation.
 
 In Driver.app: ⌘= / ⌘- / ⌘0 zoom the board; links open in your default browser.
 

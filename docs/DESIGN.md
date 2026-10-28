@@ -31,9 +31,12 @@ usage, accounts, self-update) is left out on purpose.
   up but has not been briefed stays in DRAFT (stored `ready`) and moves to
   WORKING by itself when pi starts on that message.
 - Notes are private to the operator; they never enter pi's context.
-- Links: free-form URLs with a detected kind (GitHub PR, GitHub, Slack, Linear,
-  other). GitHub PR links show open/draft/merged/closed, polled with `gh`. PRs the
-  agent opens (`gh pr create` in a bash tool call) are attached automatically.
+- Links: URLs with a detected kind (GitHub PR, GitHub, Slack, Linear, other)
+  and no labels — a chip reads as the PR number or the host. GitHub PR links
+  show open/draft/merged/closed, polled with `gh`. Attached by hand (typed, or
+  picked from the browser's tabs) or by the daemon: every URL in a message you
+  send pi, and the PR the agent opens (`gh pr create` in a bash tool call). What
+  you hand the agent is what the job is about, so it belongs on the card.
 - macOS notifications when a job turns blocked (needs you) or its pi exits.
 - ⌘-click on a card (or on the dir in the overlay head) opens the job's
   directory in VS Code: the daemon runs `code <dir>` (`DRIVER_EDITOR` swaps the
@@ -110,13 +113,16 @@ pattern (`--model`), empty = pi's default.
 (the `CHECK` on `state` cannot be altered in place); the migration runs with
 foreign keys off, so dropping the old table does not cascade into `links`, and
 restores `sqlite_sequence` afterwards, so a deleted job's id is never reused.
+v3 dropped `links.label` and forgot the session scan offsets, so the scanner,
+which from then on also attaches the URLs in your own messages, reads every
+existing session once more (attaching is idempotent).
 
 `board_order("column", position, job_id)` holds the manual order per column
 exactly as kraken's does; the board emits each column's jobs in that order,
 unlisted jobs first alphabetically.
 
-`links(id, job_id, kind, url, label, status, status_at, created_at)` with
-`UNIQUE(job_id, url)`. `kind` ∈ `github_pr | github | slack | linear | url`,
+`links(id, job_id, kind, url, status, status_at, created_at)` with
+`UNIQUE(job_id, url)`; no label column — a link is its URL. `kind` ∈ `github_pr | github | slack | linear | url`,
 derived from the URL on insert (`github.com/<o>/<r>/pull/<n>` → github_pr;
 `github.com` → github; host ends `slack.com` → slack; `linear.app` → linear).
 `status` for github_pr ∈ `'' | open | draft | merged | closed`.
@@ -195,15 +201,25 @@ session branch holds no user message yet — a fresh job at its prompt — else 
 `e.aborted`), `session_shutdown` (exited). Type import:
 `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";`.
 
-## PR detection and status
+## Link detection and PR status
 
 Each tick, for every job with a `pi_session` file, the daemon reads the bytes
-appended since the offset saved in `kv` (`scan:<job id>`), parses complete JSONL
-lines, and remembers bash tool calls (`message` entries, role `assistant`,
-content block `toolCall` with `name == "bash"`, `arguments.command` containing
-`gh pr create`). When the matching `toolResult` (`toolCallId`) arrives, every
-`https://github.com/<owner>/<repo>/pull/<n>` in its text is attached as a
-`github_pr` link (idempotent on `(job_id, url)`). Links of kind github_pr whose
+appended since the offset saved in `kv` (`scan:<job id>`) and parses complete
+JSONL lines. Two kinds of `message` entry yield links, both attached idempotently
+on `(job_id, url)` with the kind derived from the URL:
+
+- role `user` — your own messages to pi: every `http(s)://` URL in their text
+  blocks (string content too), trailing sentence punctuation and unbalanced
+  closing brackets stripped, so `(https://x/a).` is `https://x/a` while a
+  wiki-style `…/Foo_(bar)` keeps its parenthesis. Only your messages count: the
+  agent's own text and tool output are not scanned (a `curl` of a page would
+  otherwise litter the card).
+- role `assistant` with a `toolCall` block `name == "bash"` whose
+  `arguments.command` contains `gh pr create` is remembered; when the matching
+  `toolResult` (`toolCallId`) arrives, every
+  `https://github.com/<owner>/<repo>/pull/<n>` in its text is a `github_pr` link.
+
+Links of kind github_pr whose
 `status_at` is older than 60s are refreshed, at most 3 per tick, with
 `gh pr view <url> --json state,isDraft` → `open|draft|merged|closed`; a failing
 `gh` leaves the status untouched.

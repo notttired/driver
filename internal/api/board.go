@@ -42,7 +42,6 @@ type webLink struct {
 	ID       int64  `json:"id"`
 	Kind     string `json:"kind"`
 	URL      string `json:"url"`
-	Label    string `json:"label,omitempty"`
 	Status   string `json:"status,omitempty"`
 	StatusAt int64  `json:"status_at,omitempty"`
 }
@@ -53,7 +52,7 @@ func webLinksFrom(ls []*store.Link) []webLink {
 	}
 	out := make([]webLink, 0, len(ls))
 	for _, l := range ls {
-		out = append(out, webLink{ID: l.ID, Kind: l.Kind, URL: l.URL, Label: l.Label, Status: l.Status, StatusAt: l.StatusAt})
+		out = append(out, webLink{ID: l.ID, Kind: l.Kind, URL: l.URL, Status: l.Status, StatusAt: l.StatusAt})
 	}
 	return out
 }

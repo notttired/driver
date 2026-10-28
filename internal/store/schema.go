@@ -8,7 +8,7 @@ import (
 
 // migrations is the append-only list of schema steps; migrations[i] brings a
 // database at user_version i to i+1. Never edit a shipped step — append.
-var migrations = []string{schemaV1, schemaV2}
+var migrations = []string{schemaV1, schemaV2, schemaV3}
 
 // schemaV1 creates the four tables the design calls for. Every column a Go
 // scan reads into a plain string/int64 is NOT NULL with a same-typed default;
@@ -99,6 +99,17 @@ DROP TABLE jobs;
 ALTER TABLE jobs_v2 RENAME TO jobs;
 CREATE UNIQUE INDEX jobs_active_slug ON jobs(slug) WHERE archived_at IS NULL;
 CREATE UNIQUE INDEX jobs_archived_name ON jobs(archived_name) WHERE archived_at IS NOT NULL;
+`
+
+// schemaV3 drops links.label: a link reads as its URL (the board shows a PR
+// as #N, anything else as its host) and nothing writes a label any more. It
+// also forgets the session scan offsets: from this version the scanner
+// attaches the URLs in the operator's own messages too, so every existing
+// session is read once more from its start (attaching is idempotent on
+// (job_id, url); the pending PR calls are rebuilt by the same pass).
+const schemaV3 = `
+ALTER TABLE links DROP COLUMN label;
+DELETE FROM kv WHERE key LIKE 'scan:%' OR key LIKE 'scan-pending:%';
 `
 
 // migrate applies every migration past the database's PRAGMA user_version,

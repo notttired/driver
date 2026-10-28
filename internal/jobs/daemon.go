@@ -28,8 +28,9 @@ type Status struct {
 }
 
 // Daemon is the tick loop: state derivation (for every opened job: ready,
-// working, blocked) with the one-tick blocked hold, notifications, the PR
-// scan and the PR status refresh.
+// working, blocked) with the one-tick blocked hold, notifications, the
+// session scan (links from your messages, PRs the agent opens) and the PR
+// status refresh.
 type Daemon struct {
 	svc    *Service
 	status atomic.Pointer[Status]
@@ -37,7 +38,7 @@ type Daemon struct {
 	tickN        int
 	blockedSince map[int64]int    // job id → tick the current hold began
 	lastReason   map[int64]string // job id → last blocked reason seen
-	scanner      *prScanner
+	scanner      *sessionScanner
 	prBackoff    map[string]time.Time // PR url → last failed gh call
 	ghMissing    bool
 	prBusy       atomic.Bool // a refreshPRs run is in flight
@@ -49,7 +50,7 @@ func NewDaemon(svc *Service) *Daemon {
 		svc:          svc,
 		blockedSince: map[int64]int{},
 		lastReason:   map[int64]string{},
-		scanner:      newPRScanner(svc.Store),
+		scanner:      newSessionScanner(svc.Store),
 		prBackoff:    map[string]time.Time{},
 	}
 	st := Status{PID: os.Getpid(), StartedAt: time.Now().Unix()}

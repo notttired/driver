@@ -151,19 +151,11 @@ export const renameJob = (slug: string, to: string) =>
 export const saveJobNotes = (slug: string, text: string) =>
   postJSON<OkResponse>("/api/job/notes", { slug, text });
 
-export const addJobLink = (slug: string, url: string, label?: string) =>
-  postJSON<AddLinkResult>("/api/job/links", {
-    slug,
-    op: "add",
-    url,
-    ...(label ? { label } : {}),
-  });
+export const addJobLink = (slug: string, url: string) =>
+  postJSON<AddLinkResult>("/api/job/links", { slug, op: "add", url });
 
 export const removeJobLink = (slug: string, id: number) =>
   postJSON<OkResponse>("/api/job/links", { slug, op: "remove", id });
-
-export const labelJobLink = (slug: string, id: number, label: string) =>
-  postJSON<OkResponse>("/api/job/links", { slug, op: "label", id, label });
 
 // ------------------------------------------------------------- the editor
 

@@ -40,12 +40,12 @@ export function linkHost(url: string): string {
   }
 }
 
-/** What a link reads as: a PR's `#N`, else its label, else its host. */
-export function linkLabel(link: Pick<WebLink, "kind" | "url" | "label">): string {
+/** What a link reads as: a PR's `#N`, anything else its host. Links carry no labels. */
+export function linkLabel(link: Pick<WebLink, "kind" | "url">): string {
   if (link.kind === "github_pr") {
-    return prNumber(link.url) ?? link.label ?? "PR";
+    return prNumber(link.url) ?? "PR";
   }
-  return link.label || linkHost(link.url);
+  return linkHost(link.url);
 }
 
 export function isHttpUrl(url: string): boolean {

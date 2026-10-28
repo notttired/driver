@@ -3,6 +3,7 @@ package pi
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,6 +74,47 @@ func TestParseEntry(t *testing.T) {
 	urls := DetectPRURLs(e.Result.Text)
 	if len(urls) != 1 || urls[0] != "https://github.com/o/r/pull/12" {
 		t.Fatalf("urls = %v", urls)
+	}
+}
+
+const userLine = `{"type":"message","id":"u1","parentId":null,"timestamp":"t","message":{"role":"user","content":[{"type":"text","text":"see https://linear.app/t/issue/X-1"},{"type":"image","data":"…","mimeType":"image/png"},{"type":"text","text":"and (https://example.com/doc)."}],"timestamp":1}}`
+
+func TestParseUserEntry(t *testing.T) {
+	e, ok := ParseEntry([]byte(userLine))
+	if !ok || e.Role != "user" || e.ToolCalls != nil || e.Result != nil {
+		t.Fatalf("user: %+v %v", e, ok)
+	}
+	if e.Text != "see https://linear.app/t/issue/X-1\nand (https://example.com/doc).\n" {
+		t.Fatalf("text = %q", e.Text)
+	}
+	if got := DetectURLs(e.Text); len(got) != 2 || got[0] != "https://linear.app/t/issue/X-1" || got[1] != "https://example.com/doc" {
+		t.Fatalf("urls = %v", got)
+	}
+	// a bare-string content, as older pi versions wrote it
+	e, _ = ParseEntry([]byte(`{"type":"message","message":{"role":"user","content":"plain https://a.b/c"}}`))
+	if e.Text != "plain https://a.b/c\n" {
+		t.Fatalf("string content: %q", e.Text)
+	}
+}
+
+func TestDetectURLs(t *testing.T) {
+	text := "look at https://linear.app/t/issue/X-1, then [doc](https://example.com/a?b=1&c=2) and <https://en.wikipedia.org/wiki/Foo_(bar)>;" +
+		" again https://linear.app/t/issue/X-1. HTTP://Example.org/x! `https://code.example/q` not ftp://x nor https:// alone, https://e.com/a).  http://localhost:8080/p"
+	want := []string{
+		"https://linear.app/t/issue/X-1",
+		"https://example.com/a?b=1&c=2",
+		"https://en.wikipedia.org/wiki/Foo_(bar)",
+		"HTTP://Example.org/x",
+		"https://code.example/q",
+		"https://e.com/a",
+		"http://localhost:8080/p",
+	}
+	got := DetectURLs(text)
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("\n got %q\nwant %q", got, want)
+	}
+	if got := DetectURLs("nothing here, https://. neither"); len(got) != 0 {
+		t.Fatalf("hostless: %v", got)
 	}
 }
 

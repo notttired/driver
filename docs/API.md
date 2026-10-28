@@ -54,8 +54,7 @@ type WebJob = {
 type WebLink = {
   id: number;
   kind: 'github_pr' | 'github' | 'slack' | 'linear' | 'url';
-  url: string;
-  label?: string;              // user label; the UI falls back to "#N" for a PR, else the host
+  url: string;                 // no label: the UI shows "#N" for a PR, else the host
   status?: 'open' | 'draft' | 'merged' | 'closed';   // github_pr only, '' until first poll
   status_at?: number;
 };
@@ -79,7 +78,7 @@ Within one display state the array order IS the column order (see `/api/reorder`
 | `POST /api/job/color` | `{"slug", "color"}`; `""` clears; allowed in every state | unknown colour (400) |
 | `POST /api/job/rename` | `{"slug", "to"}` → `{"ok": true, "slug": "<to>"}`; slug rules below; allowed in every state, renames the tmux session too when live | taken · invalid |
 | `POST /api/job/notes` | `{"slug", "text"}`; full replace, allowed in every state | > 64000 runes |
-| `POST /api/job/links` | `{"slug", "op": "add", "url", "label"?}` → `{"ok": true, "link": WebLink}`; `{"slug", "op": "remove", "id"}` → `{"ok": true}`; `{"slug","op":"label","id","label"}` → `{"ok": true}` | bad URL (must be http/https) · duplicate url |
+| `POST /api/job/links` | `{"slug", "op": "add", "url"}` → `{"ok": true, "link": WebLink}`; `{"slug", "op": "remove", "id"}` → `{"ok": true}`. The daemon adds links on its own too: every URL in a message you send pi, and the PR a `gh pr create` prints (docs/DESIGN.md "Link detection") | bad URL (must be http/https) · duplicate url |
 | `POST /api/job/open` | open the job's directory in the editor: `DRIVER_EDITOR` with the dir appended, else `code <dir>`, else `open -b com.microsoft.VSCode <dir>` (⌘-click on a card); allowed in every state, no state write | dir missing/not a directory · the editor command failed (its first output line) · it did not return within 15s |
 | `POST /api/pr-attach` | `{"slug", "url"}` — idempotent add of a `github_pr` link (used by the daemon's own scanner; kept public for scripts) → `{"ok": true, "attached": boolean}` | not a GitHub PR URL |
 
@@ -127,7 +126,7 @@ subdirectories.
 
 `GET /api/tabs` → `{"browser": "Google Chrome", "running": true, "tabs": [{"url", "title", "window", "index", "active"}]}`
 
-The open http(s) tabs of the operator's browser (`DRIVER_BROWSER`, default `Google Chrome`; any Chromium-family browser with Chrome's AppleScript dictionary works), windows front to back, `window`/`index` 1-based, `active` marking each window's selected tab. A browser with no process answers `running: false` and an empty list rather than being launched. 503 with a sentence when macOS has not granted driver Automation access to the browser (System Settings › Privacy & Security › Automation) or the browser does not answer within 20s. The links panel's `⊞ tabs` picker is the only consumer; attaching is the ordinary `/api/job/links` add with the tab's title as label.
+The open http(s) tabs of the operator's browser (`DRIVER_BROWSER`, default `Google Chrome`; any Chromium-family browser with Chrome's AppleScript dictionary works), windows front to back, `window`/`index` 1-based, `active` marking each window's selected tab. A browser with no process answers `running: false` and an empty list rather than being launched. 503 with a sentence when macOS has not granted driver Automation access to the browser (System Settings › Privacy & Security › Automation) or the browser does not answer within 20s. The links panel's `⊞ tabs` picker is the only consumer; attaching is the ordinary `/api/job/links` add of the tab's URL.
 
 ## Terminal
 

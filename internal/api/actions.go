@@ -127,11 +127,10 @@ func (a *API) jobNotes(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) jobLinks(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Slug  string `json:"slug"`
-		Op    string `json:"op"`
-		URL   string `json:"url"`
-		Label string `json:"label"`
-		ID    int64  `json:"id"`
+		Slug string `json:"slug"`
+		Op   string `json:"op"`
+		URL  string `json:"url"`
+		ID   int64  `json:"id"`
 	}
 	if !decodePost(w, r, &req) {
 		return
@@ -143,7 +142,7 @@ func (a *API) jobLinks(w http.ResponseWriter, r *http.Request) {
 	}
 	switch req.Op {
 	case "add":
-		l, err := a.Svc.AddLink(j, req.URL, req.Label)
+		l, err := a.Svc.AddLink(j, req.URL)
 		if err != nil {
 			writeFailure(w, "links", err)
 			return
@@ -155,14 +154,8 @@ func (a *API) jobLinks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-	case "label":
-		if err := a.Svc.RelabelLink(j, req.ID, req.Label); err != nil {
-			writeLinkFailure(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	default:
-		writeError(w, http.StatusBadRequest, "op must be add, remove or label")
+		writeError(w, http.StatusBadRequest, "op must be add or remove")
 	}
 }
 

@@ -801,7 +801,6 @@ body.splitting .term-pane, body.splitting .job-side { pointer-events: none; }
   padding: 5px 8px;
   outline: none;
 }
-.link-input.label { flex: 0 1 110px; }
 .link-input:hover { border-color: var(--accent-edge); }
 .link-input:focus { border-color: var(--ac); box-shadow: var(--glow); }
 .btn.on { border-color: var(--ac); color: var(--ac); }

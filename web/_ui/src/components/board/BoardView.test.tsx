@@ -161,6 +161,10 @@ describe("BoardView (DOM smoke test)", () => {
     // no spec step: a job is briefed in its pane once pi is open
     expect(within(overlay).queryByLabelText(/SPEC/)).toBeNull();
     expect((within(overlay).getByPlaceholderText(/notes to self/) as HTMLTextAreaElement).value).toBe("check staging");
+    // links: a URL box only — no label field; a PR chip on the board reads as #N
+    expect(within(overlay).getByLabelText("link url")).toBeInTheDocument();
+    expect(within(overlay).queryByLabelText("link label")).toBeNull();
+    expect(screen.getByText("#482")).toBeInTheDocument();
     expect(requests.some((r) => r.startsWith("GET /api/job/form?slug=stripe-webhooks"))).toBe(true);
 
     await act(async () => {

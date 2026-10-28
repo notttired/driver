@@ -20,23 +20,25 @@ type scanStore interface {
 	GetKV(string) (string, error)
 	SetKV(string, string) error
 	DeleteKV(string) error
-	AddLink(jobID int64, kind, url, label string) (*store.Link, bool, error)
+	AddLink(jobID int64, kind, url string) (*store.Link, bool, error)
 }
 
-// prScanner tails each job's session JSONL for `gh pr create` bash tool calls
-// and attaches the PR URLs their tool results print. The byte offset lives in
-// kv (scan:<id>); the ids of calls still awaiting a result ride beside it as
-// JSON (scan-pending:<id>) so a restart loses nothing.
-type prScanner struct {
+// sessionScanner tails each job's session JSONL and attaches links from two
+// places: every URL in the operator's own messages (what you send pi is what
+// the job is about), and the PR URLs printed by the result of a `gh pr create`
+// bash tool call. The byte offset lives in kv (scan:<id>); the ids of PR
+// calls still awaiting a result ride beside it as JSON (scan-pending:<id>) so
+// a restart loses nothing.
+type sessionScanner struct {
 	st      scanStore
 	pending map[int64]map[string]bool // job id → tool call ids awaiting a result
 }
 
-func newPRScanner(st scanStore) *prScanner {
-	return &prScanner{st: st, pending: map[int64]map[string]bool{}}
+func newSessionScanner(st scanStore) *sessionScanner {
+	return &sessionScanner{st: st, pending: map[int64]map[string]bool{}}
 }
 
-func (p *prScanner) offset(jobID int64) int64 {
+func (p *sessionScanner) offset(jobID int64) int64 {
 	v, err := p.st.GetKV(scanOffsetKey(jobID))
 	if err != nil {
 		return 0
@@ -46,7 +48,7 @@ func (p *prScanner) offset(jobID int64) int64 {
 }
 
 // pendingFor returns the job's pending set, loading it from kv on first use.
-func (p *prScanner) pendingFor(jobID int64) map[string]bool {
+func (p *sessionScanner) pendingFor(jobID int64) map[string]bool {
 	if m, ok := p.pending[jobID]; ok {
 		return m
 	}
@@ -63,7 +65,7 @@ func (p *prScanner) pendingFor(jobID int64) map[string]bool {
 	return m
 }
 
-func (p *prScanner) savePending(jobID int64, m map[string]bool) error {
+func (p *sessionScanner) savePending(jobID int64, m map[string]bool) error {
 	if len(m) == 0 {
 		return p.st.DeleteKV(scanPendingKey(jobID))
 	}
@@ -77,7 +79,7 @@ func (p *prScanner) savePending(jobID int64, m map[string]bool) error {
 }
 
 // scan reads what pi appended to j's session since the saved offset.
-func (p *prScanner) scan(j *store.Job) error {
+func (p *sessionScanner) scan(j *store.Job) error {
 	offset := p.offset(j.ID)
 	lines, next, err := pi.ReadNewLines(j.PiSession, offset)
 	if err != nil {
@@ -99,6 +101,15 @@ func (p *prScanner) scan(j *store.Job) error {
 			continue
 		}
 		switch e.Role {
+		case "user":
+			for _, u := range pi.DetectURLs(e.Text) {
+				if !ValidLinkURL(u) {
+					continue
+				}
+				if err := p.attach(j, LinkKind(u), u, "link"); err != nil {
+					return err
+				}
+			}
 		case "assistant":
 			for _, tc := range e.ToolCalls {
 				if tc.Name == "bash" && pi.IsPRCreateCommand(tc.Command) {
@@ -111,12 +122,8 @@ func (p *prScanner) scan(j *store.Job) error {
 			}
 			delete(pending, e.Result.ToolCallID)
 			for _, u := range pi.DetectPRURLs(e.Result.Text) {
-				if _, created, err := p.st.AddLink(j.ID, "github_pr", u, ""); err != nil {
-					if !errors.Is(err, store.ErrDuplicate) {
-						return fmt.Errorf("%s: attach %s: %w", j.Slug, u, err)
-					}
-				} else if created {
-					log.Printf("%s: attached PR %s", j.Slug, u)
+				if err := p.attach(j, "github_pr", u, "PR"); err != nil {
+					return err
 				}
 			}
 		}
@@ -125,4 +132,20 @@ func (p *prScanner) scan(j *store.Job) error {
 		return err
 	}
 	return p.st.SetKV(scanOffsetKey(j.ID), strconv.FormatInt(next, 10))
+}
+
+// attach adds url to j's links; a URL already there is left alone. what names
+// the find in the log ("link", "PR").
+func (p *sessionScanner) attach(j *store.Job, kind, url, what string) error {
+	_, created, err := p.st.AddLink(j.ID, kind, url)
+	if err != nil {
+		if errors.Is(err, store.ErrDuplicate) {
+			return nil
+		}
+		return fmt.Errorf("%s: attach %s: %w", j.Slug, url, err)
+	}
+	if created {
+		log.Printf("%s: attached %s %s", j.Slug, what, url)
+	}
+	return nil
 }

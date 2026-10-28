@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -140,23 +141,20 @@ func TestBoardOrder(t *testing.T) {
 func TestLinks(t *testing.T) {
 	s := open(t)
 	id, _ := s.CreateJob(&Job{Slug: "l"})
-	l1, created, err := s.AddLink(id, "github_pr", "https://github.com/o/r/pull/1", "")
+	l1, created, err := s.AddLink(id, "github_pr", "https://github.com/o/r/pull/1")
 	if err != nil || !created || l1.ID == 0 || l1.Kind != "github_pr" {
 		t.Fatalf("add: %v %v %+v", err, created, l1)
 	}
-	l1b, created, err := s.AddLink(id, "github_pr", "https://github.com/o/r/pull/1", "again")
-	if err != nil || created || l1b.ID != l1.ID || l1b.Label != "" {
+	l1b, created, err := s.AddLink(id, "github_pr", "https://github.com/o/r/pull/1")
+	if err != nil || created || l1b.ID != l1.ID {
 		t.Fatalf("idempotent add: %v %v %+v", err, created, l1b)
 	}
-	l2, _, _ := s.AddLink(id, "url", "https://example.com", "ex")
-	if err := s.RelabelLink(id, l2.ID, "example"); err != nil {
-		t.Fatal(err)
-	}
+	l2, _, _ := s.AddLink(id, "url", "https://example.com")
 	if err := s.SetLinkStatus(l1.ID, "open", 100); err != nil {
 		t.Fatal(err)
 	}
 	ls, _ := s.ListLinks(id)
-	if len(ls) != 2 || ls[0].Status != "open" || ls[0].StatusAt != 100 || ls[1].Label != "example" {
+	if len(ls) != 2 || ls[0].Status != "open" || ls[0].StatusAt != 100 || ls[1].Kind != "url" || ls[1].URL != "https://example.com" {
 		t.Fatalf("list: %+v %+v", ls[0], ls[1])
 	}
 	stale, _ := s.StalePRLinks(50, 3)
@@ -187,6 +185,57 @@ func TestLinks(t *testing.T) {
 	all, _ = s.ListAllLinks()
 	if len(all) != 0 {
 		t.Fatalf("links must cascade: %v", all)
+	}
+}
+
+// TestMigrateV3 upgrades a v2 database by hand: the label column goes, the
+// links stay, the scan offsets are forgotten and other kv rows are kept.
+func TestMigrateV3(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v2.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{schemaV1, schemaV2, `PRAGMA user_version = 2`,
+		`INSERT INTO jobs (id, slug) VALUES (4, 'a')`,
+		`INSERT INTO links (job_id, kind, url, label) VALUES (4, 'url', 'https://e.com/x', 'old label')`,
+		`INSERT INTO kv VALUES ('scan:4', '120'), ('scan-pending:4', '["c1"]'), ('models', 'keep')`} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	db.Close()
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var version int
+	s.db.QueryRow(`PRAGMA user_version`).Scan(&version)
+	if version != 3 {
+		t.Fatalf("user_version %d", version)
+	}
+	var hasLabel int
+	s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('links') WHERE name = 'label'`).Scan(&hasLabel)
+	if hasLabel != 0 {
+		t.Fatal("label column survived")
+	}
+	ls, _ := s.ListLinks(4)
+	if len(ls) != 1 || ls[0].URL != "https://e.com/x" || ls[0].Kind != "url" {
+		t.Fatalf("links after migration: %+v", ls)
+	}
+	for _, k := range []string{"scan:4", "scan-pending:4"} {
+		if _, err := s.GetKV(k); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("%s must be forgotten: %v", k, err)
+		}
+	}
+	if v, _ := s.GetKV("models"); v != "keep" {
+		t.Fatalf("models kv = %q", v)
+	}
+	// the next job id is still past the one that exists
+	id, _ := s.CreateJob(&Job{Slug: "b"})
+	if id != 5 {
+		t.Fatalf("next id %d", id)
 	}
 }
 

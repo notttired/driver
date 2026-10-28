@@ -169,7 +169,7 @@ func TestPRScanner(t *testing.T) {
 	j.PiSession = sess
 	call := `{"type":"message","id":"a1","message":{"role":"assistant","content":[{"type":"toolCall","id":"c1","name":"bash","arguments":{"command":"gh pr create --fill"}},{"type":"toolCall","id":"c2","name":"bash","arguments":{"command":"ls"}}]}}` + "\n"
 	os.WriteFile(sess, []byte(`{"type":"session","version":3}`+"\n"+call+`{"type":"message","id":"a2","message":{"role":"toolResult","toolCallId":"c2","content":[{"type":"text","text":"https://github.com/o/r/pull/99"}]}}`+"\n"), 0o644)
-	sc := newPRScanner(st)
+	sc := newSessionScanner(st)
 	if err := sc.scan(j); err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestPRScanner(t *testing.T) {
 		t.Fatalf("pending = %q", v)
 	}
 	// restart: a fresh scanner reloads pending from kv, then the result lands
-	sc = newPRScanner(st)
+	sc = newSessionScanner(st)
 	f, _ := os.OpenFile(sess, os.O_APPEND|os.O_WRONLY, 0)
 	f.WriteString(`{"type":"message","id":"a3","message":{"role":"toolResult","toolCallId":"c1","content":[{"type":"text","text":"https://github.com/o/r/pull/12\nhttps://github.com/o/r/pull/12\n"}]}}` + "\n" + `{"type":"usage"}` + "\n" + `{"partial":`)
 	f.Close()
@@ -208,5 +208,51 @@ func TestPRScanner(t *testing.T) {
 	}
 	if mapPRState("OPEN", true) != "draft" || mapPRState("OPEN", false) != "open" || mapPRState("MERGED", false) != "merged" || mapPRState("CLOSED", false) != "closed" || mapPRState("?", false) != "" {
 		t.Error("mapPRState")
+	}
+}
+
+// TestUserLinkScanner: every URL in the operator's own messages becomes a
+// link of its detected kind; the agent's text is not scanned.
+func TestUserLinkScanner(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	j := &store.Job{Slug: "u", State: "working"}
+	st.CreateJob(j)
+	sess := filepath.Join(t.TempDir(), "session.jsonl")
+	j.PiSession = sess
+	lines := []string{
+		`{"type":"session","version":3}`,
+		`{"type":"message","id":"u1","message":{"role":"user","content":[{"type":"text","text":"ticket https://linear.app/t/issue/X-1 and the PR https://github.com/o/r/pull/5. notes: (https://example.com/doc)"},{"type":"image","data":"x"}],"timestamp":1}}`,
+		`{"type":"message","id":"a1","message":{"role":"assistant","content":[{"type":"text","text":"reading https://example.com/the-agents-own-url"}]}}`,
+		`{"type":"message","id":"u2","message":{"role":"user","content":"https://linear.app/t/issue/X-1 again, plus http://host.local:8080/x","timestamp":2}}`,
+	}
+	os.WriteFile(sess, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+	sc := newSessionScanner(st)
+	if err := sc.scan(j); err != nil {
+		t.Fatal(err)
+	}
+	ls, _ := st.ListLinks(j.ID)
+	var got []string
+	for _, l := range ls {
+		got = append(got, l.Kind+" "+l.URL)
+	}
+	want := []string{
+		"linear https://linear.app/t/issue/X-1",
+		"github_pr https://github.com/o/r/pull/5",
+		"url https://example.com/doc",
+		"url http://host.local:8080/x",
+	}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("\n got %q\nwant %q", got, want)
+	}
+	// rescanning attaches nothing twice
+	if err := sc.scan(j); err != nil {
+		t.Fatal(err)
+	}
+	if ls, _ := st.ListLinks(j.ID); len(ls) != 4 {
+		t.Fatalf("rescan duplicated: %d", len(ls))
 	}
 }
