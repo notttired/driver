@@ -1,5 +1,7 @@
 # driver
 
+Built on car1zhang's kraken
+
 A macOS job board for [`pi`](https://github.com/earendil-works/pi) coding-agent
 sessions. One Go daemon (`driver serve`) owns a SQLite database and a two-second
 tick loop; the React board it serves shows in a frameless WKWebView shell
