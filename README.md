@@ -92,7 +92,8 @@ on the right, your notes beside a record of the conversation — what you typed
 and pi's final answer to each message, without the narration between tool
 calls — and the links beneath. The pane is the real tmux session — type in it
 exactly as you would in a terminal (`tmux attach -t drv-<slug>-<id>` works too),
-and ⌘-click a URL in it to open it in your browser.
+⌘← / ⌘→ jump to the start / end of the line in pi's editor as they do anywhere
+else on the Mac, and ⌘-click a URL in it to open it in your browser.
 Cards show state and age; link chips show a PR's open/draft/merged/closed.
 **⌘-click a card** (or the directory in the overlay's head) to open that
 directory in VS Code — the window that already has it, else a new one.

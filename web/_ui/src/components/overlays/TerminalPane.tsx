@@ -5,6 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
 import { isOpenClick, openExternal } from "../../lib/links.ts";
+import { metaArrowSequence } from "../../lib/paneKeys.ts";
 
 export const SESSION_ENDED = "session ended — reactivate to continue";
 
@@ -138,6 +139,17 @@ export function TerminalPane({ slug, attach }: TerminalPaneProps) {
       const bytes = new Uint8Array(d.length);
       for (let i = 0; i < d.length; i++) bytes[i] = d.charCodeAt(i) & 0xff;
       ws.send(bytes);
+    });
+    // ⌘← / ⌘→ → line start / end (lib/paneKeys.ts). The handler sees keydown,
+    // keypress and keyup: the bytes go on keydown; every phase is kept from
+    // xterm, which would drop the key, and from WebKit, which would move the
+    // caret of the hidden textarea instead.
+    term.attachCustomKeyEventHandler((ev) => {
+      const seq = metaArrowSequence(ev, term.modes.applicationCursorKeysMode);
+      if (seq === null) return true;
+      ev.preventDefault();
+      if (ev.type === "keydown" && ws.readyState === WebSocket.OPEN) ws.send(encoder.encode(seq));
+      return false;
     });
 
     const ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => refit()) : null;
