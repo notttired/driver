@@ -815,6 +815,30 @@ body.splitting .term-pane, body.splitting .job-side { pointer-events: none; }
 .convo-end { color: var(--muted); font-style: italic; }
 .convo-pending .convo-end::after { content: "▊"; color: var(--ac); margin-left: 4px; font-style: normal; animation: blink 1s step-end infinite; }
 .convo-empty { font: 400 9px/1.5 var(--mono); color: var(--muted); }
+
+/* pi's rows are markdown. The column is narrow: blocks wrap, tables scroll. */
+.convo-md { white-space: normal; }
+.convo-md > * { margin: 0 0 6px; }
+.convo-md > :first-child { margin-top: 0; }
+.convo-md > :last-child { margin-bottom: 0; }
+.convo-md h1, .convo-md h2, .convo-md h3, .convo-md h4, .convo-md h5, .convo-md h6 { margin: 8px 0 4px; font: 600 10px/1.5 var(--mono); color: var(--fg); }
+.convo-md h1, .convo-md h2 { font-size: 11px; }
+.convo-md ul, .convo-md ol { padding-left: 16px; }
+.convo-md li { margin: 1px 0; }
+.convo-md li > p { margin: 0; }
+.convo-md li.task-list-item { list-style: none; margin-left: -16px; }
+.convo-md input[type="checkbox"] { margin: 0 5px 0 0; vertical-align: -1px; }
+.convo-md code { font: inherit; padding: 0 3px; border-radius: 3px; background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.convo-md pre { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--b0); white-space: pre-wrap; overflow-wrap: anywhere; }
+.convo-md pre code { padding: 0; background: none; }
+.convo-md blockquote { padding: 0 0 0 8px; border-left: 2px solid var(--border); color: var(--muted); }
+.convo-md hr { margin: 6px 0; border: 0; border-top: 1px solid var(--border); }
+.convo-md .md-table { overflow-x: auto; }
+.convo-md table { border-collapse: collapse; }
+.convo-md th, .convo-md td { padding: 2px 6px; border: 1px solid var(--border); text-align: left; vertical-align: top; overflow-wrap: normal; }
+.convo-md th { font-weight: 600; background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.convo-md img { max-width: 100%; height: auto; }
+.convo-md del { color: var(--muted); }
 .link-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .link-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .link-row .pr-chip { flex: none; }

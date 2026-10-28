@@ -1,4 +1,7 @@
-import { Fragment, useLayoutEffect, useRef } from "react";
+import { Fragment, memo, useLayoutEffect, useRef } from "react";
+import Markdown, { type Components } from "react-markdown";
+import remarkBreaks from "remark-breaks";
+import remarkGfm from "remark-gfm";
 
 import { fetchConversation } from "../../api/client.ts";
 import { usePoll } from "../../hooks/usePoll.ts";
@@ -21,8 +24,9 @@ export interface ConversationPanelProps {
  * and pi's final answer to each message — the last thing it said before it
  * stopped — as the daemon reads them from the session file
  * (GET /api/job/conversation). The narration between tool calls, the tool
- * calls and their output stay in the pane. Polled while the overlay is open;
- * the list keeps to its end until you scroll up.
+ * calls and their output stay in the pane. pi's rows render as markdown;
+ * yours stay as typed. Polled while the overlay is open; the list keeps to
+ * its end until you scroll up.
  */
 export function ConversationPanel({ slug, opened, pi }: ConversationPanelProps) {
   const last = useRef<WebConversation | null>(null);
@@ -93,7 +97,9 @@ export function ConversationPanel({ slug, opened, pi }: ConversationPanelProps) 
   );
 }
 
-function MessageRow({ m }: { m: WebMessage }) {
+/** A row re-renders only when its message does — the record's rows are
+ *  stable objects between revs, so a board poll does not re-parse them. */
+const MessageRow = memo(function MessageRow({ m }: { m: WebMessage }) {
   const you = m.role === "user";
   const when = clockLabel(m.ts);
   return (
@@ -102,11 +108,21 @@ function MessageRow({ m }: { m: WebMessage }) {
         {you ? "you" : "pi"}
         {when && m.ts ? <time dateTime={new Date(m.ts * 1000).toISOString()}>{when}</time> : null}
       </span>
-      {m.text ? <p className="convo-text">{linkify(m.text)}</p> : null}
+      {m.text ? (
+        you ? (
+          <p className="convo-text">{linkify(m.text)}</p>
+        ) : (
+          <div className="convo-text convo-md">
+            <Markdown remarkPlugins={MD_PLUGINS} components={MD_COMPONENTS}>
+              {m.text}
+            </Markdown>
+          </div>
+        )
+      ) : null}
       {m.end ? <p className="convo-text convo-end">{endLabel(m)}</p> : null}
     </li>
   );
-}
+});
 
 function endLabel(m: WebMessage): string {
   switch (m.end) {
@@ -121,12 +137,40 @@ function endLabel(m: WebMessage): string {
   }
 }
 
-/** The text with its URLs as anchors: click or ⌘-click opens the page in the
- *  browser (Driver.app routes it there), as in the links panel. */
+const LINK_TITLE = "click or ⌘-click: open in the browser";
+
+/** pi writes GitHub-flavoured markdown (tables, task lists, strikethrough,
+ *  bare URLs); a single newline is a line break, as in the pane. Raw HTML in
+ *  it shows as text, never as markup. */
+const MD_PLUGINS = [remarkGfm, remarkBreaks];
+
+/** Links open in the browser like everywhere on the board (Driver.app routes
+ *  target=_blank there); anything but an http(s) target stays plain text.
+ *  Tables scroll sideways rather than squeeze the narrow column. */
+const MD_COMPONENTS: Components = {
+  a({ node, href, children, ...rest }) {
+    if (!href || !/^https?:\/\//i.test(href)) return <>{children}</>;
+    return (
+      <a {...rest} href={href} target="_blank" rel="noreferrer" title={LINK_TITLE}>
+        {children}
+      </a>
+    );
+  },
+  table({ node, children, ...rest }) {
+    return (
+      <div className="md-table">
+        <table {...rest}>{children}</table>
+      </div>
+    );
+  },
+};
+
+/** Your text with its URLs as anchors: click or ⌘-click opens the page in
+ *  the browser (Driver.app routes it there), as in the links panel. */
 function linkify(text: string) {
   return splitUrls(text).map((p, i) =>
     p.url ? (
-      <a key={i} href={p.url} target="_blank" rel="noreferrer" title="click or ⌘-click: open in the browser">
+      <a key={i} href={p.url} target="_blank" rel="noreferrer" title={LINK_TITLE}>
         {p.text}
       </a>
     ) : (

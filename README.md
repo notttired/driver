@@ -111,7 +111,9 @@ Archived jobs free their slug and can be unarchived or deleted.
 **Notes, the record and links.** Notes are yours — autosaved, never shown to
 pi. The conversation record follows pi's session file as it grows: each of
 your messages, then the last thing pi said before it stopped (an interrupted
-or failed turn is marked as such); URLs in it are clickable. Links are
+or failed turn is marked as such). pi's answers render as markdown — headings,
+lists, code, tables — your messages stay as typed, and URLs in either are
+clickable. Links are
 any URL, shown as the PR number or the host (no labels); GitHub PRs, GitHub,
 Slack and Linear are recognised by kind and PR status is polled with `gh`. Every
 URL in your messages to pi and in its replies lands in the job's links by

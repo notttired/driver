@@ -59,4 +59,54 @@ describe("ConversationPanel", () => {
     render(<ConversationPanel slug="demo" opened pi={{ state: "ready", ts: 1 }} />);
     expect(await screen.findByText(/nothing yet/)).toBeInTheDocument();
   });
+
+  it("renders pi's answers as markdown and leaves yours as typed", async () => {
+    fetchConversation.mockResolvedValue({
+      rev: "3",
+      pending: false,
+      messages: [
+        { role: "user", text: "**not bold** <keep>", ts: 1793181600 },
+        {
+          role: "assistant",
+          ts: 1793181660,
+          text: [
+            "## Done",
+            "",
+            "- **bold** item",
+            "- `code`, [docs](https://x.io/d) and [bad](javascript:alert(1))",
+            "",
+            "```sh",
+            "ls -la",
+            "```",
+            "",
+            "| a | b |",
+            "|---|---|",
+            "| 1 | 2 |",
+            "",
+            "Use <slug> here",
+            "next line",
+          ].join("\n"),
+        },
+      ],
+    });
+    const { container } = render(<ConversationPanel slug="demo" opened pi={{ state: "ready", ts: 1 }} />);
+    expect(await screen.findByRole("heading", { level: 2, name: "Done" })).toBeInTheDocument();
+    expect(container.querySelectorAll(".convo-md li")).toHaveLength(2);
+    expect(container.querySelector(".convo-md strong")?.textContent).toBe("bold");
+    expect(container.querySelector(".convo-md pre code")?.textContent).toBe("ls -la\n");
+    const docs = screen.getByRole("link", { name: "docs" });
+    expect(docs).toHaveAttribute("href", "https://x.io/d");
+    expect(docs).toHaveAttribute("target", "_blank");
+    // an unsafe target is not a link at all, just its text
+    expect(screen.queryByRole("link", { name: "bad" })).toBeNull();
+    expect(screen.getByText(/and bad$/)).toBeInTheDocument();
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "2" })).toBeInTheDocument();
+    // raw HTML is text, not markup; a single newline is a line break
+    expect(screen.getByText(/Use <slug> here/)).toBeInTheDocument();
+    expect(container.querySelectorAll(".convo-md br")).toHaveLength(1);
+    // your own rows are verbatim
+    expect(screen.getByText("**not bold** <keep>")).toBeInTheDocument();
+    expect(container.querySelectorAll(".convo-msg.you strong")).toHaveLength(0);
+  });
 });

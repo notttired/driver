@@ -66,7 +66,7 @@ internal/api/         HTTP handlers (see docs/API.md); the board payload
 internal/util/        env file loader, small helpers
 web/embed.go          //go:embed all:_ui/dist
 web/serve.go          static files + /api mux on 127.0.0.1:<port>
-web/_ui/              Vite + React + TypeScript SPA (kraken's board, trimmed) + xterm.js
+web/_ui/              Vite + React + TypeScript SPA (kraken's board, trimmed) + xterm.js + react-markdown
 ext/driver.ts         the pi extension (status.json writer); embedded in the binary and
                       written to ~/.driver/ext/driver.ts on every serve start
 macos/                Driver.app: DriverApp.swift, ServerConfig.swift, project.yml,
@@ -260,7 +260,12 @@ off before answering; when that is the LAST turn the record is `pending`, and
 the panel's closing row says "working…", "asking you something in the pane" or
 "stopped before answering" from the job's pi state. `system` messages,
 `custom_message` entries (extensions'), tool results, thinking blocks and every
-non-message entry are skipped. URLs in a row are anchors, as in the links panel.
+non-message entry are skipped. pi's rows render as markdown (react-markdown
+with GitHub flavour: tables, task lists, strikethrough, bare URLs linked; a
+single newline is a line break, as in the pane; raw HTML shows as text, never
+as markup; only http(s) targets become links, opening in the browser like every
+link on the board). Your rows stay as typed, their URLs anchors as in the links
+panel.
 
 ## Terminal
 
