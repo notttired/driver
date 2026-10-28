@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { isOpenClick, linkLabel, openExternal, prNumber } from "./links.ts";
+import { isOpenClick, linkLabel, openExternal, prNumber, splitUrls, trimUrl } from "./links.ts";
 
 describe("link labels", () => {
   it("reads a PR as #N and anything else as its host", () => {
@@ -32,5 +32,21 @@ describe("openExternal", () => {
     expect(isOpenClick({ metaKey: true, ctrlKey: false })).toBe(true);
     expect(isOpenClick({ metaKey: false, ctrlKey: true })).toBe(true);
     expect(isOpenClick({ metaKey: false, ctrlKey: false })).toBe(false);
+  });
+});
+
+describe("splitUrls", () => {
+  it("finds the URLs in running text and peels the punctuation prose hangs on them", () => {
+    expect(splitUrls("see https://a.io/x). and (https://b.io/y_(z)) ok")).toEqual([
+      { text: "see " },
+      { text: "https://a.io/x", url: "https://a.io/x" },
+      { text: "). and (" },
+      { text: "https://b.io/y_(z)", url: "https://b.io/y_(z)" },
+      { text: ") ok" },
+    ]);
+    expect(splitUrls("plain words")).toEqual([{ text: "plain words" }]);
+    expect(splitUrls("")).toEqual([]);
+    expect(trimUrl("https://x.io/a].")).toBe("https://x.io/a");
+    expect(trimUrl("https://x.io/a_[b]")).toBe("https://x.io/a_[b]");
   });
 });

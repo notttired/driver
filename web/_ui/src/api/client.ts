@@ -12,7 +12,10 @@ import type {
   OkResponse,
   RenameResult,
   SaveFormResult,
-  WebBoard, TabsResponse } from "../lib/types.ts";
+  WebBoard,
+  WebConversation,
+  TabsResponse,
+} from "../lib/types.ts";
 import type { Column } from "../lib/columns.ts";
 
 const BASE = "";
@@ -106,6 +109,10 @@ export const fetchModels = (signal?: AbortSignal) =>
   getJSON<ModelsResponse>("/api/models", signal);
 
 export const fetchTabs = (signal?: AbortSignal) => getJSON<TabsResponse>("/api/tabs", signal);
+
+/** The record of a job's conversation: your messages and pi's final answers. */
+export const fetchConversation = (slug: string, signal?: AbortSignal) =>
+  getJSON<WebConversation>(`/api/job/conversation?slug=${encodeURIComponent(slug)}`, signal);
 
 // ------------------------------------------------- job state transitions
 

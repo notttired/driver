@@ -54,6 +54,17 @@ export function age(unixSeconds: number | undefined | null): string {
   return Math.floor(s / 86400) + "d";
 }
 
+/** When a message was said: the clock for today, the date in front of it
+ *  for any other day; "" without a time. */
+export function clockLabel(unixSeconds: number | undefined | null, now = Date.now()): string {
+  if (!unixSeconds) return "";
+  const d = new Date(unixSeconds * 1000);
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const n = new Date(now);
+  const sameDay = d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+  return sameDay ? time : `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
+}
+
 export function columnFor(state: string): Column {
   return (COLUMNS as readonly string[]).includes(state) ? (state as Column) : "draft";
 }

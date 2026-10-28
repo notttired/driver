@@ -81,6 +81,32 @@ export interface WebBoard {
   default_dir: string;
 }
 
+/** GET /api/job/conversation: the overlay's record of a session — what you
+ *  typed and pi's final answer to each message. */
+export type MessageRole = "user" | "assistant";
+
+export interface WebMessage {
+  role: MessageRole;
+  /** text blocks newline-joined; "" for an interrupted turn that said nothing */
+  text: string;
+  /** unix seconds; absent when the entry carried no time */
+  ts?: number;
+  /** assistant only: how the turn ended when not with an answer of pi's own
+   *  choosing. Open on the wire — an unlisted value is shown as it reads. */
+  end?: "length" | "aborted" | "error" | string;
+  /** end === "error": what failed */
+  error?: string;
+}
+
+export interface WebConversation {
+  /** in conversation order, never null */
+  messages: WebMessage[];
+  /** the last turn still awaits pi's final answer */
+  pending: boolean;
+  /** changes when the record does; equal revs are equal records */
+  rev: string;
+}
+
 export interface JobForm {
   slug: string;
   name: string;

@@ -87,8 +87,10 @@ type into pi is its first prompt. Until pi starts on it the card sits in **draft
 moves to **working** by itself. (A job cancelled back to draft shows a small
 form instead — directory, model, START — until it is started again.)
 
-**Reading it.** Click a card for the job overlay: the live pane on the left,
-notes and links on the right. The pane is the real tmux session — type in it
+**Reading it.** Click a card for the job overlay: the live pane on the left;
+on the right, your notes beside a record of the conversation — what you typed
+and pi's final answer to each message, without the narration between tool
+calls — and the links beneath. The pane is the real tmux session — type in it
 exactly as you would in a terminal (`tmux attach -t drv-<slug>-<id>` works too),
 and ⌘-click a URL in it to open it in your browser.
 Cards show state and age; link chips show a PR's open/draft/merged/closed.
@@ -106,7 +108,10 @@ under DONE archives it. The overlay's buttons do the same: start · stop · done
 cancel (close pi; the job goes back to not started) · reactivate · archive.
 Archived jobs free their slug and can be unarchived or deleted.
 
-**Notes and links.** Notes are yours — autosaved, never shown to pi. Links are
+**Notes, the record and links.** Notes are yours — autosaved, never shown to
+pi. The conversation record follows pi's session file as it grows: each of
+your messages, then the last thing pi said before it stopped (an interrupted
+or failed turn is marked as such); URLs in it are clickable. Links are
 any URL, shown as the PR number or the host (no labels); GitHub PRs, GitHub,
 Slack and Linear are recognised by kind and PR status is polled with `gh`. Every
 URL in your messages to pi and in its replies lands in the job's links by

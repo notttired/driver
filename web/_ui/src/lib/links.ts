@@ -48,6 +48,50 @@ export function linkLabel(link: Pick<WebLink, "kind" | "url">): string {
   return linkHost(link.url);
 }
 
+const URL_RE = /https?:\/\/[^\s<>"'`]+/gi;
+const OPENER: Readonly<Record<string, string>> = { ")": "(", "]": "[", "}": "{" };
+
+const count = (s: string, ch: string) => s.split(ch).length - 1;
+
+/** Peel the punctuation prose hangs on a URL's end — sentence marks and
+ *  closing brackets the URL did not open — the way the daemon's scanner does
+ *  (`…/a).` loses both; a wiki-style `…/Foo_(bar)` keeps its parenthesis). */
+export function trimUrl(url: string): string {
+  for (;;) {
+    let t = url.replace(/[.,;:!?*]+$/, "");
+    for (;;) {
+      const last = t.at(-1) ?? "";
+      const opener = OPENER[last];
+      if (!opener || count(t, opener) >= count(t, last)) break;
+      t = t.slice(0, -1);
+    }
+    if (t === url) return url;
+    url = t;
+  }
+}
+
+export interface TextPart {
+  text: string;
+  /** set when this part is a URL */
+  url?: string;
+}
+
+/** Split running text into its plain runs and the http(s) URLs in it, in order. */
+export function splitUrls(text: string): TextPart[] {
+  const parts: TextPart[] = [];
+  let at = 0;
+  for (const m of text.matchAll(URL_RE)) {
+    const start = m.index ?? 0;
+    const url = trimUrl(m[0] ?? "");
+    if (!url) continue;
+    if (start > at) parts.push({ text: text.slice(at, start) });
+    parts.push({ text: url, url });
+    at = start + url.length;
+  }
+  if (at < text.length) parts.push({ text: text.slice(at) });
+  return parts;
+}
+
 export function isHttpUrl(url: string): boolean {
   return /^https?:\/\//i.test(url);
 }

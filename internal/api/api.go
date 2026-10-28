@@ -19,11 +19,13 @@ type API struct {
 	Daemon  *jobs.Daemon
 	Version string
 	models  *modelCache
+	// the conversation record per job, cached on its session file's stamp
+	conversations *conversationCache
 }
 
 // New wires an API over the engine.
 func New(svc *jobs.Service, d *jobs.Daemon, version string) *API {
-	return &API{Svc: svc, Daemon: d, Version: version, models: newModelCache(svc.Cfg, 10*time.Minute)}
+	return &API{Svc: svc, Daemon: d, Version: version, models: newModelCache(svc.Cfg, 10*time.Minute), conversations: newConversationCache()}
 }
 
 // Register mounts every route on mux.
@@ -43,6 +45,7 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/job/rename", a.jobRename)
 	mux.HandleFunc("/api/job/notes", a.jobNotes)
 	mux.HandleFunc("/api/job/links", a.jobLinks)
+	mux.HandleFunc("/api/job/conversation", a.jobConversation)
 	mux.HandleFunc("/api/job/open", a.action("open", func(j jobReq) error { return a.Svc.OpenEditor(j.job) }))
 	mux.HandleFunc("/api/pr-attach", a.prAttach)
 	mux.HandleFunc("/api/job/form", a.jobForm)

@@ -60,6 +60,8 @@ function installFetch(board: WebBoard) {
           links: job.links ?? [],
         });
       }
+      case "/api/job/conversation":
+        return json({ messages: [], pending: false, rev: "0" });
       case "/api/models":
         return json({ models: [{ provider: "anthropic", id: "claude-sonnet-4-5" }], default: "claude-sonnet-4-5" });
       case "/api/dirs":

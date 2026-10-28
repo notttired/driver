@@ -124,6 +124,30 @@ subdirectories.
 — parsed from `pi --list-models` (cached 10 minutes; `?refresh=1` re-runs it).
 `default` is the `defaultModel` in `~/.pi/agent/settings.json` when readable.
 
+## Conversation
+
+`GET /api/job/conversation?slug=<slug>` → `WebConversation` — the overlay's
+record of the session: your messages and pi's final answer to each
+(docs/DESIGN.md "Conversation record"). Derived from the session file on each
+request, cached on the file's size and mtime; a job with no session yet answers
+an empty record. 404 for an unknown slug.
+
+```ts
+type WebConversation = {
+  messages: WebMessage[];      // never null, in conversation order
+  pending: boolean;            // the last turn still awaits pi's final answer
+  rev: string;                 // changes when the record does; equal revs are equal records
+};
+
+type WebMessage = {
+  role: 'user' | 'assistant';
+  text: string;                // text blocks newline-joined; '' for an interrupted turn that said nothing
+  ts?: number;                 // the entry's time
+  end?: 'length' | 'aborted' | 'error' | string;   // assistant only; absent when pi stopped by itself
+  error?: string;              // end === 'error': pi's errorMessage
+};
+```
+
 ## Browser tabs
 
 `GET /api/tabs` → `{"browser": "Google Chrome", "running": true, "tabs": [{"url", "title", "window", "index", "active"}]}`

@@ -22,6 +22,7 @@ import { isOpened, statusToken } from "../../lib/status.ts";
 import type { JobForm, ModelsResponse, WebJob } from "../../lib/types.ts";
 import { readLS, writeLS } from "../../hooks/useLocalStorage.ts";
 import { DEFAULT_SPLIT, MAX_SPLIT, MIN_SPLIT, SPLIT_KEY, clampSplit, splitFromPointer } from "../../lib/split.ts";
+import { ConversationPanel } from "./ConversationPanel.tsx";
 import { LaunchForm } from "./LaunchForm.tsx";
 import { LinksPanel } from "./LinksPanel.tsx";
 import { NotesPanel } from "./NotesPanel.tsx";
@@ -52,8 +53,8 @@ export interface JobOverlayProps {
  * The job detail view. Head: slug (+ rename), colour, status, dir, actions by
  * state. Body: pi's pane once the job is opened (a draft whose pi is up,
  * working, blocked, done), the launch form (dir, model, START) for a
- * not-started draft; sidebar: notes and links. The body is keyed by slug — a
- * rename or a different job
+ * not-started draft; sidebar: notes and the conversation record side by
+ * side, links beneath. The body is keyed by slug — a rename or a different job
  * is a fresh mount — while the rename control and the auto-close rule live
  * up here where they survive that remount.
  */
@@ -409,12 +410,15 @@ function JobPanel({
         <aside className="job-side">
           {form !== null ? (
             <>
-              <NotesPanel
-                slug={slug}
-                initial={form.notes}
-                onSaved={() => void board.refetch()}
-                registerFlush={registerNotesFlush}
-              />
+              <div className="side-split">
+                <NotesPanel
+                  slug={slug}
+                  initial={form.notes}
+                  onSaved={() => void board.refetch()}
+                  registerFlush={registerNotesFlush}
+                />
+                <ConversationPanel slug={slug} opened={opened} pi={job?.pi} />
+              </div>
               <LinksPanel
                 slug={slug}
                 links={job?.links ?? form.links}

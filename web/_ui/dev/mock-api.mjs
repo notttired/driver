@@ -63,6 +63,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET") {
     if (p === "/api/health") return send(res, 200, { ok: true, pid: process.pid, version: "mock", started_at: now() - 3600 });
     if (p === "/api/board") return send(res, 200, board());
+    if (p === "/api/job/conversation") return send(res, 200, { messages: [], pending: false, rev: "0" });
     if (p === "/api/job/form") { const f = forms.get(url.searchParams.get("slug")); return f ? send(res, 200, f) : err(res, 404, "no such job"); }
     if (p === "/api/dirs") { const q = url.searchParams.get("q") || DEFAULT_DIR + "/"; const base = q.endsWith("/") ? q : q.slice(0, q.lastIndexOf("/") + 1); const last = q.slice(base.length); return send(res, 200, { dirs: ["payments", "platform", "search", "web", "gateway", "exports", "api", "pi-ext"].filter((d) => d.startsWith(last)).map((d) => base + d) }); }
     if (p === "/api/models") return send(res, 200, { models: [{ provider: "anthropic", id: "claude-sonnet-4-5" }, { provider: "anthropic", id: "claude-opus-4-1" }, { provider: "openai", id: "gpt-5" }], default: "anthropic/claude-sonnet-4-5" });

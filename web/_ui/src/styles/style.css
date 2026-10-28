@@ -760,8 +760,23 @@ body.splitting .term-pane, body.splitting .job-side { pointer-events: none; }
 
 /* sidebar panels */
 .side-panel { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
-.notes-panel { flex: 1 1 40%; min-height: 160px; }
-.links-panel { flex: 1 1 auto; }
+/* notes and the conversation record share the top of the sidebar half and
+   half; links take what they need beneath */
+.side-split {
+  flex: 1 1 auto;
+  min-height: 220px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  border-bottom: 1px solid var(--border);
+}
+.side-split > .side-panel { min-width: 0; min-height: 0; border-bottom: 0; }
+.side-split > .side-panel + .side-panel { border-left: 1px solid var(--border); }
+@media (max-width: 600px) {
+  .side-split { grid-template-columns: 1fr; grid-template-rows: minmax(160px, 1fr) minmax(160px, 1fr); }
+  .side-split > .side-panel + .side-panel { border-left: 0; border-top: 1px solid var(--border); }
+}
+.notes-panel { min-height: 160px; }
+.links-panel { flex: 0 0 auto; }
 .side-head { display: flex; align-items: center; gap: 8px; }
 .side-head b { font: 600 9px/1 var(--display); letter-spacing: 0.2em; color: var(--muted); }
 .side-hint { margin-left: auto; font: 400 9px/1 var(--mono); color: var(--muted); }
@@ -780,6 +795,26 @@ body.splitting .term-pane, body.splitting .job-side { pointer-events: none; }
 }
 .notes-text:hover { border-color: var(--accent-edge); }
 .notes-text:focus { border-color: var(--ac); box-shadow: var(--glow); }
+/* the conversation record */
+.convo-list { list-style: none; margin: 0; padding: 0 2px 0 0; flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.convo-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--ac) 3%, var(--b1));
+}
+.convo-msg.you { border-color: var(--accent-edge); background: color-mix(in srgb, var(--ac) 9%, var(--b1)); }
+.convo-who { display: flex; align-items: baseline; gap: 8px; font: 600 8px/1 var(--display); letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+.convo-msg.you .convo-who { color: var(--ac); }
+.convo-who time { font: 400 8px/1 var(--mono); letter-spacing: 0; text-transform: none; color: var(--muted); margin-left: auto; }
+.convo-text { margin: 0; font: 400 10px/1.6 var(--mono); color: var(--fg); white-space: pre-wrap; overflow-wrap: anywhere; }
+.convo-text a { color: var(--tint); text-decoration: underline; }
+.convo-text a:hover { color: var(--fg); }
+.convo-end { color: var(--muted); font-style: italic; }
+.convo-pending .convo-end::after { content: "▊"; color: var(--ac); margin-left: 4px; font-style: normal; animation: blink 1s step-end infinite; }
+.convo-empty { font: 400 9px/1.5 var(--mono); color: var(--muted); }
 .link-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .link-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .link-row .pr-chip { flex: none; }

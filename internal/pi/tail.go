@@ -1,8 +1,9 @@
 // Package pi reads what pi leaves on disk for driver: the session JSONL
-// (tailed from a saved byte offset, parsed for the operator's messages and
-// for bash tool calls and their results), the status.json the driver
-// extension writes, `pi --list-models` output and the default model in pi's
-// settings. It never runs a pi agent.
+// (tailed from a saved byte offset for the link scanner, read whole for the
+// conversation record; parsed for the operator's messages, pi's replies and
+// bash tool calls with their results), the status.json the driver extension
+// writes, `pi --list-models` output and the default model in pi's settings.
+// It never runs a pi agent.
 package pi
 
 import (

@@ -24,8 +24,11 @@ usage, accounts, self-update) is left out on purpose.
   names a working directory (`dir`), nothing more. Jobs may be multi-repo or
   repo-less.
 - Card detail = the live tmux pane (xterm.js attached over a websocket) plus
-  **notes** and **links**. No transcript panel, no composer, no question buttons:
-  you read and type in the pane. Cards show status and age only (plus link chips).
+  **notes**, a **conversation record** and **links**. The record (2026-10-28)
+  is read-only: your messages and pi's final answer to each, read from the
+  session file — the narration between tool calls, the tool calls and their
+  output stay in the pane. No composer, no question buttons: you type in the
+  pane. Cards show status and age only (plus link chips).
 - No spec step (same day, later): creating a job opens pi at once and the card
   opens on its pane; the first message is typed to pi itself. A job whose pi is
   up but has not been briefed stays in DRAFT (stored `ready`) and moves to
@@ -56,8 +59,8 @@ cmd/driver/           main.go — `driver serve [-p 7781]`, `driver version`
 internal/store/       SQLite (modernc.org/sqlite, pure Go): schema, jobs, order, links, kv
 internal/jobs/        Job model, submit/stop/done/kill/reactivate/archive, state
                       derivation, tmux + pi launch, tick loop, notifications, PR scan
-internal/pi/          pi session JSONL reader (tail from offset), status.json reader,
-                      `pi --list-models` parser, GitHub PR detection
+internal/pi/          pi session JSONL reader (tail from offset; the conversation record),
+                      status.json reader, `pi --list-models` parser, GitHub PR detection
 internal/term/        pty ⇄ websocket bridge around `tmux attach-session`
 internal/api/         HTTP handlers (see docs/API.md); the board payload
 internal/util/        env file loader, small helpers
@@ -237,6 +240,28 @@ Links of kind github_pr whose
 `gh pr view <url> --json state,isDraft` → `open|draft|merged|closed`; a failing
 `gh` leaves the status untouched.
 
+## Conversation record
+
+`GET /api/job/conversation` derives the overlay's record from the session file
+on request, cached on the file's size and mtime, so the overlay's 3-second poll
+re-reads a session only when pi appended to it (`rev` is that stamp; the SPA
+keeps its rendered list while it does not change). The entries read are those
+on the branch of the file's last entry: every entry names its parent, and a
+`/tree` jump leaves the abandoned branch in the file, off the path. Walking that
+path, every `message` of role `user` is a row of yours (its text blocks,
+newline-joined), and each turn — a user message and everything up to the next
+one — adds at most one row of pi's: its last `assistant` message, provided that
+message's `stopReason` is not a mid-turn one (`toolUse`, `pending`, `deferred`).
+`stop` and `length` are answers (`length` marked as cut off); `aborted` and
+`error` are rows carrying whatever partial text there was, marked with the
+reason (and pi's `errorMessage`). A turn whose last assistant message asked for
+tools gets no row — pi was steered with a further message mid-turn, or was cut
+off before answering; when that is the LAST turn the record is `pending`, and
+the panel's closing row says "working…", "asking you something in the pane" or
+"stopped before answering" from the job's pi state. `system` messages,
+`custom_message` entries (extensions'), tool results, thinking blocks and every
+non-message entry are skipped. URLs in a row are anchors, as in the links panel.
+
 ## Terminal
 
 `GET /api/term?slug=<slug>` upgrades to a websocket. The server starts
@@ -275,7 +300,8 @@ Card click → the job overlay: head (name + rename, with `as <slug>` beside a n
 start / stop / done / cancel / reactivate / archive by state), body = the pane
 for every opened job (pi at its prompt, working, blocked, done) or the launch
 form for a not-started one (dir with directory autocomplete, model datalist,
-START), sidebar = notes (autosaved) and links (list, add, remove, PR status).
+START), sidebar = notes (autosaved) and the conversation record side by side,
+links (list, add, remove, PR status) beneath.
 The NEW JOB dialog takes a name, dir and model and starts the job itself
 (`/api/job/create`, then `/api/queue`), so the overlay it opens is already on
 the pane. Escape closes; ⌘K focuses search. ⌘-click on a card skips the overlay
