@@ -43,6 +43,7 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/reorder", a.reorder)
 	mux.HandleFunc("/api/job/color", a.jobColor)
 	mux.HandleFunc("/api/job/rename", a.jobRename)
+	mux.HandleFunc("/api/job/fork", a.jobFork)
 	mux.HandleFunc("/api/job/notes", a.jobNotes)
 	mux.HandleFunc("/api/job/links", a.jobLinks)
 	mux.HandleFunc("/api/job/conversation", a.jobConversation)

@@ -177,6 +177,27 @@ the same launch as start on the existing `--session <file>`, so pi resumes the
 conversation; `state=working` (the hold below absorbs the idle pi reports at
 `session_start` before it picks the conversation back up).
 
+**Fork** (`POST /api/job/fork {slug, to, name}`): a copy of the job under a new
+slug and name — dir, model, colour, spec, notes and links (`CopyLinks`, status
+included) — placed in the original's column right after it (the column's
+shown order is written back with the fork slotted in). When the original has
+a session file it is copied into the fork's job dir by `pi.ForkSession`: the
+header line gets a fresh UUID v7 id and timestamp and `parentSession` = the
+original's path; every other line is byte-identical, so the entry tree holds
+and pi resumes the copy where the original stood (pi's own `--fork` writes the
+same shape; its code is not readable from the Nix install, so driver writes
+the header itself). `status.json` is never copied. The fork's link-scanner
+offset starts at the end of the copied file: its links came along from the
+original, removals included. Then by the original's stored state: `''` → a
+draft (nothing launched); `done` → `done` with the outcome and times copied
+(reactivate to carry on); `ready`/`working`/`blocked` → the start launch on
+the copied session (dir must exist, pi and tmux resolvable, else 409 before
+anything is made) with the ORIGINAL's stored state, so the card lands in the
+same column while pi boots — hence the `blocked`-stays-`blocked` branch of
+the starting grace below. A fork that fails halfway is removed again (tmux
+session, job dir, row). Archived originals are refused; the UI hides the
+button for them. The overlay re-points itself at the fork when it lands.
+
 **Archive / unarchive / delete**: kraken semantics. Archive only from done;
 delete only when archived; both refuse a live tmux session.
 
@@ -192,7 +213,7 @@ else (stored ready | working | blocked):
   status.state == ready              → ready (draft column; the card says "○ pi open")
   status.state == working            → working
   status.state ∈ idle|dialog|aborted → blocked (reason = state)
-  no status.json yet                 → the stored ready/working (pi "starting") if started_at < 120s ago,
+  no status.json yet                 → the stored ready/blocked, else working (pi "starting") if started_at < 120s ago,
                                        else blocked ("silent")
 ```
 

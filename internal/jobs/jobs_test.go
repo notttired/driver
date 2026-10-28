@@ -31,6 +31,8 @@ func TestDisplayStateAndObserve(t *testing.T) {
 		{"aborted", store.Job{State: "working"}, true, &pi.Status{State: "aborted"}, "blocked", "aborted", "aborted"},
 		{"starting", store.Job{State: "working", StartedAt: now - 30}, true, nil, "working", "starting", ""},
 		{"silent", store.Job{State: "working", StartedAt: now - 200}, true, nil, "blocked", "silent", "silent"},
+		// a blocked job's fork: its own pi is booting; the card stays in BLOCKED
+		{"blocked starting", store.Job{State: "blocked", StartedAt: now - 3}, true, nil, "blocked", "starting", ""},
 		// an opened draft: pi at its prompt, nothing sent — stays in DRAFT
 		{"ready starting", store.Job{State: "ready", StartedAt: now - 3}, true, nil, "ready", "starting", ""},
 		{"ready", store.Job{State: "ready", StartedAt: now - 300}, true, &pi.Status{State: "ready"}, "ready", "ready", ""},
@@ -370,4 +372,164 @@ func TestCreateRename(t *testing.T) {
 	if _, err := svc.Rename(j, "Bad Slug", "x"); err == nil {
 		t.Fatal("invalid slug accepted")
 	}
+}
+
+func TestFork(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	home, work := t.TempDir(), t.TempDir()
+	svc := &Service{Store: st, Cfg: Config{Home: home, DefaultDir: work}, Tmux: NewTmux()}
+
+	// a not-started draft carrying everything a draft can
+	src := &store.Job{Slug: "orig", Name: "Original", Dir: work, Model: "sonnet", Color: "red", Spec: "the brief", Notes: "remember this"}
+	if _, err := st.CreateJob(src); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AddLink(src, "https://github.com/o/r/pull/9"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AddLink(src, "https://example.com/doc"); err != nil {
+		t.Fatal(err)
+	}
+	aaa, _ := svc.Create("aaa", "", work, "")
+	zzz, _ := svc.Create("zzz", "", work, "")
+	if err := st.SetBoardColumn("draft", []int64{zzz.ID, src.ID, aaa.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	fork, err := svc.Fork(src, "orig-fork", "Original fork")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fork.Slug != "orig-fork" || fork.Name != "Original fork" || fork.Dir != work || fork.Model != "sonnet" ||
+		fork.Color != "red" || fork.Spec != "the brief" || fork.Notes != "remember this" ||
+		fork.State != "" || fork.PiSession != "" || fork.Tmux != "" || fork.ID == src.ID {
+		t.Fatalf("draft fork: %+v", fork)
+	}
+	ls, _ := st.ListLinks(fork.ID)
+	if len(ls) != 2 || ls[0].URL != "https://github.com/o/r/pull/9" || ls[0].Kind != "github_pr" || ls[1].URL != "https://example.com/doc" {
+		t.Fatalf("fork links: %+v", ls)
+	}
+	order, _ := st.GetBoardOrder()
+	if want := []int64{zzz.ID, src.ID, fork.ID, aaa.ID}; !equalIDs(order["draft"], want) {
+		t.Fatalf("draft order %v want %v", order["draft"], want)
+	}
+	if _, err := os.Stat(svc.Cfg.FreshJobDir(fork)); !os.IsNotExist(err) {
+		t.Errorf("a draft without a transcript needs no job dir: %v", err)
+	}
+
+	// refusals leave nothing behind
+	for _, c := range []struct{ to, name string }{{"orig", "x"}, {"orig-fork", "x"}, {"Bad Slug", "x"}} {
+		if _, err := svc.Fork(src, c.to, c.name); !IsRefusal(err) {
+			t.Errorf("fork to %q: %v", c.to, err)
+		}
+	}
+	if _, err := svc.Fork(src, "long", strings.Repeat("x", MaxNameLen+1)); !errors.Is(err, ErrBadInput) {
+		t.Errorf("long name: %v", err)
+	}
+	if all, _ := st.ListJobs(); len(all) != 4 {
+		t.Fatalf("jobs after refusals: %d", len(all))
+	}
+
+	// a done job with a transcript: the fork is done too, on a copy of it
+	done, _ := svc.Create("done-job", "Done Job", work, "")
+	doneDir := svc.Cfg.FreshJobDir(done)
+	if err := os.MkdirAll(doneDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	transcript := `{"type":"session","version":3,"id":"0199f2a0-0000-7000-8000-000000000001","timestamp":"2026-10-01T10:00:00.000Z","cwd":"` + work + `"}` + "\n" +
+		`{"type":"message","id":"a","parentId":null,"timestamp":"2026-10-01T10:00:02.000Z","message":{"role":"user","content":[{"type":"text","text":"hi https://example.com/from-chat"}]}}` + "\n" +
+		`{"type":"message","id":"b","parentId":"a","timestamp":"2026-10-01T10:00:03.000Z","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"stopReason":"stop"}}` + "\n"
+	sessionFile := filepath.Join(doneDir, "session.jsonl")
+	if err := os.WriteFile(sessionFile, []byte(transcript), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(doneDir, "status.json"), []byte(`{"state":"idle"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpdateJobFields(done.ID, done.Rev, map[string]any{
+		"state": "done", "outcome": "accepted", "pi_session": sessionFile, "started_at": int64(100), "finished_at": int64(200),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	done, _ = st.GetJobBySlug("done-job")
+	f2, err := svc.Fork(done, "done-fork", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f2Dir := svc.Cfg.FreshJobDir(f2)
+	if f2.State != "done" || f2.Outcome != "accepted" || f2.StartedAt != 100 || f2.FinishedAt != 200 || f2.Tmux != "" ||
+		f2.Name != "" || f2.DisplayName() != "done-fork" || f2.PiSession != filepath.Join(f2Dir, "session.jsonl") {
+		t.Fatalf("done fork: %+v", f2)
+	}
+	copied, err := os.ReadFile(f2.PiSession)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotLines, wantLines := strings.Split(strings.TrimSuffix(string(copied), "\n"), "\n"), strings.Split(strings.TrimSuffix(transcript, "\n"), "\n")
+	if len(gotLines) != 3 || gotLines[0] == wantLines[0] || !strings.Contains(gotLines[0], `"parentSession":"`+sessionFile+`"`) ||
+		gotLines[1] != wantLines[1] || gotLines[2] != wantLines[2] {
+		t.Fatalf("copied transcript:\n%s", copied)
+	}
+	if _, err := os.Stat(filepath.Join(f2Dir, "status.json")); !os.IsNotExist(err) {
+		t.Error("status.json must not be copied")
+	}
+	if back, _ := os.ReadFile(sessionFile); string(back) != transcript {
+		t.Error("the original transcript changed")
+	}
+	if off, err := st.GetKV(scanOffsetKey(f2.ID)); err != nil || off != strconv.Itoa(len(copied)) {
+		t.Errorf("fork scan offset %q %v (file is %d bytes)", off, err, len(copied))
+	}
+	order, _ = st.GetBoardOrder()
+	if want := []int64{done.ID, f2.ID}; !equalIDs(order["done"], want) {
+		t.Fatalf("done order %v want %v", order["done"], want)
+	}
+
+	// an archived original is refused
+	if err := svc.Archive(done); err != nil {
+		t.Fatal(err)
+	}
+	arch, err := st.GetJobByID(done.ID)
+	if err != nil || !arch.Archived() {
+		t.Fatalf("archived original: %+v %v", arch, err)
+	}
+	if _, err := svc.Fork(arch, "arch-fork", ""); !IsRefusal(err) {
+		t.Errorf("archived: %v", err)
+	}
+
+	// an open job whose tools cannot be resolved, or whose dir is gone, is
+	// refused before anything is made
+	open, _ := svc.Create("open-job", "", work, "")
+	if _, err := st.UpdateJobFields(open.ID, open.Rev, map[string]any{"state": "working", "started_at": int64(1000), "tmux": "drv-open-job-0"}); err != nil {
+		t.Fatal(err)
+	}
+	open, _ = st.GetJobBySlug("open-job")
+	noPi := &Service{Store: st, Cfg: Config{Home: home, DefaultDir: work, PiBin: filepath.Join(home, "no-such-pi")}, Tmux: NewTmux()}
+	if _, err := noPi.Fork(open, "open-fork", ""); !IsRefusal(err) {
+		t.Errorf("no pi: %v", err)
+	}
+	gone := &store.Job{}
+	*gone = *open
+	gone.Dir = filepath.Join(work, "gone")
+	if _, err := svc.Fork(gone, "open-fork", ""); !IsRefusal(err) {
+		t.Errorf("gone dir: %v", err)
+	}
+	if _, err := st.GetJobBySlug("open-fork"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a refused fork must not exist: %v", err)
+	}
+}
+
+func equalIDs(a, b []int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

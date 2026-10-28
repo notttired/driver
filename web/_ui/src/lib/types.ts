@@ -132,6 +132,15 @@ export interface CreateJobBody {
   model?: string;
 }
 
+/** POST /api/job/fork: copy a job under a new slug and name; answers with the copy's JobForm */
+export interface ForkJobBody {
+  slug: string;
+  /** the copy's slug (slugified from `name`) */
+  to: string;
+  /** what the board calls the copy */
+  name: string;
+}
+
 export interface HealthResponse {
   ok: boolean;
   pid: number;

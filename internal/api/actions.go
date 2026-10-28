@@ -106,6 +106,37 @@ func (a *API) jobRename(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "slug": to})
 }
 
+// jobFork is POST /api/job/fork {slug, to, name}: a copy of the job under a
+// new slug and name, in the same column; answers with the copy's form.
+func (a *API) jobFork(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Slug string `json:"slug"`
+		To   string `json:"to"`
+		Name string `json:"name"`
+	}
+	if !decodePost(w, r, &req) {
+		return
+	}
+	j, err := a.Svc.Lookup(req.Slug)
+	if err != nil {
+		writeFailure(w, "fork", err)
+		return
+	}
+	fork, err := a.Svc.Fork(j, req.To, req.Name)
+	if err != nil {
+		log.Printf("fork %s: refused: %v", req.Slug, err)
+		writeFailure(w, "fork", err)
+		return
+	}
+	f, err := a.formFor(fork)
+	if err != nil {
+		writeFailure(w, "fork", err)
+		return
+	}
+	log.Printf("fork %s → %s", req.Slug, fork.Slug)
+	writeJSON(w, http.StatusOK, f)
+}
+
 func (a *API) jobNotes(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Slug string `json:"slug"`

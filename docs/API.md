@@ -78,6 +78,7 @@ Within one display state the array order IS the column order (see `/api/reorder`
 | `POST /api/reorder` | body `{"column": "draft\|working\|blocked\|done", "slugs": string[]}` — the column's full intended order; slugs whose display state no longer matches are dropped silently | unknown column |
 | `POST /api/job/color` | `{"slug", "color"}`; `""` clears; allowed in every state | unknown colour (400) |
 | `POST /api/job/rename` | `{"slug", "to", "name"?}` → `{"ok": true, "slug": "<to>"}`: `to` is the new slug (rules below), `name` the new display name (whitespace-collapsed, ≤ 200 characters; `""` or absent = the job goes by its slug). Either may stay as it is. Allowed in every state; when the slug changes on a live job its tmux session is renamed too | taken · invalid · name too long (400) |
+| `POST /api/job/fork` | `{"slug", "to", "name"?}` → the fork's `JobForm`: a copy of the job — dir, model, colour, notes, links, and its conversation (the session file copied under a fresh session id, `parentSession` naming the original's) — as slug `to`, named `name` (same rules as rename), placed in the original's column right after it. A not-started draft's fork is a draft; a done job's fork is done (reactivate it to carry on from where the original stood); an open job's fork (ready, working, blocked) gets its own tmux session and pi resumed on the copied conversation, keeps the original's column until its own pi reports, and answers after that session is up (the start timeout applies). Archived jobs cannot be forked — unarchive first | archived · slug taken · invalid slug · the original's own slug · name too long (400) · for an open job: dir gone · pi or tmux not found · tmux failure (text) |
 | `POST /api/job/notes` | `{"slug", "text"}`; full replace, allowed in every state | > 64000 runes |
 | `POST /api/job/links` | `{"slug", "op": "add", "url"}` → `{"ok": true, "link": WebLink}`; `{"slug", "op": "remove", "id"}` → `{"ok": true}`. The daemon adds links on its own too: every URL in your messages and in pi's replies, and the PR a `gh pr create` prints (docs/DESIGN.md "Link detection") | bad URL (must be http/https) · duplicate url |
 | `POST /api/job/open` | open the job's directory in the editor: `DRIVER_EDITOR` with the dir appended, else `code <dir>`, else `open -b com.microsoft.VSCode <dir>` (⌘-click on a card); allowed in every state, no state write | dir missing/not a directory · the editor command failed (its first output line) · it did not return within 15s |
@@ -85,8 +86,9 @@ Within one display state the array order IS the column order (see `/api/reorder`
 
 Slug rules: `^[a-z0-9][a-z0-9-]{0,63}$`, unique among non-archived jobs.
 
-`POST /api/queue` can take seconds (tmux + pi startup). The client uses a longer
-timeout for it; a client-side timeout is not a failed start.
+`POST /api/queue` (and `/api/job/fork` of an open job) can take seconds (tmux +
+pi startup). The client uses a longer timeout for them; a client-side timeout
+is not a failed start.
 
 ## Job form
 

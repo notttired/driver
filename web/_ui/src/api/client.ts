@@ -6,6 +6,7 @@ import type {
   AddLinkResult,
   CreateJobBody,
   DirsResponse,
+  ForkJobBody,
   HealthResponse,
   JobForm,
   ModelsResponse,
@@ -179,3 +180,9 @@ export const saveJobForm = (body: SaveFormBody) =>
 
 /** Make a not-started draft; queueJob then opens pi in it. */
 export const createJob = (body: CreateJobBody) => postJSON<JobForm>("/api/job/create", body);
+
+/** Copy a job — its conversation, notes, links, directory and model — as a new
+ *  job in the same column. An open job's copy gets its own pi, so this can
+ *  take as long as a start. */
+export const forkJob = (body: ForkJobBody) =>
+  postJSON<JobForm>("/api/job/fork", body, { timeoutMs: SUBMIT_TIMEOUT_MS });

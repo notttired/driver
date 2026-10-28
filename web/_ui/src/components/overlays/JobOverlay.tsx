@@ -23,6 +23,7 @@ import type { JobForm, ModelsResponse, WebJob } from "../../lib/types.ts";
 import { readLS, writeLS } from "../../hooks/useLocalStorage.ts";
 import { DEFAULT_SPLIT, MAX_SPLIT, MIN_SPLIT, SPLIT_KEY, clampSplit, splitFromPointer } from "../../lib/split.ts";
 import { ConversationPanel } from "./ConversationPanel.tsx";
+import { ForkButton, ForkRow, suggestForkName, useForkControl, type ForkControlState } from "./ForkControl.tsx";
 import { LaunchForm } from "./LaunchForm.tsx";
 import { LinksPanel } from "./LinksPanel.tsx";
 import { NotesPanel } from "./NotesPanel.tsx";
@@ -55,8 +56,8 @@ export interface JobOverlayProps {
  * working, blocked, done), the launch form (dir, model, START) for a
  * not-started draft; sidebar: notes and the conversation record side by
  * side, links beneath. The body is keyed by slug — a rename or a different job
- * is a fresh mount — while the rename control and the auto-close rule live
- * up here where they survive that remount.
+ * is a fresh mount — while the rename and fork controls and the auto-close
+ * rule live up here where they survive that remount.
  */
 export function JobOverlay({ openKey, board, mutate, onClose, onRenamed, onToast }: JobOverlayProps) {
   const open = openKey !== null;
@@ -100,6 +101,22 @@ export function JobOverlay({ openKey, board, mutate, onClose, onRenamed, onToast
     { open, beforeSubmit: flushAll },
   );
 
+  // the fork box opens on "<name> fork" (then "fork 2", …): a name no job on
+  // the board has; a landed fork becomes the open job
+  const byKey = board.byKey;
+  const baseName = job?.name || job?.display_slug || slug || "";
+  const forkName = useMemo(() => suggestForkName(baseName, (s) => byKey.has(s)), [baseName, byKey]);
+  const fork = useForkControl(
+    slug,
+    forkName,
+    (to, name) => {
+      void board.refetch();
+      onRenamed(to);
+      onToast(`forked as ${name}`);
+    },
+    { open, beforeSubmit: flushAll },
+  );
+
   return (
     <Overlay id="job-overlay" open={open} priority={ESC_PRIORITY.job} onClose={onClose} panelClassName="job-panel">
       {slug !== null ? (
@@ -113,6 +130,7 @@ export function JobOverlay({ openKey, board, mutate, onClose, onRenamed, onToast
           onClose={onClose}
           onToast={onToast}
           rename={rename}
+          fork={fork}
           registerFormFlush={registerFormFlush}
           registerNotesFlush={registerNotesFlush}
           flushAll={flushAll}
@@ -131,6 +149,7 @@ interface JobPanelProps {
   onClose: () => void;
   onToast: (message: string) => void;
   rename: RenameControlState;
+  fork: ForkControlState;
   registerFormFlush: RegisterFlush;
   registerNotesFlush: RegisterFlush;
   flushAll: Flush;
@@ -145,6 +164,7 @@ function JobPanel({
   onClose,
   onToast,
   rename,
+  fork,
   registerFormFlush,
   registerNotesFlush,
   flushAll,
@@ -322,6 +342,7 @@ function JobPanel({
           </span>
         ) : null}
         <RenameButton state={rename} visible={!archived} />
+        <ForkButton state={fork} visible={!archived} />
         <SwatchStrip
           compact
           value={job?.color ?? form?.color}
@@ -351,6 +372,7 @@ function JobPanel({
         </button>
       </div>
       <RenameRow state={rename} />
+      <ForkRow state={fork} column={effState} />
       <div className="job-body" ref={bodyRef} style={{ "--job-split": String(split) } as React.CSSProperties}>
         <div className="job-main">
           {formError ? (

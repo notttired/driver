@@ -120,8 +120,12 @@ URL in your messages to pi and in its replies lands in the job's links by
 itself (tool output is not scanned, apart from the PR a `gh pr create` prints);
 add others by hand, or remove any with ✕. Click or ⌘-click a link to open it in
 your browser.
-Rename (the name on the card; the slug follows) and recolour cards from the
-overlay; ⌘K searches names, slugs and directories. A
+Rename (the name on the card; the slug follows), recolour and **fork** cards
+from the overlay: a fork is a copy — conversation, notes, links, directory,
+model — under the name you give it, placed beside the original in its column;
+an open job's fork gets its own pi, resumed on the copied conversation, and a
+done job's fork is done until you reactivate it. ⌘K searches names, slugs and
+directories. A
 notification arrives when a job turns blocked or its pi exits. The `⊞ tabs`
 button lists your browser's open tabs; click one to attach it. The first time,
 macOS asks whether driver may control Google Chrome — allow it, or flip it later

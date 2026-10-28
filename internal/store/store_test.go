@@ -190,6 +190,49 @@ func TestLinks(t *testing.T) {
 
 // TestMigrateV3 upgrades a v2 database by hand: the label column goes, the
 // links stay, the scan offsets are forgotten and other kv rows are kept.
+func TestCopyLinks(t *testing.T) {
+	s := open(t)
+	from, _ := s.CreateJob(&Job{Slug: "from"})
+	to, _ := s.CreateJob(&Job{Slug: "to"})
+	pr, _, _ := s.AddLink(from, "github_pr", "https://github.com/o/r/pull/7")
+	if err := s.SetLinkStatus(pr.ID, "merged", 100); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.AddLink(from, "url", "https://example.com/doc"); err != nil {
+		t.Fatal(err)
+	}
+	// the copy already has one of them: that one is left alone, not doubled
+	if _, _, err := s.AddLink(to, "url", "https://example.com/doc"); err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.CopyLinks(from, to)
+	if err != nil || n != 1 {
+		t.Fatalf("copy: %d %v", n, err)
+	}
+	ls, _ := s.ListLinks(to)
+	if len(ls) != 2 {
+		t.Fatalf("copied links: %d", len(ls))
+	}
+	byURL := map[string]*Link{}
+	for _, l := range ls {
+		byURL[l.URL] = l
+	}
+	got := byURL["https://github.com/o/r/pull/7"]
+	if got == nil || got.Kind != "github_pr" || got.Status != "merged" || got.StatusAt != 100 || got.CreatedAt != pr.CreatedAt || got.JobID != to {
+		t.Fatalf("copied PR link: %+v", got)
+	}
+	if n, err := s.CopyLinks(from, to); err != nil || n != 0 {
+		t.Fatalf("second copy: %d %v", n, err)
+	}
+	// the original keeps its own rows
+	if ls, _ := s.ListLinks(from); len(ls) != 2 {
+		t.Fatalf("original links: %d", len(ls))
+	}
+	if n, err := s.CopyLinks(to+99, to); err != nil || n != 0 {
+		t.Fatalf("copy from nothing: %d %v", n, err)
+	}
+}
+
 func TestMigrateV3(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v2.db")
 	db, err := sql.Open("sqlite", "file:"+path)

@@ -55,6 +55,22 @@ func (s *Store) AddLink(jobID int64, kind, url string) (link *Link, created bool
 	return l, true, nil
 }
 
+// CopyLinks gives job to every link of job from that it does not have yet —
+// kind, url, status and timestamps carried over, so a fork's links read
+// exactly as the original's. It returns how many were added.
+func (s *Store) CopyLinks(from, to int64) (int, error) {
+	res, err := s.db.Exec(`INSERT OR IGNORE INTO links (job_id, kind, url, status, status_at, created_at)
+		SELECT ?, kind, url, status, status_at, created_at FROM links WHERE job_id = ? ORDER BY created_at, id`, to, from)
+	if err != nil {
+		return 0, fmt.Errorf("copy links %d → %d: %w", from, to, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("copy links %d → %d: %w", from, to, err)
+	}
+	return int(n), nil
+}
+
 func (s *Store) linkByURL(jobID int64, url string) (*Link, error) {
 	l, err := scanLink(s.db.QueryRow(`SELECT `+linkColumns+` FROM links WHERE job_id = ? AND url = ?`, jobID, url))
 	if errors.Is(err, sql.ErrNoRows) {

@@ -48,11 +48,12 @@ func Observe(j *store.Job, live bool, st *pi.Status, now int64) Observation {
 	}
 	if st == nil {
 		if now-j.StartedAt < startingGrace {
-			// a just-opened job keeps its column (ready stays in DRAFT) while
-			// pi boots and the extension writes its first status
+			// a just-opened job keeps its column (ready stays in DRAFT, a
+			// blocked job's fork in BLOCKED) while pi boots and the extension
+			// writes its first status
 			state := "working"
-			if j.State == "ready" {
-				state = "ready"
+			if j.State == "ready" || j.State == "blocked" {
+				state = j.State
 			}
 			return Observation{State: state, Pi: &PiInfo{State: "starting", TS: j.StartedAt}}
 		}

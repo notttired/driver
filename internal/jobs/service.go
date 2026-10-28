@@ -7,10 +7,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"driver/internal/pi"
 	"driver/internal/store"
 	"driver/internal/util"
 )
@@ -424,6 +426,158 @@ func (s *Service) Rename(j *store.Job, to, name string) (string, error) {
 }
 
 // SetColor sets or clears ("") the card colour.
+// Fork copies j as a new job — slug to, name name, the same dir, model,
+// colour, spec, notes and links, and a copy of its conversation when it has
+// one — and places it in j's column right after it. A not-started draft's
+// fork is a draft; a done job's fork is done (reactivate it to carry on from
+// where the original stood); an open job's fork (ready, working or blocked)
+// gets its own tmux session and pi, resumed on the copied conversation, and
+// keeps the original's stored state until its own pi reports.
+func (s *Service) Fork(j *store.Job, to, name string) (*store.Job, error) {
+	to = strings.TrimSpace(to)
+	if !ValidSlug(to) {
+		return nil, Refuse("invalid slug %q (want ^[a-z0-9][a-z0-9-]{0,63}$)", util.OneLine(to, 40))
+	}
+	name, err := CleanName(name)
+	if err != nil {
+		return nil, err
+	}
+	if j.Archived() {
+		return nil, Refuse("job %s is archived — unarchive it first", j.ArchivedName)
+	}
+	if to == j.Slug {
+		return nil, Refuse("slug %q is the original's — a fork needs its own", to)
+	}
+	launch := j.State == "ready" || j.State == "working" || j.State == "blocked"
+	var piBin string
+	if launch {
+		if j.Dir == "" || !util.IsDir(j.Dir) {
+			return nil, Refuse("dir %q is gone", j.Dir)
+		}
+		if piBin, err = s.resolveTools(); err != nil {
+			return nil, err
+		}
+	}
+	fork := &store.Job{Slug: to, Name: name, Dir: j.Dir, Model: j.Model, Color: j.Color, Spec: j.Spec, Notes: j.Notes}
+	if _, err := s.Store.CreateJob(fork); err != nil {
+		if errors.Is(err, store.ErrSlugTaken) {
+			return nil, Refuse("slug %q is taken", to)
+		}
+		return nil, err
+	}
+	// from here on a failure must not leave a half-made job behind
+	jobDir := s.Cfg.FreshJobDir(fork)
+	_, statErr := os.Stat(jobDir)
+	ownDir := os.IsNotExist(statErr)
+	sess := ""
+	undo := func(err error) (*store.Job, error) {
+		if sess != "" {
+			_ = s.Tmux.KillSession(sess)
+		}
+		if ownDir {
+			_ = os.RemoveAll(jobDir)
+		}
+		_ = s.Store.DeleteKV(scanOffsetKey(fork.ID))
+		if derr := s.Store.DeleteJob(fork.ID); derr != nil {
+			log.Printf("fork %s → %s: %v; and the half-made job could not be removed: %v", j.Slug, to, err, derr)
+		}
+		return nil, err
+	}
+	if _, err := s.Store.CopyLinks(j.ID, fork.ID); err != nil {
+		return undo(err)
+	}
+	fields := map[string]any{}
+	sessionFile := ""
+	if j.PiSession != "" {
+		if fi, err := os.Stat(j.PiSession); err == nil && fi.Mode().IsRegular() {
+			if err := os.MkdirAll(jobDir, 0o755); err != nil {
+				return undo(fmt.Errorf("mkdir %s: %w", jobDir, err))
+			}
+			sessionFile = filepath.Join(jobDir, "session.jsonl")
+			if err := pi.ForkSession(j.PiSession, sessionFile, time.Now()); err != nil {
+				return undo(err)
+			}
+			// the copied transcript's links came along above (as the original
+			// has them now, removals included): the fork's scanner starts at
+			// its end rather than reading it again
+			if fi, err := os.Stat(sessionFile); err == nil {
+				_ = s.Store.SetKV(scanOffsetKey(fork.ID), strconv.FormatInt(fi.Size(), 10))
+			}
+			fields["pi_session"] = sessionFile
+		}
+	}
+	switch {
+	case launch:
+		sess = FreshSessionName(fork)
+		if err := s.clearStaleSession(sess); err != nil {
+			sess = ""
+			return undo(Refuse("%v", err))
+		}
+		if err := os.MkdirAll(jobDir, 0o755); err != nil {
+			return undo(fmt.Errorf("mkdir %s: %w", jobDir, err))
+		}
+		if sessionFile == "" {
+			sessionFile = filepath.Join(jobDir, "session.jsonl")
+		}
+		cmd := s.Cfg.LaunchCommand(fork, piBin, jobDir)
+		if err := s.Tmux.NewSession(sess, fork.Dir, fork.Slug, fork.Slug, cmd); err != nil {
+			return undo(Refuse("%v", err))
+		}
+		fields["tmux"] = sess
+		fields["pi_session"] = sessionFile
+		fields["started_at"] = time.Now().Unix()
+		fields["state"] = j.State
+	case j.State == "done":
+		fields["state"] = "done"
+		fields["outcome"] = j.Outcome
+		fields["started_at"] = j.StartedAt
+		fields["finished_at"] = j.FinishedAt
+	}
+	if len(fields) > 0 {
+		if _, err := s.Store.UpdateJobFields(fork.ID, fork.Rev, fields); err != nil {
+			return undo(mapStoreErr(err))
+		}
+	}
+	if err := s.placeAfter(DisplayState(j), j.ID, fork.ID); err != nil {
+		// the fork exists and is in the right column; only its place in it is lost
+		log.Printf("fork %s → %s: board order: %v", j.Slug, to, err)
+	}
+	return s.Store.GetJobByID(fork.ID)
+}
+
+// placeAfter stores column's order as the board shows it now, with newID
+// slotted in right after srcID (at the end when srcID is not in the column).
+func (s *Service) placeAfter(column string, srcID, newID int64) error {
+	all, err := s.Store.ListJobs()
+	if err != nil {
+		return err
+	}
+	stored, err := s.Store.GetBoardOrder()
+	if err != nil {
+		return err
+	}
+	var members []int64
+	for _, j := range all {
+		if j.ID != newID && DisplayState(j) == column {
+			members = append(members, j.ID)
+		}
+	}
+	ordered := store.ApplyColumnOrder(members, stored[column])
+	out := make([]int64, 0, len(ordered)+1)
+	placed := false
+	for _, id := range ordered {
+		out = append(out, id)
+		if id == srcID {
+			out = append(out, newID)
+			placed = true
+		}
+	}
+	if !placed {
+		out = append(out, newID)
+	}
+	return s.Store.SetBoardColumn(column, out)
+}
+
 func (s *Service) SetColor(j *store.Job, color string) error {
 	if color != "" && !ValidColor(color) {
 		return fmt.Errorf("unknown color %s: %w", util.OneLine(color, 24), ErrBadInput)
