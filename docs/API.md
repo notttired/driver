@@ -67,8 +67,8 @@ Within one display state the array order IS the column order (see `/api/reorder`
 
 | route | effect | refusals (409) |
 |---|---|---|
-| `POST /api/queue` | **start**: open the tmux session + pi at its prompt (stored `ready`, still `draft` on the board until pi runs on the first message); answers after the session is up | already open · not a draft · dir missing/not a directory · pi or tmux not found · tmux failure (text) |
-| `POST /api/stop` | send Escape to the pane; no state write | not working/blocked · no live session |
+| `POST /api/queue` | **start**: open the tmux session with the pane at its prompt (`driver pane` around `pi -p`, or pi's TUI under `DRIVER_PI_MODE=tui`; stored `ready`, still `draft` on the board until pi runs on the first message); answers after the session is up | already open · not a draft · dir missing/not a directory · pi or tmux not found · tmux failure (text) |
+| `POST /api/stop` | send Escape to the pane (which stops the running pi with SIGTERM); no state write | not working/blocked · no live session |
 | `POST /api/done` | kill session, state done (allowed for an open, unbriefed draft) | not started · done |
 | `POST /api/kill` | kill session, back to not started ("cancel") | not started |
 | `POST /api/reactivate` | relaunch pi on the same session file, state working | not done · archived · dir gone |

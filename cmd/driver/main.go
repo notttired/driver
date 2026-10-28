@@ -1,6 +1,7 @@
 // Command driver is the job board's daemon: `driver serve [-p N]` runs the
-// tick loop and the web board on 127.0.0.1:<port>; `driver version` prints
-// the build version.
+// tick loop and the web board on 127.0.0.1:<port>; `driver pane … -- <pi> -p …`
+// is the prompt loop a job's tmux pane runs around pi's print mode
+// (internal/pane); `driver version` prints the build version.
 package main
 
 import (
@@ -17,6 +18,7 @@ import (
 	"driver/ext"
 	"driver/internal/api"
 	"driver/internal/jobs"
+	"driver/internal/pane"
 	"driver/internal/store"
 	"driver/internal/util"
 	"driver/web"
@@ -39,6 +41,11 @@ func main() {
 		if err := serve(os.Args[2:]); err != nil {
 			log.Fatalf("driver: %v", err)
 		}
+	case "pane":
+		if err := pane.Main(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "driver pane: %v\n", err)
+			os.Exit(1)
+		}
 	case "version", "-v", "--version":
 		fmt.Println(version)
 	case "help", "-h", "--help":
@@ -51,7 +58,9 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: driver serve [-p PORT]   (also DRIVER_PORT; default 7781)\n       driver version")
+	fmt.Fprintln(os.Stderr, "usage: driver serve [-p PORT]   (also DRIVER_PORT; default 7781)\n"+
+		"       driver pane --title NAME --session FILE [--model MODEL] -- <pi> -p <flags>   (what a job's tmux pane runs)\n"+
+		"       driver version")
 }
 
 func serve(args []string) error {
@@ -109,7 +118,7 @@ func serve(args []string) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("driver %s serving http://127.0.0.1:%d (home %s, db %s, pi %s)", version, port, cfg.Home, cfg.DBPath, cfg.PiBin)
+	log.Printf("driver %s serving http://127.0.0.1:%d (home %s, db %s, pi %s in %s mode)", version, port, cfg.Home, cfg.DBPath, cfg.PiBin, cfg.PiMode)
 	errc := make(chan error, 1)
 	go func() { errc <- web.Serve(ln, h) }()
 	select {

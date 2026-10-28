@@ -1,6 +1,9 @@
 // ext/driver.ts — the pi extension every driver job loads with `-e`. It tells
 // the daemon what pi is doing by writing <DRIVER_JOB_DIR>/status.json, which
-// the tick loop reads (docs/DESIGN.md "State derivation"). A no-op unless
+// the tick loop reads (docs/DESIGN.md "State derivation"). Under driver's
+// pane (`pi -p` once per prompt, the default launch) it covers the run —
+// working, the tool in flight — and the pane writes the states between runs;
+// under pi's interactive UI it covers everything. A no-op unless
 // DRIVER_JOB_DIR is set, so a pi started by hand with this file loaded does
 // nothing. Nothing long-lived here: no timers, no sockets — one file write per
 // lifecycle event, and never a throw into pi.
@@ -55,11 +58,19 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
-  // session_start → ready for a session nobody has spoken in yet (a job just
-  // opened; the board keeps it in DRAFT until the first message starts an
-  // agent run), idle for a resumed one (pi waits on its operator: blocked).
+  // Print mode (what the pane runs) and json mode have no UI: a session_start
+  // there is always followed by one run, and pi exits once it is done. The
+  // pane writes ready, idle, aborted and exited around the run, so here the
+  // run reads working from its first moment and session_shutdown leaves
+  // status.json alone.
+  const headless = (ctx: ExtensionContext): boolean => ctx.mode === "print" || ctx.mode === "json";
+
+  // session_start → working in print mode; otherwise ready for a session
+  // nobody has spoken in yet (a job just opened; the board keeps it in DRAFT
+  // until the first message starts an agent run), idle for a resumed one (pi
+  // waits on its operator: blocked).
   pi.on("session_start", (_e, ctx) => {
-    state = briefed(ctx) ? "idle" : "ready";
+    state = headless(ctx) ? "working" : briefed(ctx) ? "idle" : "ready";
     running = false;
     dialogs = 0;
     tools.clear();
@@ -112,8 +123,10 @@ export default function (pi: ExtensionAPI) {
   });
 
   // Fires for quit AND for reload / new / resume / fork; the session_start
-  // that follows the latter rewrites idle within milliseconds.
+  // that follows the latter rewrites idle within milliseconds. In print mode
+  // every run ends here, and the pane — not pi — says what comes next.
   pi.on("session_shutdown", (_e, ctx) => {
+    if (headless(ctx)) return;
     state = "exited";
     write(ctx);
   });
