@@ -211,9 +211,9 @@ func TestPRScanner(t *testing.T) {
 	}
 }
 
-// TestUserLinkScanner: every URL in the operator's own messages becomes a
-// link of its detected kind; the agent's text is not scanned.
-func TestUserLinkScanner(t *testing.T) {
+// TestConversationLinkScanner: every URL in your messages and in pi's
+// replies becomes a link of its detected kind; tool output is not scanned.
+func TestConversationLinkScanner(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -226,7 +226,8 @@ func TestUserLinkScanner(t *testing.T) {
 	lines := []string{
 		`{"type":"session","version":3}`,
 		`{"type":"message","id":"u1","message":{"role":"user","content":[{"type":"text","text":"ticket https://linear.app/t/issue/X-1 and the PR https://github.com/o/r/pull/5. notes: (https://example.com/doc)"},{"type":"image","data":"x"}],"timestamp":1}}`,
-		`{"type":"message","id":"a1","message":{"role":"assistant","content":[{"type":"text","text":"reading https://example.com/the-agents-own-url"}]}}`,
+		`{"type":"message","id":"a1","message":{"role":"assistant","content":[{"type":"thinking","thinking":"https://example.com/thinking-is-private"},{"type":"text","text":"Reading https://example.com/pi-said-this first."},{"type":"toolCall","id":"c9","name":"bash","arguments":{"command":"curl -s https://example.com/in-the-command"}}]}}`,
+		`{"type":"message","id":"r1","message":{"role":"toolResult","toolCallId":"c9","toolName":"bash","content":[{"type":"text","text":"<a href=https://example.com/tool-output-is-not-scanned>"}]}}`,
 		`{"type":"message","id":"u2","message":{"role":"user","content":"https://linear.app/t/issue/X-1 again, plus http://host.local:8080/x","timestamp":2}}`,
 	}
 	os.WriteFile(sess, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
@@ -243,6 +244,7 @@ func TestUserLinkScanner(t *testing.T) {
 		"linear https://linear.app/t/issue/X-1",
 		"github_pr https://github.com/o/r/pull/5",
 		"url https://example.com/doc",
+		"url https://example.com/pi-said-this",
 		"url http://host.local:8080/x",
 	}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
@@ -252,7 +254,53 @@ func TestUserLinkScanner(t *testing.T) {
 	if err := sc.scan(j); err != nil {
 		t.Fatal(err)
 	}
-	if ls, _ := st.ListLinks(j.ID); len(ls) != 4 {
+	if ls, _ := st.ListLinks(j.ID); len(ls) != 5 {
 		t.Fatalf("rescan duplicated: %d", len(ls))
+	}
+}
+
+// TestScanGeneration: offsets saved by an older scanner generation are
+// forgotten once, so a widened scanner rereads what is already on disk; the
+// same generation continues where it left off.
+func TestScanGeneration(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	j := &store.Job{Slug: "g", State: "working"}
+	st.CreateJob(j)
+	j.PiSession = filepath.Join(t.TempDir(), "session.jsonl")
+	os.WriteFile(j.PiSession, []byte(`{"type":"message","message":{"role":"user","content":"see https://example.com/once"}}`+"\n"), 0o644)
+	if err := newSessionScanner(st).scan(j); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := st.GetKV(scanGenerationKey); v != scanGeneration {
+		t.Fatalf("generation %q not recorded", v)
+	}
+	unlink := func() {
+		ls, _ := st.ListLinks(j.ID)
+		for _, l := range ls {
+			st.RemoveLink(j.ID, l.ID)
+		}
+	}
+	// same generation: a fresh scanner starts at the saved offset and sees nothing new
+	unlink()
+	if err := newSessionScanner(st).scan(j); err != nil {
+		t.Fatal(err)
+	}
+	if ls, _ := st.ListLinks(j.ID); len(ls) != 0 {
+		t.Fatalf("same generation reread the file: %+v", ls)
+	}
+	// an older generation on disk: the offset is forgotten and the link comes back
+	st.SetKV(scanGenerationKey, "1")
+	if err := newSessionScanner(st).scan(j); err != nil {
+		t.Fatal(err)
+	}
+	if ls, _ := st.ListLinks(j.ID); len(ls) != 1 || ls[0].URL != "https://example.com/once" {
+		t.Fatalf("older generation did not reread: %+v", ls)
+	}
+	if v, _ := st.GetKV(scanGenerationKey); v != scanGeneration {
+		t.Fatalf("generation %q after reread", v)
 	}
 }

@@ -26,7 +26,9 @@ function urlHost(url: string): string {
  * The sidebar's link list: add by URL, remove, PR status, and a picker over
  * the browser's open tabs (GET /api/tabs) so a page you are looking at can
  * be attached with one click. Links have no labels — a chip reads as the
- * PR number or the host — and the daemon adds the URLs you send pi by itself.
+ * PR number or the host — and the daemon adds the URLs in your messages and
+ * pi's replies by itself. Chip and URL are both anchors: click or ⌘-click
+ * opens the page in the browser (Driver.app routes it there).
  */
 export function LinksPanel({ slug, links, onChanged }: LinksPanelProps) {
   const [url, setUrl] = useState("");
@@ -103,9 +105,9 @@ export function LinksPanel({ slug, links, onChanged }: LinksPanelProps) {
           {links.map((l) => (
             <li key={l.id} className="link-row">
               <LinkChip link={l} />
-              <span className="link-text" title={l.url}>
+              <a className="link-text" href={l.url} target="_blank" rel="noreferrer" title={`${l.url}\nclick or ⌘-click: open in the browser`}>
                 {l.url.replace(/^https?:\/\//, "")}
-              </span>
+              </a>
               {l.kind === "github_pr" && l.status ? <span className={`pr-status pr-${l.status}`}>{l.status}</span> : null}
               <button
                 className="btn ghost link-remove"
@@ -120,7 +122,7 @@ export function LinksPanel({ slug, links, onChanged }: LinksPanelProps) {
           ))}
         </ul>
       ) : (
-        <div className="link-empty">no links yet — URLs you send pi, and PRs it opens, land here</div>
+        <div className="link-empty">no links yet — URLs in your messages and pi's replies land here</div>
       )}
       <div className="link-add">
         <input

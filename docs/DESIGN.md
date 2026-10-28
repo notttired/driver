@@ -34,9 +34,12 @@ usage, accounts, self-update) is left out on purpose.
 - Links: URLs with a detected kind (GitHub PR, GitHub, Slack, Linear, other)
   and no labels — a chip reads as the PR number or the host. GitHub PR links
   show open/draft/merged/closed, polled with `gh`. Attached by hand (typed, or
-  picked from the browser's tabs) or by the daemon: every URL in a message you
-  send pi, and the PR the agent opens (`gh pr create` in a bash tool call). What
-  you hand the agent is what the job is about, so it belongs on the card.
+  picked from the browser's tabs) or by the daemon: every URL in the
+  conversation — your messages and pi's replies — and the PR the agent opens
+  (`gh pr create` in a bash tool call). What you hand the agent and what it
+  hands back is what the job is about, so it belongs on the card. Chips, the
+  URLs in the links panel and the URLs in the pane open in the browser (click
+  or ⌘-click; the pane wants ⌘, as any terminal does).
 - macOS notifications when a job turns blocked (needs you) or its pi exits.
 - ⌘-click on a card (or on the dir in the overlay head) opens the job's
   directory in VS Code: the daemon runs `code <dir>` (`DRIVER_EDITOR` swaps the
@@ -208,16 +211,21 @@ appended since the offset saved in `kv` (`scan:<job id>`) and parses complete
 JSONL lines. Two kinds of `message` entry yield links, both attached idempotently
 on `(job_id, url)` with the kind derived from the URL:
 
-- role `user` — your own messages to pi: every `http(s)://` URL in their text
-  blocks (string content too), trailing sentence punctuation and unbalanced
+- role `user` and role `assistant` — the conversation: every `http(s)://` URL
+  in their `text` blocks (string content too; `thinking` and tool-call
+  arguments are left out), trailing sentence punctuation and unbalanced
   closing brackets stripped, so `(https://x/a).` is `https://x/a` while a
-  wiki-style `…/Foo_(bar)` keeps its parenthesis. Only your messages count: the
-  agent's own text and tool output are not scanned (a `curl` of a page would
-  otherwise litter the card).
+  wiki-style `…/Foo_(bar)` keeps its parenthesis. Tool output is not scanned
+  (a `curl` of a page would otherwise litter the card) — except:
 - role `assistant` with a `toolCall` block `name == "bash"` whose
   `arguments.command` contains `gh pr create` is remembered; when the matching
   `toolResult` (`toolCallId`) arrives, every
   `https://github.com/<owner>/<repo>/pull/<n>` in its text is a `github_pr` link.
+
+`kv.scanner-generation` names what the scanner looks for (`2`); a daemon that
+finds an older value, or none, forgets every `scan:*` offset once and reads each
+session again from the start, so widening the scanner never misses what is
+already on disk (v3's migration did the same by hand, before the key existed).
 
 Links of kind github_pr whose
 `status_at` is older than 60s are refreshed, at most 3 per tick, with
@@ -234,6 +242,13 @@ frames** are JSON control messages, today only `{"type":"resize","cols":N,"rows"
 from the client. Closing the socket kills the attach process (the tmux session
 lives on). Because tmux's `window-size` is `latest` on this machine, the newest
 client's size wins; the bridge does not fight other attached clients.
+
+URLs in the pane — plain text found by xterm's web-links addon, and OSC 8
+hyperlinks — open in the browser on ⌘-click through `window.open(url, "_blank")`.
+Both addons' default activation opens an *empty* window first and then sets its
+location; in the shell that arrives as `about:blank`, which LaunchServices
+answers with "The application can't be opened. -50" while the link never opens.
+The shell also ignores anything but an http(s) URL in `createWebViewWith`.
 
 ## Board rules (kraken's, trimmed)
 

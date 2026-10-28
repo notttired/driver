@@ -60,7 +60,7 @@ func TestParseEntry(t *testing.T) {
 		t.Fatal("garbage parsed")
 	}
 	e, ok = ParseEntry([]byte(callLine))
-	if !ok || e.Role != "assistant" || len(e.ToolCalls) != 1 {
+	if !ok || e.Role != "assistant" || len(e.ToolCalls) != 1 || e.Text != "opening\n" {
 		t.Fatalf("call: %+v", e)
 	}
 	tc := e.ToolCalls[0]

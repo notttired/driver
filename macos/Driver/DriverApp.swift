@@ -595,16 +595,23 @@ struct BoardWebView: NSViewRepresentable {
         }
 
         // window.open / target=_blank — the board's link chips (a PR's GitHub
-        // page, a Slack thread, a Linear issue). A web view with no UI
-        // delegate drops these SILENTLY; a shell has no tabs, so the default
-        // browser is the only right answer.
+        // page, a Slack thread, a Linear issue) and the URLs in the terminal
+        // pane. A web view with no UI delegate drops these SILENTLY; a shell
+        // has no tabs, so the default browser is the only right answer. Only
+        // a web URL goes out: a bare `window.open()` (what xterm's link addons
+        // do by default — open an empty window, then set its location) lands
+        // here as about:blank, and handing THAT to LaunchServices puts up
+        // "The application can't be opened. -50" while the real URL never
+        // opens. The board now passes the URL in the call; this guard keeps
+        // the alert away whatever a future page does.
         func webView(
             _ webView: WKWebView,
             createWebViewWith configuration: WKWebViewConfiguration,
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
-            if let target = navigationAction.request.url {
+            if let target = navigationAction.request.url,
+               target.scheme?.hasPrefix("http") == true {
                 NSWorkspace.shared.open(target)
             }
             return nil

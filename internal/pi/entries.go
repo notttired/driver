@@ -20,14 +20,14 @@ type ToolResult struct {
 	IsError    bool
 }
 
-// Entry is the part of one session JSONL line driver cares about. For a
-// message entry one of Text (user), ToolCalls (assistant) or Result
-// (toolResult) is set; every other entry type (session, model_change, usage,
+// Entry is the part of one session JSONL line driver cares about. A user
+// entry carries Text, an assistant entry Text and ToolCalls, a toolResult
+// entry Result; every other entry type (session, model_change, usage,
 // compaction, …) parses to Kind != "message" and is skipped by callers.
 type Entry struct {
 	Kind      string // the line's "type"
 	Role      string // message.role: user | assistant | toolResult
-	Text      string // user: the message's text blocks, newline-joined
+	Text      string // user, assistant: the text blocks, newline-joined (thinking left out)
 	ToolCalls []ToolCall
 	Result    *ToolResult
 }
@@ -68,6 +68,7 @@ func ParseEntry(line []byte) (e Entry, ok bool) {
 	case "user":
 		e.Text = textOf(blocks)
 	case "assistant":
+		e.Text = textOf(blocks)
 		for _, b := range blocks {
 			if b.Type != "toolCall" {
 				continue

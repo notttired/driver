@@ -51,3 +51,22 @@ export function linkLabel(link: Pick<WebLink, "kind" | "url">): string {
 export function isHttpUrl(url: string): boolean {
   return /^https?:\/\//i.test(url);
 }
+
+/**
+ * Open a URL outside the board — a new tab in a browser; in Driver.app the
+ * shell routes `window.open` to the default browser. The URL must ride in
+ * the call itself: xterm's link addons by default open an EMPTY window and
+ * then set its location, which reaches the shell as about:blank and ends in
+ * a LaunchServices "-50" alert. Only http(s) goes out.
+ */
+export function openExternal(url: string): boolean {
+  if (!isHttpUrl(url)) return false;
+  window.open(url, "_blank", "noopener,noreferrer");
+  return true;
+}
+
+/** Terminal convention: a URL in the pane opens on ⌘-click (ctrl elsewhere),
+ *  so a click that only focuses the pane never launches a browser. */
+export function isOpenClick(e: Pick<MouseEvent, "metaKey" | "ctrlKey">): boolean {
+  return e.metaKey || e.ctrlKey;
+}

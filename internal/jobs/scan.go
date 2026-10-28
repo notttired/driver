@@ -15,23 +15,36 @@ import (
 func scanOffsetKey(jobID int64) string  { return fmt.Sprintf("scan:%d", jobID) }
 func scanPendingKey(jobID int64) string { return fmt.Sprintf("scan-pending:%d", jobID) }
 
+// scanGeneration names what the scanner looks for. Bump it when that grows:
+// a scanner meeting a different value in kv forgets every saved offset, so
+// each session is read again from its start and nothing already on disk is
+// missed (attaching is idempotent). 1: PR results · 2: + every URL in your
+// messages and pi's replies.
+const scanGeneration = "2"
+
+const scanGenerationKey = "scanner-generation"
+
 // scanStore is the subset of the store the scanner needs.
 type scanStore interface {
 	GetKV(string) (string, error)
 	SetKV(string, string) error
 	DeleteKV(string) error
+	DeleteKVPrefix(string) error
 	AddLink(jobID int64, kind, url string) (*store.Link, bool, error)
 }
 
-// sessionScanner tails each job's session JSONL and attaches links from two
-// places: every URL in the operator's own messages (what you send pi is what
-// the job is about), and the PR URLs printed by the result of a `gh pr create`
-// bash tool call. The byte offset lives in kv (scan:<id>); the ids of PR
-// calls still awaiting a result ride beside it as JSON (scan-pending:<id>) so
-// a restart loses nothing.
+// sessionScanner tails each job's session JSONL and attaches links from the
+// conversation: every URL in your messages and in pi's replies (what you
+// hand the agent and what it hands back is what the job is about), plus the
+// PR URLs printed by the result of a `gh pr create` bash tool call. Other
+// tool output is not scanned — a curl of a page would litter the card. The
+// byte offset lives in kv (scan:<id>); the ids of PR calls still awaiting a
+// result ride beside it as JSON (scan-pending:<id>) so a restart loses
+// nothing.
 type sessionScanner struct {
 	st      scanStore
 	pending map[int64]map[string]bool // job id → tool call ids awaiting a result
+	checked bool                      // scanGeneration compared with kv once
 }
 
 func newSessionScanner(st scanStore) *sessionScanner {
@@ -78,8 +91,35 @@ func (p *sessionScanner) savePending(jobID int64, m map[string]bool) error {
 	return p.st.SetKV(scanPendingKey(jobID), string(data))
 }
 
+// checkGeneration, once per process, forgets every saved offset when the
+// scanner on disk was of an older generation (see scanGeneration).
+func (p *sessionScanner) checkGeneration() error {
+	if p.checked {
+		return nil
+	}
+	if v, err := p.st.GetKV(scanGenerationKey); err == nil && v == scanGeneration {
+		p.checked = true
+		return nil
+	}
+	for _, prefix := range []string{"scan:", "scan-pending:"} {
+		if err := p.st.DeleteKVPrefix(prefix); err != nil {
+			return err
+		}
+	}
+	p.pending = map[int64]map[string]bool{}
+	if err := p.st.SetKV(scanGenerationKey, scanGeneration); err != nil {
+		return err
+	}
+	log.Printf("scanner: generation %s — rereading every session for links", scanGeneration)
+	p.checked = true
+	return nil
+}
+
 // scan reads what pi appended to j's session since the saved offset.
 func (p *sessionScanner) scan(j *store.Job) error {
+	if err := p.checkGeneration(); err != nil {
+		return err
+	}
 	offset := p.offset(j.ID)
 	lines, next, err := pi.ReadNewLines(j.PiSession, offset)
 	if err != nil {
@@ -101,7 +141,7 @@ func (p *sessionScanner) scan(j *store.Job) error {
 			continue
 		}
 		switch e.Role {
-		case "user":
+		case "user", "assistant":
 			for _, u := range pi.DetectURLs(e.Text) {
 				if !ValidLinkURL(u) {
 					continue
@@ -110,7 +150,6 @@ func (p *sessionScanner) scan(j *store.Job) error {
 					return err
 				}
 			}
-		case "assistant":
 			for _, tc := range e.ToolCalls {
 				if tc.Name == "bash" && pi.IsPRCreateCommand(tc.Command) {
 					pending[tc.ID] = true

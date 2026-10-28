@@ -85,7 +85,8 @@ form instead — directory, model, START — until it is started again.)
 
 **Reading it.** Click a card for the job overlay: the live pane on the left,
 notes and links on the right. The pane is the real tmux session — type in it
-exactly as you would in a terminal (`tmux attach -t drv-<slug>-<id>` works too).
+exactly as you would in a terminal (`tmux attach -t drv-<slug>-<id>` works too),
+and ⌘-click a URL in it to open it in your browser.
 Cards show state and age; link chips show a PR's open/draft/merged/closed.
 **⌘-click a card** (or the directory in the overlay's head) to open that
 directory in VS Code — the window that already has it, else a new one.
@@ -104,8 +105,10 @@ Archived jobs free their slug and can be unarchived or deleted.
 **Notes and links.** Notes are yours — autosaved, never shown to pi. Links are
 any URL, shown as the PR number or the host (no labels); GitHub PRs, GitHub,
 Slack and Linear are recognised by kind and PR status is polled with `gh`. Every
-URL in a message you send pi lands in the job's links by itself, and so does a
-PR the agent opens with `gh pr create`; add others by hand, or remove any with ✕.
+URL in your messages to pi and in its replies lands in the job's links by
+itself (tool output is not scanned, apart from the PR a `gh pr create` prints);
+add others by hand, or remove any with ✕. Click or ⌘-click a link to open it in
+your browser.
 Rename and recolour cards from the overlay; ⌘K searches the board. A
 notification arrives when a job turns blocked or its pi exits. The `⊞ tabs`
 button lists your browser's open tabs; click one to attach it. The first time,

@@ -29,8 +29,8 @@ type Status struct {
 
 // Daemon is the tick loop: state derivation (for every opened job: ready,
 // working, blocked) with the one-tick blocked hold, notifications, the
-// session scan (links from your messages, PRs the agent opens) and the PR
-// status refresh.
+// session scan (links from the conversation, PRs the agent opens) and the
+// PR status refresh.
 type Daemon struct {
 	svc    *Service
 	status atomic.Pointer[Status]

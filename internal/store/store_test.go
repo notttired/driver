@@ -254,3 +254,24 @@ func TestKV(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestDeleteKVPrefix(t *testing.T) {
+	s := open(t)
+	for k, v := range map[string]string{"scan:1": "a", "scan:2": "b", "scan-pending:1": "x", "scanner-generation": "2"} {
+		s.SetKV(k, v)
+	}
+	if err := s.DeleteKVPrefix("scan:"); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"scan:1", "scan:2"} {
+		if _, err := s.GetKV(k); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("%s survived: %v", k, err)
+		}
+	}
+	if v, _ := s.GetKV("scan-pending:1"); v != "x" {
+		t.Fatalf("scan-pending:1 = %q", v)
+	}
+	if v, _ := s.GetKV("scanner-generation"); v != "2" {
+		t.Fatalf("scanner-generation = %q (the prefix must not reach it)", v)
+	}
+}

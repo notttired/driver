@@ -783,7 +783,8 @@ body.splitting .term-pane, body.splitting .job-side { pointer-events: none; }
 .link-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .link-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .link-row .pr-chip { flex: none; }
-.link-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 9px/1 var(--mono); color: var(--muted); }
+.link-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 9px/1 var(--mono); color: var(--muted); text-decoration: none; }
+a.link-text:hover { color: var(--fg); text-decoration: underline; }
 .pr-status { font: 500 8px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .pr-status.pr-open { color: var(--ok); }
 .pr-status.pr-draft { color: var(--warn); }

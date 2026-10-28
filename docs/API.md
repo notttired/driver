@@ -78,7 +78,7 @@ Within one display state the array order IS the column order (see `/api/reorder`
 | `POST /api/job/color` | `{"slug", "color"}`; `""` clears; allowed in every state | unknown colour (400) |
 | `POST /api/job/rename` | `{"slug", "to"}` → `{"ok": true, "slug": "<to>"}`; slug rules below; allowed in every state, renames the tmux session too when live | taken · invalid |
 | `POST /api/job/notes` | `{"slug", "text"}`; full replace, allowed in every state | > 64000 runes |
-| `POST /api/job/links` | `{"slug", "op": "add", "url"}` → `{"ok": true, "link": WebLink}`; `{"slug", "op": "remove", "id"}` → `{"ok": true}`. The daemon adds links on its own too: every URL in a message you send pi, and the PR a `gh pr create` prints (docs/DESIGN.md "Link detection") | bad URL (must be http/https) · duplicate url |
+| `POST /api/job/links` | `{"slug", "op": "add", "url"}` → `{"ok": true, "link": WebLink}`; `{"slug", "op": "remove", "id"}` → `{"ok": true}`. The daemon adds links on its own too: every URL in your messages and in pi's replies, and the PR a `gh pr create` prints (docs/DESIGN.md "Link detection") | bad URL (must be http/https) · duplicate url |
 | `POST /api/job/open` | open the job's directory in the editor: `DRIVER_EDITOR` with the dir appended, else `code <dir>`, else `open -b com.microsoft.VSCode <dir>` (⌘-click on a card); allowed in every state, no state write | dir missing/not a directory · the editor command failed (its first output line) · it did not return within 15s |
 | `POST /api/pr-attach` | `{"slug", "url"}` — idempotent add of a `github_pr` link (used by the daemon's own scanner; kept public for scripts) → `{"ok": true, "attached": boolean}` | not a GitHub PR URL |
 

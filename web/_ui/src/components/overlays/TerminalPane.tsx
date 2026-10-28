@@ -4,7 +4,15 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
+import { isOpenClick, openExternal } from "../../lib/links.ts";
+
 export const SESSION_ENDED = "session ended — reactivate to continue";
+
+/** URLs in the pane — plain text (web-links addon) or OSC 8 hyperlinks —
+ *  open in the browser on ⌘-click, as in any macOS terminal. */
+export function activatePaneLink(e: Pick<MouseEvent, "metaKey" | "ctrlKey">, url: string): void {
+  if (isOpenClick(e)) openExternal(url);
+}
 
 /** `ws(s)://<host>/api/term?slug=…` — same origin, so the vite proxy and the
  *  embedded server both work. */
@@ -71,10 +79,11 @@ export function TerminalPane({ slug, attach }: TerminalPaneProps) {
       scrollback: 5000,
       allowProposedApi: true,
       theme: readTheme(),
+      linkHandler: { activate: activatePaneLink },
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    term.loadAddon(new WebLinksAddon());
+    term.loadAddon(new WebLinksAddon(activatePaneLink));
     term.open(host);
 
     const ws = new WebSocket(termSocketUrl(slug));
