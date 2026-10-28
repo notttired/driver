@@ -93,26 +93,18 @@ func TestHoldBlocked(t *testing.T) {
 }
 
 func TestLaunchCommand(t *testing.T) {
-	cfg := Config{Home: "/h o/me", Port: 7781, PiFlags: []string{"-a", "--x"}, SelfExe: "/usr/local/bin/driver"}
+	cfg := Config{Home: "/h o/me", Port: 7781, PiFlags: []string{"-a", "--x"}}
 	j := &store.Job{ID: 7, Slug: "my-job", Name: "My Job", Model: "it's"}
-	// print mode (the default): the pane around `pi -p`
 	cmd := cfg.LaunchCommand(j, "/opt/bin/pi", "/h o/me/jobs/my-job-7")
-	want := `env DRIVER_JOB_DIR='/h o/me/jobs/my-job-7' DRIVER_JOB_SLUG='my-job' DRIVER_SERVE='http://127.0.0.1:7781' '/usr/local/bin/driver' pane --title 'My Job' --session '/h o/me/jobs/my-job-7/session.jsonl' --model 'it'\''s' -- '/opt/bin/pi' -p --session '/h o/me/jobs/my-job-7/session.jsonl' --name 'My Job' --model 'it'\''s' -e '/h o/me/ext/driver.ts' '-a' '--x'`
+	want := `env DRIVER_JOB_DIR='/h o/me/jobs/my-job-7' DRIVER_JOB_SLUG='my-job' DRIVER_SERVE='http://127.0.0.1:7781' '/opt/bin/pi' --session '/h o/me/jobs/my-job-7/session.jsonl' --name 'My Job' --model 'it'\''s' -e '/h o/me/ext/driver.ts' '-a' '--x'`
 	if cmd != want {
 		t.Fatalf("\n got %s\nwant %s", cmd, want)
 	}
-	// tui mode: pi itself, interactive — no pane, no -p
-	cfg.PiMode = "tui"
-	want = `env DRIVER_JOB_DIR='/h o/me/jobs/my-job-7' DRIVER_JOB_SLUG='my-job' DRIVER_SERVE='http://127.0.0.1:7781' '/opt/bin/pi' --session '/h o/me/jobs/my-job-7/session.jsonl' --name 'My Job' --model 'it'\''s' -e '/h o/me/ext/driver.ts' '-a' '--x'`
-	if cmd = cfg.LaunchCommand(j, "/opt/bin/pi", "/h o/me/jobs/my-job-7"); cmd != want {
-		t.Fatalf("tui:\n got %s\nwant %s", cmd, want)
-	}
-	cfg.PiMode = ""
 	j.Model = ""
 	j.Name = "" // no name recorded: pi's session is called after the slug
 	cfg.PiFlags = nil
 	cmd = cfg.LaunchCommand(j, "pi", "/d")
-	if strings.Contains(cmd, "--model") || !strings.Contains(cmd, "--title 'my-job'") || !strings.Contains(cmd, "--name 'my-job'") || !strings.Contains(cmd, " -- 'pi' -p ") || !strings.HasSuffix(cmd, "-e '/h o/me/ext/driver.ts'") {
+	if strings.Contains(cmd, "--model") || !strings.Contains(cmd, "--name 'my-job'") || strings.Contains(cmd, " -- ") || !strings.HasSuffix(cmd, "-e '/h o/me/ext/driver.ts'") {
 		t.Fatalf("bare cmd: %s", cmd)
 	}
 	if ShellQuote(`a'b`) != `'a'\''b'` {

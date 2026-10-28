@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 )
 
 // Status is the status.json the driver extension writes next to a job's
@@ -43,25 +42,6 @@ func ReadStatus(path string) (st Status, found bool, err error) {
 		st.TS = NormalizeTS(int64(f))
 	}
 	return st, true, nil
-}
-
-// WriteStatus writes st to path whole: a sibling temp file, then rename, as
-// ext/driver.ts does, so the daemon never reads half a file. The pane
-// (internal/pane) writes the states between pi's print-mode runs this way.
-// The temp name differs from the extension's so the two never share one.
-func WriteStatus(path string, st Status) error {
-	data, err := json.Marshal(st)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	tmp := path + ".pane.tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
 }
 
 // NormalizeTS maps a timestamp that may be unix seconds or unix milliseconds

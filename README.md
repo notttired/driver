@@ -3,11 +3,10 @@
 A macOS job board for [`pi`](https://github.com/earendil-works/pi) coding-agent
 sessions. One Go daemon (`driver serve`) owns a SQLite database and a two-second
 tick loop; the React board it serves shows in a frameless WKWebView shell
-(`Driver.app`) and in any browser. Every job is a tmux session in a directory the
-job names, running `pi` in print mode behind a small prompt loop — you type a
-prompt, pi works, and only its final answer is printed — and the board shows that
-real pane through an embedded terminal: you read and type in the pane, the board
-tells you which jobs are waiting on you.
+(`Driver.app`) and in any browser. Every job is a tmux session running `pi` as a
+TUI in a directory the job names, and the board shows that real pane through an
+embedded terminal: you read and type in the pane, the board tells you which jobs
+are waiting on you.
 
 It is a deliberate fork-by-lift of kraken — the four columns (draft · working ·
 blocked · done), the drag rules and the look, the store and daemon patterns, the
@@ -65,7 +64,6 @@ the shell that ran `make install`.
 | `DRIVER_DEFAULT_DIR` | `$HOME` | seed directory for a new job |
 | `DRIVER_PI` | `pi` on PATH | the pi binary |
 | `DRIVER_PI_FLAGS` | `-a` | extra pi flags (trust project files); set empty to pass none |
-| `DRIVER_PI_MODE` | `print` | `print`: every prompt runs `pi -p`, so the pane shows your prompts and pi's final answers only; `tui`: pi's interactive UI in the pane |
 | `DRIVER_NOTIFY` | on | `off` disables macOS notifications |
 | `DRIVER_BROWSER` | `Google Chrome` | the browser whose open tabs the links panel's `⊞ tabs` picker lists (any Chromium-family browser) |
 | `DRIVER_EDITOR` | VS Code | the command ⌘-click runs with the job's directory appended (`cursor`, `code -r`, `zed`…); unset = `code <dir>`, or `open -b com.microsoft.VSCode <dir>` when the `code` CLI is not on PATH |
@@ -79,8 +77,8 @@ the shell that ran `make install`.
 **New job.** Give it a name and a working directory (autocompletes; the agent
 manages its own checkout there — one repo, several, or none), pick a model or
 leave pi's default, and press START: the daemon opens a tmux session
-`drv-<slug>-<id>` in that directory running `pi` behind driver's prompt loop,
-and the card opens on its pane. The card carries the name as you typed it; the slug derived from it
+`drv-<slug>-<id>` in that directory running `pi`, and the card opens on its
+pane. The card carries the name as you typed it; the slug derived from it
 (`Fix the -50 bug` → `fix-the-50-bug`) names the tmux session and is what the
 API and `tmux attach` go by. There is no spec to write first — whatever you
 type into pi is its first prompt. Until pi starts on it the card sits in **draft** as `○ pi open`; it
@@ -92,15 +90,6 @@ notes and links on the right. The pane is the real tmux session — type in it
 exactly as you would in a terminal (`tmux attach -t drv-<slug>-<id>` works too),
 and ⌘-click a URL in it to open it in your browser.
 Cards show state and age; link chips show a PR's open/draft/merged/closed.
-
-**The pane.** Each line you enter is one prompt: pi runs on it in print mode
-(`pi -p`) and prints only the text of its final message — none of the "let me
-check X…" lines it writes between tool calls, which pi's interactive UI has no
-setting to hide. The conversation carries over from prompt to prompt (every run
-resumes the job's session file). ↑/↓ recall earlier prompts, a multi-line paste
-is one prompt, Esc stops pi mid-run (the job goes blocked · aborted), ^D closes
-the pane (blocked · exited; reactivate or cancel from there). `DRIVER_PI_MODE=tui`
-in `~/.driver/env` brings back pi's full interactive UI instead.
 **⌘-click a card** (or the directory in the overlay's head) to open that
 directory in VS Code — the window that already has it, else a new one.
 
@@ -150,15 +139,14 @@ and app bundles. Nothing here reads or writes kraken's paths.
   their directories. pi also needs its credentials under launchd: either put
   `SHOPIFY_PROXY_KEY=…` in `~/.driver/env` or make sure `devx` is on that PATH
   so the proxy wrapper can fetch one. Then `make install-serve`.
-- **The pane shows its last screen but nothing moves.** The pane was closed
-  (^D) or pi's UI exited; the window is kept (`remain-on-exit`). Reactivate from
-  done, or cancel back to draft.
+- **The pane shows pi's last screen but nothing moves.** pi exited; the window
+  is kept (`remain-on-exit`). Reactivate from done, or cancel back to draft.
 - **pi prints `Warning: tmux extended-keys is off` at the top of every pane.**
   That is pi asking for `set -g extended-keys on` in `~/.tmux.conf` so
   modified Enter keys (alt/shift+Enter) reach it; the warning is harmless
   otherwise. It is a tmux server option, so driver cannot set it per session;
   add the line and restart tmux (`tmux kill-server` when nothing else is
-  running in it). Print mode (the default) never shows it.
+  running in it).
 - **`⊞ tabs` says macOS has not let driver read Chrome's tabs.** Reading
   open tabs goes over Apple events, which need a one-time Automation grant for
   the process that asks: under launchd that is `driver` itself, in `make dev`

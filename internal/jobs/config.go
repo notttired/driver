@@ -21,8 +21,6 @@ type Config struct {
 	Port       int      // -p / DRIVER_PORT
 	PiBin      string   // DRIVER_PI, default "pi" (resolved on PATH at launch)
 	PiFlags    []string // DRIVER_PI_FLAGS split on spaces, default ["-a"]; set empty to disable
-	PiMode     string   // DRIVER_PI_MODE: "print" (default: the pane runs `pi -p` once per prompt, so only final answers show) or "tui" (pi's interactive UI)
-	SelfExe    string   // this binary; a job's pane runs `<SelfExe> pane` (os.Executable, else "driver" on PATH)
 	Operator   string   // DRIVER_OPERATOR, else $USER
 	DefaultDir string   // DRIVER_DEFAULT_DIR, else $HOME
 	Notify     bool     // false when DRIVER_NOTIFY=off
@@ -40,8 +38,6 @@ func LoadConfig(port int) Config {
 		Port:     port,
 		PiBin:    "pi",
 		PiFlags:  []string{"-a"},
-		PiMode:   "print",
-		SelfExe:  "driver",
 		Operator: os.Getenv("DRIVER_OPERATOR"),
 		Notify:   !strings.EqualFold(os.Getenv("DRIVER_NOTIFY"), "off"),
 		UserHome: util.UserHome(),
@@ -54,12 +50,6 @@ func LoadConfig(port int) Config {
 	}
 	if v, ok := os.LookupEnv("DRIVER_PI_FLAGS"); ok {
 		cfg.PiFlags = strings.Fields(v)
-	}
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("DRIVER_PI_MODE")), "tui") {
-		cfg.PiMode = "tui"
-	}
-	if exe, err := os.Executable(); err == nil {
-		cfg.SelfExe = exe
 	}
 	if cfg.Operator == "" {
 		cfg.Operator = os.Getenv("USER")

@@ -18,11 +18,8 @@ usage, accounts, self-update) is left out on purpose.
 - Native shell = WKWebView over the web board (kraken's approach), built with the
   Command Line Tools alone (no Xcode on this Mac): `swiftc`, `plutil`,
   `iconutil`, ad-hoc `codesign`.
-- Engine = Go daemon derived from kraken; harness = `pi` 1.4.0 in a tmux session
-  per job — since 2026-10-28 in print mode behind driver's own prompt loop
-  (`driver pane`, internal/pane), so the pane shows prompts and final answers
-  only; `DRIVER_PI_MODE=tui` runs pi's interactive UI instead. The daemon itself
-  never runs pi.
+- Engine = Go daemon derived from kraken; harness = `pi` 1.4.0, run as a TUI in a
+  tmux session per job. The daemon never runs pi headless.
 - No worktree/branch management: **the agent manages its own checkout.** A job
   names a working directory (`dir`), nothing more. Jobs may be multi-repo or
   repo-less.
@@ -92,7 +89,6 @@ docs/                 this file, API.md
 | default dir for new jobs | `DRIVER_DEFAULT_DIR` else `$HOME` |
 | pi binary | `DRIVER_PI` else `pi` on PATH |
 | extra pi flags | `DRIVER_PI_FLAGS` (default `-a`, trust project files; set empty to disable) |
-| pi mode | `DRIVER_PI_MODE`: `print` (default — `driver pane` runs `pi -p` once per prompt; the pane shows prompts and final answers only) or `tui` (pi's interactive UI) |
 | binary install dir | `DRIVER_BIN_DIR` else `~/.local/bin` |
 | app install dir | `DRIVER_APP_DIR` else `/Applications` |
 | notifications | `DRIVER_NOTIFY=off` disables |
@@ -149,20 +145,11 @@ directory, or `pi` / `tmux` cannot be resolved. Then:
 1. make the job dir; remove any stale `status.json` (and a legacy `prompt.md`);
    an earlier run's `session.jsonl` is renamed `session-<unix>.jsonl`;
 2. `tmux new-session -d -x 220 -y 50 -s drv-<slug>-<id> -c <dir> -n <slug> <cmd>`
-   where `<cmd>` is a `sh` string — in print mode (the default):
-   `env DRIVER_JOB_DIR='<jobdir>' DRIVER_JOB_SLUG='<slug>' DRIVER_SERVE='http://127.0.0.1:<port>' '<driver>' pane --title '<name>' --session '<jobdir>/session.jsonl' [--model '<model>'] -- <pi> -p --session '<jobdir>/session.jsonl' --name '<name>' [--model '<model>'] -e '<home>/ext/driver.ts' <DRIVER_PI_FLAGS>`
-   — `<driver>` is the daemon's own binary (`os.Executable`). The pane
-   (internal/pane) prints a header, reads a prompt (x/term line editing and
-   history; a bracketed paste stays one prompt), runs the pi command once with
-   the prompt on stdin, and asks again: `pi -p` prints only the text of pi's
-   last message — the final answer — and exits, and every run resumes the
-   session file, so the conversation carries over. Esc or ^C while pi runs
-   sends it SIGTERM (pi's print mode kills its tool processes and closes the
-   session cleanly); ^D at the prompt closes the pane. In tui mode the command
-   is pi itself with the same flags minus `-p` — no positional prompt: pi
-   opens at its editor, and whatever is typed in the pane first is its first
-   prompt. `<name>` is the job's name, else its slug, so pi's footer reads as
-   the board does;
+   where `<cmd>` is a `sh` string:
+   `env DRIVER_JOB_DIR='<jobdir>' DRIVER_JOB_SLUG='<slug>' DRIVER_SERVE='http://127.0.0.1:<port>' <pi> --session '<jobdir>/session.jsonl' --name '<name>' [--model '<model>'] -e '<home>/ext/driver.ts' <DRIVER_PI_FLAGS>`
+   — no positional prompt: pi opens at its editor, and whatever is typed in the
+   pane first is its first prompt; `<name>` is the job's name, else its slug,
+   so pi's footer reads as the board does;
 3. `tmux set-option -t <sess> @driver-job <slug>`;
    `tmux set-window-option -t <sess> remain-on-exit on` (a finished pi leaves a
    dead pane whose last screen the terminal can still show); `status off`;
@@ -170,8 +157,7 @@ directory, or `pi` / `tmux` cannot be resolved. Then:
    job to `working` when the extension reports pi running on that first message.
 
 **Stop** (working → blocked drag; `POST /api/stop`): `tmux send-keys -t <sess> Escape`
-(the pane: SIGTERM to the running pi, then `aborted` in status.json; pi's TUI:
-interrupt the current task). Writes no state; the next tick reads pi aborted or idle.
+(pi: interrupt the current task). Writes no state; the next tick reads pi idle.
 
 **Done** (`POST /api/done`): `tmux kill-session -t <sess>` if it exists; `state=done`,
 `outcome=accepted`, `finished_at`. Reachable by drag from blocked and by the
@@ -185,9 +171,8 @@ renamed `session-<unix>.jsonl`).
 
 **Reactivate** (done → working/blocked drags, or button; `POST /api/reactivate`):
 the same launch as start on the existing `--session <file>`, so pi resumes the
-conversation; `state=working` (the hold below absorbs the idle the pane writes
-for a session that already has messages — or that pi's TUI reports at
-`session_start` — before the operator types).
+conversation; `state=working` (the hold below absorbs the idle pi reports at
+`session_start` before it picks the conversation back up).
 
 **Archive / unarchive / delete**: kraken semantics. Archive only from done;
 delete only when archived; both refuse a live tmux session.
@@ -199,7 +184,7 @@ stored ''      → draft (not started: no session, no pane)
 stored done    → done
 else (stored ready | working | blocked):
   live   := tmux session exists AND pane 0 not dead
-  status := status.json (ext/driver.ts while pi runs, the pane between runs): {state, tool?, pid, session, ts}
+  status := status.json (written by ext/driver.ts): {state, tool?, pid, session, ts}
   !live                              → blocked (reason "exited")
   status.state == ready              → ready (draft column; the card says "○ pi open")
   status.state == working            → working
@@ -218,20 +203,11 @@ notification `driver ⚑ <name> — <reason>` (the slug when the job has no name
 
 `ext/driver.ts` (loaded with `-e`; a no-op without `DRIVER_JOB_DIR`): writes
 `status.json` atomically (tmp + rename) on `session_start` (`ready` when the
-session branch holds no user message yet — a fresh job at its prompt — else idle;
-working in print mode, see below), `agent_start` (working),
-`tool_execution_start/end` (tool name), `ui_prompt_start` (dialog) /
-`ui_prompt_end`, `agent_settled` (idle when `ctx.isIdle()`, aborted when
+session branch holds no user message yet — a fresh job at its prompt — else idle),
+`agent_start` (working), `tool_execution_start/end` (tool name), `ui_prompt_start`
+(dialog) / `ui_prompt_end`, `agent_settled` (idle when `ctx.isIdle()`, aborted when
 `e.aborted`), `session_shutdown` (exited). Type import:
 `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";`.
-
-In print mode (`ctx.mode === "print"`) a `session_start` is always followed by
-one run, so it writes working, and `session_shutdown` writes nothing: the pane
-owns the states between runs and writes them the same way
-(`internal/pi.WriteStatus`) — ready at start for a session file with no user
-message, idle for one that has some, working the moment a prompt is entered
-(before pi is even up), idle when pi exits on its own, aborted when Esc/^C
-stopped it, exited when the pane closes (^D or SIGHUP from tmux).
 
 ## Link detection and PR status
 
