@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"driver/internal/store"
 	"driver/internal/util"
 )
 
@@ -137,11 +138,25 @@ func (d *Daemon) tick() (live int, firstErr error) {
 			reason = obs.Pi.Reason
 		}
 		if state != j.State {
-			if _, err := d.svc.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{"state": state}); err != nil {
+			tr := classify(j.State, state, reason)
+			fields := map[string]any{"state": state}
+			if tr.attention > 0 {
+				fields["attention_at"] = now
+			} else if tr.attention < 0 && j.AttentionAt != 0 {
+				fields["attention_at"] = int64(0)
+			}
+			if _, err := d.svc.Store.UpdateJobFields(j.ID, j.Rev, fields); err != nil {
 				note(fmt.Errorf("%s: write state %s: %w", j.Slug, state, err))
 				continue
 			}
 			log.Printf("%s: %s → %s%s", j.Slug, j.State, state, reasonSuffix(reason))
+			if tr.enters == "working" || tr.enters == "blocked" {
+				// the live columns read in arrival order: the newcomer goes
+				// to the end (a drag that already placed it is left alone)
+				if _, err := d.svc.Store.AppendToColumn(tr.enters, j.ID); err != nil {
+					note(fmt.Errorf("%s: board order: %w", j.Slug, err))
+				}
+			}
 			if state == "blocked" {
 				d.notify(fmt.Sprintf("driver ⚑ %s — %s", j.DisplayName(), reason))
 			}
@@ -182,6 +197,33 @@ func (d *Daemon) tick() (live int, firstErr error) {
 		}()
 	}
 	return live, firstErr
+}
+
+// transition is what a stored-state change means for the board beyond the
+// state itself.
+type transition struct {
+	enters    string // the column the card moves into; "" when it stays put
+	attention int    // +1: ring on — it turned blocked on its own; -1: ring off — it left blocked; 0: as is
+}
+
+// classify reads a state change prev → next (reason: why the board calls it
+// blocked). A card turning blocked gets the ring unless the reason is
+// "aborted" — an interrupt the operator sent (Escape in the pane, STOP, the
+// working → blocked drag), so they already know.
+func classify(prev, next, reason string) transition {
+	t := transition{}
+	if pc, nc := DisplayState(&store.Job{State: prev}), DisplayState(&store.Job{State: next}); pc != nc {
+		t.enters = nc
+	}
+	switch {
+	case next == "blocked" && prev != "blocked":
+		if reason != "aborted" {
+			t.attention = 1
+		}
+	case prev == "blocked" && next != "blocked":
+		t.attention = -1
+	}
+	return t
 }
 
 func reasonSuffix(reason string) string {

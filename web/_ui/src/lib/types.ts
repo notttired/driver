@@ -60,6 +60,8 @@ export interface WebJob {
   mtime: number;
   archived?: boolean;
   reactivatable?: boolean;
+  /** turned blocked on its own (pi idle, asking, exited, silent) and not opened since: the card wears a ring */
+  attention?: boolean;
 }
 
 export interface WebDaemon {

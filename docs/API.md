@@ -50,6 +50,7 @@ type WebJob = {
   mtime: number;               // updated_at, for the age label
   archived?: boolean;
   reactivatable?: boolean;     // done and not archived
+  attention?: boolean;         // turned blocked on its own and not opened since (the card's ring)
 };
 
 type WebLink = {
@@ -62,6 +63,16 @@ type WebLink = {
 ```
 
 Within one display state the array order IS the column order (see `/api/reorder`).
+WORKING and BLOCKED read in arrival order: a job the daemon moves there (pi
+starting, going quiet, picking the conversation back up, exiting), a cross-column
+drag and a reactivation each land at the end; a same-column drag sets the order
+explicitly and is kept. DRAFT and DONE list manually ordered jobs after the
+unlisted ones (alphabetical).
+
+`attention` comes on when the daemon writes `blocked` for a job that was not
+blocked and the reason is not `aborted` (Escape in the pane, STOP, the working →
+blocked drag — interrupts you sent yourself); it goes off when the job leaves
+`blocked` or when you open it (`/api/job/seen`).
 
 ## Actions (request `{"slug": string}` unless noted)
 
@@ -71,7 +82,7 @@ Within one display state the array order IS the column order (see `/api/reorder`
 | `POST /api/stop` | send Escape to the pane; no state write | not working/blocked · no live session |
 | `POST /api/done` | kill session, state done (allowed for an open, unbriefed draft) | not started · done |
 | `POST /api/kill` | kill session, back to not started ("cancel") | not started |
-| `POST /api/reactivate` | relaunch pi on the same session file, state working | not done · archived · dir gone |
+| `POST /api/reactivate` | relaunch pi on the same session file, state working, last in WORKING | not done · archived · dir gone |
 | `POST /api/archive` | archive (slug freed) | not done · live session |
 | `POST /api/unarchive` | restore; refuses if an active job now holds the slug | — |
 | `POST /api/delete` | delete forever; removes the job dir | not archived |
@@ -81,6 +92,7 @@ Within one display state the array order IS the column order (see `/api/reorder`
 | `POST /api/job/fork` | `{"slug", "to", "name"?}` → the fork's `JobForm`: a copy of the job — dir, model, colour, notes, links, and its conversation (the session file copied under a fresh session id, `parentSession` naming the original's) — as slug `to`, named `name` (same rules as rename), placed in the original's column right after it. A not-started draft's fork is a draft; a done job's fork is done (reactivate it to carry on from where the original stood); an open job's fork (ready, working, blocked) gets its own tmux session and pi resumed on the copied conversation, keeps the original's column until its own pi reports, and answers after that session is up (the start timeout applies). Archived jobs cannot be forked — unarchive first | archived · slug taken · invalid slug · the original's own slug · name too long (400) · for an open job: dir gone · pi or tmux not found · tmux failure (text) |
 | `POST /api/job/notes` | `{"slug", "text"}`; full replace, allowed in every state | > 64000 runes |
 | `POST /api/job/links` | `{"slug", "op": "add", "url"}` → `{"ok": true, "link": WebLink}`; `{"slug", "op": "remove", "id"}` → `{"ok": true}`. The daemon adds links on its own too: every URL in your messages and in pi's replies, and the PR a `gh pr create` prints (docs/DESIGN.md "Link detection") | bad URL (must be http/https) · duplicate url |
+| `POST /api/job/seen` | you opened the job: clears `attention` (the overlay posts it on open; no rev bump, nothing else changes) | — |
 | `POST /api/job/open` | open the job's directory in the editor: `DRIVER_EDITOR` with the dir appended, else `code <dir>`, else `open -b com.microsoft.VSCode <dir>` (⌘-click on a card); allowed in every state, no state write | dir missing/not a directory · the editor command failed (its first output line) · it did not return within 15s |
 | `POST /api/pr-attach` | `{"slug", "url"}` — idempotent add of a `github_pr` link (used by the daemon's own scanner; kept public for scripts) → `{"ok": true, "attached": boolean}` | not a GitHub PR URL |
 

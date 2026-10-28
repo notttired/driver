@@ -237,6 +237,10 @@ func (s *Service) Reactivate(j *store.Job) error {
 	if err != nil {
 		return fmt.Errorf("session %s is up but the state write failed: %w", sess, mapStoreErr(err))
 	}
+	// WORKING reads in arrival order; a reactivated job arrives last
+	if _, err := s.Store.AppendToColumn("working", j.ID); err != nil {
+		log.Printf("reactivate %s: board order: %v", j.Slug, err)
+	}
 	return nil
 }
 
@@ -269,7 +273,7 @@ func (s *Service) Done(j *store.Job) error {
 		return err
 	}
 	_, err := s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{
-		"state": "done", "outcome": "accepted", "finished_at": time.Now().Unix(),
+		"state": "done", "attention_at": int64(0), "outcome": "accepted", "finished_at": time.Now().Unix(),
 	})
 	return mapStoreErr(err)
 }
@@ -287,7 +291,7 @@ func (s *Service) Kill(j *store.Job) error {
 		return err
 	}
 	_, err := s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{
-		"state": "", "tmux": "", "started_at": int64(0), "finished_at": int64(0), "outcome": "",
+		"state": "", "attention_at": int64(0), "tmux": "", "started_at": int64(0), "finished_at": int64(0), "outcome": "",
 	})
 	return mapStoreErr(err)
 }
@@ -576,6 +580,15 @@ func (s *Service) placeAfter(column string, srcID, newID int64) error {
 		out = append(out, newID)
 	}
 	return s.Store.SetBoardColumn(column, out)
+}
+
+// MarkSeen takes the attention ring off j: the operator has opened it. A job
+// without the ring is left untouched.
+func (s *Service) MarkSeen(j *store.Job) error {
+	if j.AttentionAt == 0 {
+		return nil
+	}
+	return s.Store.SetAttention(j.ID, 0)
 }
 
 func (s *Service) SetColor(j *store.Job, color string) error {

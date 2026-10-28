@@ -125,11 +125,18 @@ foreign keys off, so dropping the old table does not cascade into `links`, and
 restores `sqlite_sequence` afterwards, so a deleted job's id is never reused.
 v3 dropped `links.label` and forgot the session scan offsets, so the scanner,
 which from then on also attaches the URLs in your own messages, reads every
-existing session once more (attaching is idempotent). v4 added `jobs.name`.
+existing session once more (attaching is idempotent). v4 added `jobs.name`. v5
+added `jobs.attention_at`: when the daemon moved the job into blocked on its own
+and it has not been opened since (0 otherwise).
 
 `board_order("column", position, job_id)` holds the manual order per column
 exactly as kraken's does; the board emits each column's jobs in that order,
-unlisted jobs first alphabetically.
+unlisted jobs first alphabetically. WORKING and BLOCKED read in arrival order:
+whenever the tick's state write moves a job into one of them (and when
+reactivate does), the daemon appends it to that column's order
+(`AppendToColumn`: a no-op when a drag already listed it there, otherwise out of
+every other column and onto the end). Cross-column drags do not reorder the
+destination, so they count as arrivals too.
 
 `links(id, job_id, kind, url, status, status_at, created_at)` with
 `UNIQUE(job_id, url)`; no label column — a link is its URL. `kind` ∈ `github_pr | github | slack | linear | url`,
@@ -223,7 +230,11 @@ idle a resumed session reports at `session_start` before pi picks the conversati
 back up). Ready → working is written at once: that is pi starting on the first
 message. On a write to `blocked` the daemon posts a
 notification `driver ⚑ <name> — <reason>` (the slug when the job has no name) via
-`osascript -e 'display notification … with title …'`.
+`osascript -e 'display notification … with title …'`, and — unless the reason
+is `aborted`, an interrupt the operator sent (Escape, STOP, the working → blocked
+drag) — sets `attention_at`, which the board shows as a ring around the card
+until the job leaves blocked or the operator opens it (`POST /api/job/seen`,
+written without a rev bump so it neither ages the card nor trips the tick).
 
 `ext/driver.ts` (loaded with `-e`; a no-op without `DRIVER_JOB_DIR`): writes
 `status.json` atomically (tmp + rename) on `session_start` (`ready` when the
@@ -310,7 +321,8 @@ The shell also ignores anything but an http(s) URL in `createWebViewWith`.
 
 Bucketing: archived → drawer; else `state` names the column (`''`/`ready`/unknown
 → draft). Same-column drop → `POST /api/reorder {column, slugs}` (full column,
-optimistic). Cross-column moves:
+optimistic). WORKING and BLOCKED are in arrival order (above); a card that turned
+blocked on its own wears a ring until it is opened. Cross-column moves:
 
 | from → to | action |
 |---|---|

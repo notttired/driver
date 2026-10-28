@@ -319,6 +319,106 @@ func TestDeleteKVPrefix(t *testing.T) {
 	}
 }
 
+func TestMigrateV5(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v4.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{schemaV1, schemaV2, schemaV3, schemaV4, `PRAGMA user_version = 4`,
+		`INSERT INTO jobs (id, slug, state) VALUES (7, 'quiet', 'blocked')`} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	db.Close()
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var version int
+	s.db.QueryRow(`PRAGMA user_version`).Scan(&version)
+	if version != len(migrations) {
+		t.Fatalf("user_version %d", version)
+	}
+	// a blocked job from before v5 wears no ring
+	old, err := s.GetJobByID(7)
+	if err != nil || old.AttentionAt != 0 {
+		t.Fatalf("old job after migration: %v %+v", err, old)
+	}
+	// the tick sets it with the state (rev-gated); opening clears it without
+	// touching rev or updated_at
+	rev, err := s.UpdateJobFields(7, old.Rev, map[string]any{"attention_at": int64(1234)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.GetJobByID(7)
+	if got.AttentionAt != 1234 || got.Rev != rev {
+		t.Fatalf("set: %+v", got)
+	}
+	if err := s.SetAttention(7, 0); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := s.GetJobByID(7)
+	if after.AttentionAt != 0 || after.Rev != rev || after.UpdatedAt != got.UpdatedAt {
+		t.Fatalf("clear: %+v", after)
+	}
+	if err := s.SetAttention(99, 0); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("clear on nothing: %v", err)
+	}
+}
+
+func TestAppendToColumn(t *testing.T) {
+	s := open(t)
+	a, _ := s.CreateJob(&Job{Slug: "a"})
+	b, _ := s.CreateJob(&Job{Slug: "b"})
+	c, _ := s.CreateJob(&Job{Slug: "c"})
+	// a column's arrivals line up in order
+	for i, id := range []int64{b, a} {
+		if ok, err := s.AppendToColumn("blocked", id); err != nil || !ok {
+			t.Fatalf("append %d: %v %v", i, ok, err)
+		}
+	}
+	order, _ := s.GetBoardOrder()
+	if got := order["blocked"]; len(got) != 2 || got[0] != b || got[1] != a {
+		t.Fatalf("blocked order %v", got)
+	}
+	// already listed: left where it is
+	if ok, err := s.AppendToColumn("blocked", b); err != nil || ok {
+		t.Fatalf("append listed: %v %v", ok, err)
+	}
+	order, _ = s.GetBoardOrder()
+	if got := order["blocked"]; got[0] != b || got[1] != a {
+		t.Fatalf("blocked order after no-op %v", got)
+	}
+	// moving on: the job leaves the old column's order and joins the end of the new one
+	if err := s.SetBoardColumn("working", []int64{c}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := s.AppendToColumn("working", a); err != nil || !ok {
+		t.Fatalf("move: %v %v", ok, err)
+	}
+	order, _ = s.GetBoardOrder()
+	if got := order["working"]; len(got) != 2 || got[0] != c || got[1] != a {
+		t.Fatalf("working order %v", got)
+	}
+	if got := order["blocked"]; len(got) != 1 || got[0] != b {
+		t.Fatalf("blocked order after move %v", got)
+	}
+	// positions stay dense enough to keep appending after a reorder left gaps
+	if err := s.SetBoardColumn("working", []int64{a}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := s.AppendToColumn("working", c); err != nil || !ok {
+		t.Fatalf("re-append: %v %v", ok, err)
+	}
+	order, _ = s.GetBoardOrder()
+	if got := order["working"]; len(got) != 2 || got[0] != a || got[1] != c {
+		t.Fatalf("working order after re-append %v", got)
+	}
+}
+
 func TestMigrateV4(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v3.db")
 	db, err := sql.Open("sqlite", "file:"+path)
@@ -339,7 +439,7 @@ func TestMigrateV4(t *testing.T) {
 	defer s.Close()
 	var version int
 	s.db.QueryRow(`PRAGMA user_version`).Scan(&version)
-	if version != 4 {
+	if version != len(migrations) {
 		t.Fatalf("user_version %d", version)
 	}
 	// a job from before v4 has no name and goes by its slug

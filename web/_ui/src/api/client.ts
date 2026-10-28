@@ -144,6 +144,8 @@ export const unarchiveJob = slugAction("/api/unarchive");
 export const deleteJob = slugAction("/api/delete");
 /** ⌘-click on a card (or the overlay's dir): open the job's directory in the editor — VS Code unless DRIVER_EDITOR says otherwise. */
 export const openJobDir = slugAction("/api/job/open");
+/** the operator opened the job: takes the attention ring off its card */
+export const seenJob = slugAction("/api/job/seen");
 
 export const reorderColumn = (column: Column, slugs: readonly string[]) =>
   postJSON<OkResponse>("/api/reorder", { column, slugs });

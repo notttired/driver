@@ -66,6 +66,34 @@ func TestDisplayStateAndObserve(t *testing.T) {
 	}
 }
 
+func TestClassify(t *testing.T) {
+	cases := []struct {
+		prev, next, reason string
+		enters             string
+		attention          int
+	}{
+		{"working", "blocked", "idle", "blocked", 1},
+		{"working", "blocked", "dialog", "blocked", 1},
+		{"working", "blocked", "exited", "blocked", 1},
+		{"working", "blocked", "silent", "blocked", 1},
+		{"ready", "blocked", "exited", "blocked", 1},
+		// an interrupt the operator sent: no ring
+		{"working", "blocked", "aborted", "blocked", 0},
+		{"blocked", "working", "", "working", -1},
+		{"blocked", "ready", "", "draft", -1},
+		{"ready", "working", "", "working", 0},
+		{"working", "ready", "", "draft", 0},
+		// a draft whose pi opened: still DRAFT, nothing to do
+		{"", "ready", "", "", 0},
+	}
+	for _, c := range cases {
+		got := classify(c.prev, c.next, c.reason)
+		if got.enters != c.enters || got.attention != c.attention {
+			t.Errorf("classify(%q, %q, %q) = %+v, want enters %q attention %d", c.prev, c.next, c.reason, got, c.enters, c.attention)
+		}
+	}
+}
+
 func TestHoldBlocked(t *testing.T) {
 	// first blocked reading of a working job is held
 	state, first := holdBlocked("working", "blocked", 0, 5)

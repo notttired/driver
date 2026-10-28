@@ -126,7 +126,9 @@ model — under the name you give it, placed beside the original in its column;
 an open job's fork gets its own pi, resumed on the copied conversation, and a
 done job's fork is done until you reactivate it. ⌘K searches names, slugs and
 directories. A
-notification arrives when a job turns blocked or its pi exits. The `⊞ tabs`
+notification arrives when a job turns blocked or its pi exits, and the card
+wears a ring until you open it; WORKING and BLOCKED keep their cards in the
+order they arrived. The `⊞ tabs`
 button lists your browser's open tabs; click one to attach it. The first time,
 macOS asks whether driver may control Google Chrome — allow it, or flip it later
 under System Settings › Privacy & Security › Automation.

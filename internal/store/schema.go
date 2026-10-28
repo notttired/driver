@@ -8,7 +8,7 @@ import (
 
 // migrations is the append-only list of schema steps; migrations[i] brings a
 // database at user_version i to i+1. Never edit a shipped step — append.
-var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4}
+var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5}
 
 // schemaV1 creates the four tables the design calls for. Every column a Go
 // scan reads into a plain string/int64 is NOT NULL with a same-typed default;
@@ -198,4 +198,12 @@ func restoreJobSeq(tx *sql.Tx, seq int64) error {
 // slug.
 const schemaV4 = `
 ALTER TABLE jobs ADD COLUMN name TEXT NOT NULL DEFAULT '';
+`
+
+// schemaV5 adds jobs.attention_at: the moment the daemon moved the job into
+// BLOCKED on its own (pi idle, asking, exited, silent — not an interrupt the
+// operator sent) while the operator has not opened it since; 0 otherwise.
+// The board draws such a card with a ring until it is opened.
+const schemaV5 = `
+ALTER TABLE jobs ADD COLUMN attention_at INTEGER NOT NULL DEFAULT 0;
 `

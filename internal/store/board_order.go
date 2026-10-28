@@ -58,6 +58,36 @@ func (s *Store) SetBoardColumn(column string, ids []int64) error {
 	return tx.Commit()
 }
 
+// AppendToColumn puts job id at the end of column's order — the arrival
+// slot — unless the column already lists it (a drag placed it there), and
+// takes it out of every other column's order, so WORKING and BLOCKED read in
+// the order their cards arrived. It reports whether the id was appended.
+func (s *Store) AppendToColumn(column string, id int64) (bool, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, fmt.Errorf("append to column %s: %w", column, err)
+	}
+	defer tx.Rollback()
+	var listed int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM board_order WHERE "column" = ? AND job_id = ?`, column, id).Scan(&listed); err != nil {
+		return false, fmt.Errorf("append to column %s: %w", column, err)
+	}
+	if listed > 0 {
+		return false, nil
+	}
+	if _, err := tx.Exec(`DELETE FROM board_order WHERE job_id = ?`, id); err != nil {
+		return false, fmt.Errorf("append to column %s: %w", column, err)
+	}
+	if _, err := tx.Exec(`INSERT INTO board_order ("column", position, job_id)
+		SELECT ?, COALESCE(MAX(position), -1) + 1, ? FROM board_order WHERE "column" = ?`, column, id, column); err != nil {
+		return false, fmt.Errorf("append to column %s: %w", column, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("append to column %s: %w", column, err)
+	}
+	return true, nil
+}
+
 // ApplyColumnOrder orders members (the ids of the jobs whose display state
 // is this column) by the stored order: ids the stored order does not list
 // come first, in the order given (callers pass them alphabetically by slug),

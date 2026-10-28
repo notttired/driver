@@ -11,6 +11,7 @@ import {
   openJobDir,
   queueJob,
   reactivateJob,
+  seenJob,
   setJobColor,
   stopJob,
   unarchiveJob,
@@ -200,6 +201,22 @@ function JobPanel({
   }, [loadForm, epoch, state, boardOpened]);
   // the board is the fresher word; the form stands in until the job is on it
   const opened = boardOpened ?? (form ? !form.editable : false);
+
+  // the attention ring waits for exactly this: the job open in front of the
+  // operator. One acknowledgement per ring — the board refetch after the
+  // write drops the flag; should it come back while the overlay is still
+  // open (pi went quiet again), they are looking at it, so it goes again.
+  const attention = job?.attention ?? false;
+  const acknowledged = useRef<string | null>(null);
+  useEffect(() => {
+    if (!attention) {
+      acknowledged.current = null;
+      return;
+    }
+    if (acknowledged.current === slug) return;
+    acknowledged.current = slug;
+    void mutate(() => seenJob(slug));
+  }, [attention, slug, mutate]);
 
   // the model datalist is only needed by the launch form
   const editable = form?.editable ?? false;

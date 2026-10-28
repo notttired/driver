@@ -71,9 +71,11 @@ function JobCardView({ job, submitting, drag, ghost, onOpen }: JobCardViewProps)
         "card editable" +
         (drag?.className ? " " + drag.className : "") +
         (submitting ? " submitting" : "") +
+        (job.attention ? " attention" : "") +
         (ghost ? " dragging-overlay" : "")
       }
       style={style}
+      title={job.attention ? "turned blocked since you last opened it" : undefined}
       data-slug={job.slug}
       data-col={col}
       onClick={onOpen}

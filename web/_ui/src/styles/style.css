@@ -343,6 +343,18 @@ input:disabled, textarea:disabled { opacity: 0.6; }
 }
 .card:hover { background: var(--raised); border-color: var(--border-strong); border-left-color: var(--job-color, var(--accent-edge)); }
 .card.editable:hover, .card.archived:hover { border-color: var(--ac); border-left-color: var(--job-color, var(--ac)); }
+/* turned blocked on its own and not opened since: a hot ring, drawn inside
+   the border because the cut corner clips anything outside the card */
+.card.attention, .card.attention:hover {
+  border-color: var(--ac2);
+  border-left-color: var(--job-color, var(--ac2));
+  box-shadow: inset 0 0 0 1px var(--ac2), inset 0 0 18px color-mix(in srgb, var(--ac2) 14%, transparent);
+  animation: attention-ring 2.4s var(--ease) infinite;
+}
+@keyframes attention-ring {
+  0%, 100% { box-shadow: inset 0 0 0 1px var(--ac2), inset 0 0 18px color-mix(in srgb, var(--ac2) 14%, transparent); }
+  50% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ac2) 45%, transparent), inset 0 0 8px color-mix(in srgb, var(--ac2) 5%, transparent); }
+}
 .card.dragging { opacity: 0.35; }
 .card.dragging-overlay { cursor: grabbing; box-shadow: var(--glow); }
 .card-top { display: flex; align-items: baseline; gap: 6px; min-width: 0; }

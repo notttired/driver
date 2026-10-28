@@ -21,7 +21,7 @@ function fixtureBoard(): WebBoard {
         pi: { state: "working", tool: "bash", ts: NOW - 5 },
         links: [{ id: 1, kind: "github_pr", url: "https://github.com/acme/search/pull/482", status: "open" }],
       }),
-      makeJob({ slug: "onboarding-copy", dir: "/Users/me/src/web", state: "blocked", live: true, pi: { state: "idle", ts: NOW - 100 } }),
+      makeJob({ slug: "onboarding-copy", dir: "/Users/me/src/web", state: "blocked", live: true, pi: { state: "idle", ts: NOW - 100 }, attention: true }),
       makeJob({ slug: "rate-limits", dir: "/Users/me/src/gateway", state: "done", finished_at: NOW - 86400 }),
       makeJob({ slug: "legacy-export", dir: "/Users/me/src/exports", state: "done", finished_at: NOW - 172800 }),
       makeJob({ slug: "spike-graphql-12", display_slug: "spike-graphql", dir: "/Users/me/src/api", state: "done", archived: true }),
@@ -218,6 +218,22 @@ describe("BoardView (DOM smoke test)", () => {
     const dirLookups = requests.filter((r) => r.startsWith("GET /api/dirs")).length;
     expect(dirLookups).toBeGreaterThan(0);
     expect(dirLookups).toBeLessThanOrEqual(2);
+  });
+
+  it("rings a card that turned blocked unopened, and opening it posts seen once", async () => {
+    render(<App />);
+    const card = (await screen.findByText("onboarding-copy")).closest(".card")!;
+    expect(card).toHaveClass("attention");
+    expect(card).toHaveAttribute("title", "turned blocked since you last opened it");
+    // only that one: the other cards, blocked or not, are plain
+    expect(document.querySelectorAll(".card.attention")).toHaveLength(1);
+    expect(requests.filter((r) => r === "POST /api/job/seen")).toHaveLength(0);
+
+    fireEvent.click(card);
+    await waitFor(() => expect(requests).toContain("POST /api/job/seen"));
+    // the board is refetched after the write; one acknowledgement per ring
+    await waitFor(() => expect(requests.filter((r) => r === "GET /api/board").length).toBeGreaterThan(1));
+    expect(requests.filter((r) => r === "POST /api/job/seen")).toHaveLength(1);
   });
 
   it("shows the session-ended banner for a finished job's terminal", async () => {

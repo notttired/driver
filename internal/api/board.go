@@ -37,6 +37,7 @@ type webJob struct {
 	MTime         int64        `json:"mtime"`
 	Archived      bool         `json:"archived,omitempty"`
 	Reactivatable bool         `json:"reactivatable,omitempty"`
+	Attention     bool         `json:"attention,omitempty"` // turned blocked on its own, not opened since
 }
 
 type webLink struct {
@@ -117,7 +118,7 @@ func (a *API) buildBoard() (*webBoard, error) {
 				State: col, Outcome: j.Outcome, Live: live, Pi: obs.Pi,
 				HasNotes: j.Notes != "", Links: webLinksFrom(links[j.ID]),
 				StartedAt: j.StartedAt, FinishedAt: j.FinishedAt, MTime: j.UpdatedAt,
-				Reactivatable: j.State == "done",
+				Reactivatable: j.State == "done", Attention: j.AttentionAt != 0,
 			})
 		}
 	}
