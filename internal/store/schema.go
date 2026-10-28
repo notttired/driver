@@ -8,7 +8,7 @@ import (
 
 // migrations is the append-only list of schema steps; migrations[i] brings a
 // database at user_version i to i+1. Never edit a shipped step — append.
-var migrations = []string{schemaV1, schemaV2, schemaV3}
+var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4}
 
 // schemaV1 creates the four tables the design calls for. Every column a Go
 // scan reads into a plain string/int64 is NOT NULL with a same-typed default;
@@ -191,3 +191,11 @@ func restoreJobSeq(tx *sql.Tx, seq int64) error {
 	_, err := tx.Exec(`INSERT INTO sqlite_sequence(name, seq) SELECT 'jobs', ? WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'jobs')`, seq)
 	return err
 }
+
+// schemaV4 adds jobs.name: the name the operator typed, shown on the card and
+// in the overlay head. The slug derived from it stays the identifier (API,
+// tmux session, job dir). Empty for jobs created before v4 — they show their
+// slug.
+const schemaV4 = `
+ALTER TABLE jobs ADD COLUMN name TEXT NOT NULL DEFAULT '';
+`

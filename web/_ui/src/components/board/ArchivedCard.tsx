@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 
-import { age, dirBase, jobColorVar } from "../../lib/format.ts";
+import { age, dirBase, jobColorVar, jobTitle } from "../../lib/format.ts";
 import { jobKey } from "../../lib/jobKey.ts";
 import type { WebJob } from "../../lib/types.ts";
 import type { BoardActions } from "./BoardView.tsx";
@@ -8,7 +8,7 @@ import type { BoardActions } from "./BoardView.tsx";
 export function ArchivedCard({ job, actions }: { job: WebJob; actions: BoardActions }) {
   const key = jobKey(job);
   const jc = jobColorVar(job);
-  const name = job.display_slug || job.slug;
+  const name = jobTitle(job);
   const style = {
     "--state": "var(--text-2)",
     ...(jc ? { "--job-color": jc } : {}),
@@ -26,9 +26,7 @@ export function ArchivedCard({ job, actions }: { job: WebJob; actions: BoardActi
     >
       <div className="card-top">
         <span className="slug">{name}</span>
-        {job.display_slug && job.display_slug !== job.slug ? (
-          <span className="as">as {job.slug}</span>
-        ) : null}
+        {name !== job.slug ? <span className="as">as {job.slug}</span> : null}
         <span className="state">■ archived</span>
       </div>
       <div className="meta">

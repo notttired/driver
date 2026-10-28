@@ -94,6 +94,7 @@ export function JobOverlay({ openKey, board, mutate, onClose, onRenamed, onToast
 
   const rename = useRenameControl(
     slug,
+    job?.name ?? "",
     (to) => onRenamed(archived ? ARCHIVE_KEY_PREFIX + to : to),
     { open, beforeSubmit: flushAll },
   );
@@ -229,7 +230,7 @@ function JobPanel({
     const r = bodyRef.current?.getBoundingClientRect();
     if (r) setSplit(splitFromPointer(e.clientX, r.left, r.width));
   };
-  const title = job?.display_slug || form?.slug || slug;
+  const title = job?.name || form?.name || job?.display_slug || form?.slug || slug;
   const effState = archived ? "archived" : (job?.state ?? form?.state ?? "draft");
 
   const actions = (() => {
@@ -314,8 +315,10 @@ function JobPanel({
         <span className="panel-title" title={slug}>
           {title}
         </span>
-        {archived && job?.display_slug && job.display_slug !== job.slug ? (
-          <span className="as">as {job.slug}</span>
+        {job && title !== job.slug ? (
+          <span className="as" title={archived ? "its name in the archive" : "its slug — the API, the job dir and the tmux session go by it"}>
+            as {job.slug}
+          </span>
         ) : null}
         <RenameButton state={rename} visible={!archived} />
         <SwatchStrip

@@ -17,7 +17,7 @@ const jobs = [
   { slug: "flaky-ci", dir: `${DEFAULT_DIR}/platform`, model: "anthropic/claude-sonnet-4-5", color: "", state: "draft", live: false, has_notes: false, mtime: now() - 9000 },
   { slug: "search-reindex", dir: `${DEFAULT_DIR}/search`, model: "", color: "orange", state: "working", live: true, has_notes: false, mtime: now() - 60, started_at: now() - 600, pi: { state: "working", tool: "bash", ts: now() - 5 },
     links: [{ id: 1, kind: "github_pr", url: "https://github.com/acme/search/pull/482", status: "open", status_at: now() - 120 }] },
-  { slug: "onboarding-copy", dir: `${DEFAULT_DIR}/web`, model: "", color: "pink", state: "blocked", live: true, has_notes: true, mtime: now() - 1800, started_at: now() - 7200, pi: { state: "idle", ts: now() - 1700 },
+  { slug: "onboarding-copy", name: "Onboarding copy pass", dir: `${DEFAULT_DIR}/web`, model: "", color: "pink", state: "blocked", live: true, has_notes: true, mtime: now() - 1800, started_at: now() - 7200, pi: { state: "idle", ts: now() - 1700 },
     links: [{ id: 2, kind: "linear", url: "https://linear.app/acme/issue/WEB-231" }] },
   { slug: "rate-limits", dir: `${DEFAULT_DIR}/gateway`, model: "", color: "green", state: "done", live: false, has_notes: false, mtime: now() - 86400, started_at: now() - 90000, finished_at: now() - 86400, outcome: "accepted", reactivatable: true,
     links: [{ id: 3, kind: "github_pr", url: "https://github.com/acme/gateway/pull/77", status: "merged", status_at: now() - 80000 }] },
@@ -27,7 +27,7 @@ const jobs = [
 const forms = new Map();
 for (const j of jobs) {
   forms.set(j.slug, {
-    slug: j.slug, dir: j.dir, model: j.model, color: j.color, spec: j.state === "draft" && j.slug === "flaky-ci" ? "" : `Investigate ${j.slug.replace(/-/g, " ")} and open a PR.\n\n- read the failing tests first\n- keep the diff small`,
+    slug: j.slug, name: j.name ?? "", dir: j.dir, model: j.model, color: j.color, spec: j.state === "draft" && j.slug === "flaky-ci" ? "" : `Investigate ${j.slug.replace(/-/g, " ")} and open a PR.\n\n- read the failing tests first\n- keep the diff small`,
     notes: j.has_notes ? `Started from the #${j.slug} thread. Check the staging dashboard after.` : "",
     state: j.state, editable: j.state === "draft" && !j.archived, archived: !!j.archived, mtime: j.mtime, links: j.links ?? [],
   });
@@ -74,9 +74,9 @@ const server = http.createServer(async (req, res) => {
   const j = b.slug ? find(b.slug) : undefined;
   if (p === "/api/job/create") {
     if (!b.slug || find(b.slug)) return err(res, 409, "slug taken");
-    const nj = { slug: b.slug, dir: DEFAULT_DIR, model: "", color: "", state: "draft", live: false, has_notes: false, mtime: now() };
+    const nj = { slug: b.slug, name: (b.name ?? "").trim(), dir: DEFAULT_DIR, model: "", color: "", state: "draft", live: false, has_notes: false, mtime: now() };
     jobs.push(nj);
-    const f = { slug: nj.slug, dir: nj.dir, model: "", color: "", spec: "", notes: "", state: "draft", editable: true, archived: false, mtime: nj.mtime, links: [] };
+    const f = { slug: nj.slug, name: nj.name, dir: nj.dir, model: "", color: "", spec: "", notes: "", state: "draft", editable: true, archived: false, mtime: nj.mtime, links: [] };
     forms.set(nj.slug, f);
     return send(res, 200, f);
   }
@@ -99,7 +99,7 @@ const server = http.createServer(async (req, res) => {
     case "/api/unarchive": if (!j.archived) return err(res, 409, "not archived"); if (find(j.display_slug)) return err(res, 409, "slug taken"); forms.set(j.display_slug, forms.get(j.slug)); forms.delete(j.slug); touch(j, { archived: false, slug: j.display_slug, display_slug: undefined }); break;
     case "/api/delete": if (!j.archived) return err(res, 409, "not archived"); jobs.splice(jobs.indexOf(j), 1); forms.delete(j.slug); break;
     case "/api/job/color": if (b.color && !["red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan"].includes(b.color)) return err(res, 400, "unknown colour"); touch(j, { color: b.color }); break;
-    case "/api/job/rename": { if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(b.to || "")) return err(res, 409, "invalid"); if (find(b.to)) return err(res, 409, "taken"); const f = forms.get(j.slug); forms.delete(j.slug); touch(j, { slug: b.to }); if (f) { f.slug = b.to; forms.set(b.to, f); } syncForm(j); return send(res, 200, { ok: true, slug: b.to }); }
+    case "/api/job/rename": { if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(b.to || "")) return err(res, 409, "invalid"); if (b.to !== j.slug && find(b.to)) return err(res, 409, "taken"); const name = (b.name ?? "").trim(); const f = forms.get(j.slug); forms.delete(j.slug); touch(j, { slug: b.to, name: name || undefined }); if (f) { f.slug = b.to; f.name = name; forms.set(b.to, f); } syncForm(j); return send(res, 200, { ok: true, slug: b.to }); }
     case "/api/job/notes": { const f = forms.get(j.slug); if (f) f.notes = b.text ?? ""; touch(j, { has_notes: !!(b.text ?? "").trim() }); break; }
     case "/api/job/links": {
       j.links = j.links ?? [];

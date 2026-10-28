@@ -76,7 +76,7 @@ function NewJobBody({ onClose, onCreated, mutate, onToast, defaultDir }: Omit<Ne
     setError("");
     let created: string;
     try {
-      created = (await createJob({ slug, dir, model })).slug;
+      created = (await createJob({ slug, name: name.trim(), dir, model })).slug;
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
       setBusy(null);
@@ -177,7 +177,7 @@ function NewJobBody({ onClose, onCreated, mutate, onToast, defaultDir }: Omit<Ne
               "opening pi…"
             ) : slug ? (
               <>
-                → <span className="slug">{slug}</span> · START opens pi in the directory; what you type first is its first prompt
+                → slug <span className="slug">{slug}</span> · START opens pi in the directory; what you type first is its first prompt
               </>
             ) : (
               "→ a name needs at least one letter or digit"

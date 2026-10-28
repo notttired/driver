@@ -14,11 +14,13 @@ export function fuzzyMatch(haystack: string, term: string): boolean {
   return i === term.length;
 }
 
-/** The searchable surface of a job: its slug (and display name when that
- *  differs) plus its directory. Notes are deliberately not searched. */
-export function searchHaystack(job: Pick<WebJob, "slug" | "display_slug" | "dir">): string {
+/** The searchable surface of a job: its slug (and original slug when
+ *  archived), the name you gave it, plus its directory. Notes are
+ *  deliberately not searched. */
+export function searchHaystack(job: Pick<WebJob, "slug" | "display_slug" | "name" | "dir">): string {
   const parts = [job.slug];
   if (job.display_slug && job.display_slug !== job.slug) parts.push(job.display_slug);
+  if (job.name) parts.push(job.name);
   if (job.dir) {
     parts.push(job.dir);
     parts.push(dirBase(job.dir));

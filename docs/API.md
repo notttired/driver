@@ -31,6 +31,7 @@ type WebBoard = {
 type WebJob = {
   slug: string;                // active jobs: the slug. archived: the archive name "<slug>-<id>"
   display_slug?: string;       // archived only: the original slug
+  name?: string;               // the name you typed; the UI shows it instead of the slug when set
   dir: string;                 // working directory ('' on a fresh draft)
   model?: string;
   color?: string;              // '' | red blue green yellow purple orange pink cyan
@@ -76,7 +77,7 @@ Within one display state the array order IS the column order (see `/api/reorder`
 | `POST /api/delete` | delete forever; removes the job dir | not archived |
 | `POST /api/reorder` | body `{"column": "draft\|working\|blocked\|done", "slugs": string[]}` — the column's full intended order; slugs whose display state no longer matches are dropped silently | unknown column |
 | `POST /api/job/color` | `{"slug", "color"}`; `""` clears; allowed in every state | unknown colour (400) |
-| `POST /api/job/rename` | `{"slug", "to"}` → `{"ok": true, "slug": "<to>"}`; slug rules below; allowed in every state, renames the tmux session too when live | taken · invalid |
+| `POST /api/job/rename` | `{"slug", "to", "name"?}` → `{"ok": true, "slug": "<to>"}`: `to` is the new slug (rules below), `name` the new display name (whitespace-collapsed, ≤ 200 characters; `""` or absent = the job goes by its slug). Either may stay as it is. Allowed in every state; when the slug changes on a live job its tmux session is renamed too | taken · invalid · name too long (400) |
 | `POST /api/job/notes` | `{"slug", "text"}`; full replace, allowed in every state | > 64000 runes |
 | `POST /api/job/links` | `{"slug", "op": "add", "url"}` → `{"ok": true, "link": WebLink}`; `{"slug", "op": "remove", "id"}` → `{"ok": true}`. The daemon adds links on its own too: every URL in your messages and in pi's replies, and the PR a `gh pr create` prints (docs/DESIGN.md "Link detection") | bad URL (must be http/https) · duplicate url |
 | `POST /api/job/open` | open the job's directory in the editor: `DRIVER_EDITOR` with the dir appended, else `code <dir>`, else `open -b com.microsoft.VSCode <dir>` (⌘-click on a card); allowed in every state, no state write | dir missing/not a directory · the editor command failed (its first output line) · it did not return within 15s |
@@ -93,7 +94,7 @@ timeout for it; a client-side timeout is not a failed start.
 
 ```ts
 type JobForm = {
-  slug: string; dir: string; model: string; color: string; notes: string;
+  slug: string; name: string; dir: string; model: string; color: string; notes: string;
   state: 'draft' | 'working' | 'blocked' | 'done';
   editable: boolean;           // dir/model editable: a not-started draft only (and not archived)
   archived: boolean;
@@ -107,9 +108,10 @@ Full replace of the two fields. `mtime` 0 skips the lock; otherwise a mismatch i
 409 `"edited elsewhere — reload"`. Refuses (409) when not editable. Colour and notes
 have their own routes and are not part of the form save.
 
-`POST /api/job/create` `{"slug", "dir"?, "model"?}` → `JobForm` (a not-started
-draft; empty `dir` → `default_dir`). Slug taken, or `dir` not an existing
-directory → 409. The board's NEW JOB dialog follows it with `/api/queue` at once,
+`POST /api/job/create` `{"slug", "name"?, "dir"?, "model"?}` → `JobForm` (a
+not-started draft; `name` is what the board calls the job — whitespace-collapsed,
+≤ 200 characters, `""` = the slug; empty `dir` → `default_dir`). Slug taken, or
+`dir` not an existing directory → 409; a name too long → 400. The board's NEW JOB dialog follows it with `/api/queue` at once,
 so a new job opens on its pane; there is no spec anywhere in the API.
 
 `GET /api/dirs?q=<path prefix>` → `{"dirs": string[]}` — directory autocomplete:

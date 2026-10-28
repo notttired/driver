@@ -13,6 +13,7 @@ import (
 type Job struct {
 	ID           int64
 	Slug         string
+	Name         string
 	Dir          string
 	Model        string
 	Color        string
@@ -34,14 +35,23 @@ type Job struct {
 // Archived reports whether the job sits in the archive drawer.
 func (j *Job) Archived() bool { return j.ArchivedAt != 0 }
 
-const jobColumns = `id, slug, dir, model, color, spec, notes, state, outcome, pi_session, tmux,
+// DisplayName is what the board calls the job: the name the operator typed,
+// or the slug when none was recorded.
+func (j *Job) DisplayName() string {
+	if j.Name != "" {
+		return j.Name
+	}
+	return j.Slug
+}
+
+const jobColumns = `id, slug, name, dir, model, color, spec, notes, state, outcome, pi_session, tmux,
 	started_at, finished_at, created_at, updated_at, archived_at, archived_name, rev`
 
 func scanJob(row interface{ Scan(...any) error }) (*Job, error) {
 	var j Job
 	var archivedAt sql.NullInt64
 	var archivedName sql.NullString
-	err := row.Scan(&j.ID, &j.Slug, &j.Dir, &j.Model, &j.Color, &j.Spec, &j.Notes, &j.State, &j.Outcome,
+	err := row.Scan(&j.ID, &j.Slug, &j.Name, &j.Dir, &j.Model, &j.Color, &j.Spec, &j.Notes, &j.State, &j.Outcome,
 		&j.PiSession, &j.Tmux, &j.StartedAt, &j.FinishedAt, &j.CreatedAt, &j.UpdatedAt,
 		&archivedAt, &archivedName, &j.Rev)
 	if err != nil {
@@ -65,10 +75,10 @@ func (s *Store) CreateJob(j *Job) (int64, error) {
 	if j.Rev == 0 {
 		j.Rev = 1
 	}
-	res, err := s.db.Exec(`INSERT INTO jobs (slug, dir, model, color, spec, notes, state, outcome, pi_session, tmux,
+	res, err := s.db.Exec(`INSERT INTO jobs (slug, name, dir, model, color, spec, notes, state, outcome, pi_session, tmux,
 		started_at, finished_at, created_at, updated_at, rev)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		j.Slug, j.Dir, j.Model, j.Color, j.Spec, j.Notes, j.State, j.Outcome, j.PiSession, j.Tmux,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		j.Slug, j.Name, j.Dir, j.Model, j.Color, j.Spec, j.Notes, j.State, j.Outcome, j.PiSession, j.Tmux,
 		j.StartedAt, j.FinishedAt, j.CreatedAt, j.UpdatedAt, j.Rev)
 	if err != nil {
 		if isUniqueErr(err) {
@@ -149,7 +159,7 @@ func (s *Store) queryJobs(query string, args ...any) ([]*Job, error) {
 
 // jobFieldColumns is the allowlist UpdateJobFields accepts.
 var jobFieldColumns = map[string]bool{
-	"slug": true, "dir": true, "model": true, "color": true, "spec": true, "notes": true,
+	"slug": true, "name": true, "dir": true, "model": true, "color": true, "spec": true, "notes": true,
 	"state": true, "outcome": true, "pi_session": true, "tmux": true,
 	"started_at": true, "finished_at": true,
 }

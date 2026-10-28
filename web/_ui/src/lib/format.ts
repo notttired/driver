@@ -80,3 +80,9 @@ export function bucketJobs(jobs: readonly WebJob[]): BoardBuckets {
   }
   return { byColumn, archived };
 }
+
+/** What the board calls a job: the name you typed when there is one, else
+ *  its slug (the original slug for an archived job). */
+export function jobTitle(job: Pick<WebJob, "slug" | "display_slug" | "name">): string {
+  return job.name || job.display_slug || job.slug;
+}

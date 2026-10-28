@@ -143,12 +143,12 @@ func (d *Daemon) tick() (live int, firstErr error) {
 			}
 			log.Printf("%s: %s → %s%s", j.Slug, j.State, state, reasonSuffix(reason))
 			if state == "blocked" {
-				d.notify(fmt.Sprintf("driver ⚑ %s — %s", j.Slug, reason))
+				d.notify(fmt.Sprintf("driver ⚑ %s — %s", j.DisplayName(), reason))
 			}
 		} else if j.State == "blocked" && reason == "exited" && d.lastReason[j.ID] != "" && d.lastReason[j.ID] != "exited" {
 			// already blocked (idle) and now pi is gone: the exit itself is
 			// worth a notification (design: "or its pi exits")
-			d.notify(fmt.Sprintf("driver ⚑ %s — exited", j.Slug))
+			d.notify(fmt.Sprintf("driver ⚑ %s — exited", j.DisplayName()))
 		}
 		if state == "blocked" {
 			d.lastReason[j.ID] = reason

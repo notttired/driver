@@ -18,19 +18,24 @@ export interface RenameControlState {
 }
 
 /**
- * The rename flow's state. Lives ABOVE the keyed overlay body: a successful
+ * The rename flow's state. The box holds the job's name (its slug when it has
+ * none); what is typed becomes the name on the card, and its slugified form
+ * the slug. Lives ABOVE the keyed overlay body: a successful
  * rename re-points the open slug, which remounts the body in the same commit
  * the response lands in — state held inside it would be gone before render.
  */
 export function useRenameControl(
   slug: string | null,
+  /** the job's typed name ("" when it goes by its slug) — what the box opens on */
+  name: string,
   onRenamed: ((slug: string) => void) | undefined,
   opts: { open?: boolean; beforeSubmit?: () => void | Promise<void> } = {},
 ): RenameControlState {
   const { open: overlayOpen = true, beforeSubmit } = opts;
   const current = slug ?? "";
+  const currentName = name || current;
   const [open, setOpen] = useState(false);
-  const [value, setValueRaw] = useState(current);
+  const [value, setValueRaw] = useState(currentName);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -50,10 +55,10 @@ export function useRenameControl(
   const inFlight = useRef(false);
 
   const begin = useCallback(() => {
-    setValueRaw(current);
+    setValueRaw(currentName);
     setError("");
     setOpen(true);
-  }, [current]);
+  }, [currentName]);
 
   const cancel = useCallback(() => {
     setOpen(false);
@@ -68,8 +73,9 @@ export function useRenameControl(
   const submit = useCallback(() => {
     if (!current || inFlight.current) return;
     const to = slugify(value);
+    const newName = value.trim();
     if (!to) return;
-    if (to === current) {
+    if (to === current && newName === currentName) {
       setOpen(false);
       return;
     }
@@ -79,7 +85,7 @@ export function useRenameControl(
     void (async () => {
       try {
         await beforeRef.current?.();
-        const res = await renameJob(current, to);
+        const res = await renameJob(current, to, newName);
         setOpen(false);
         onRenamed?.(res.slug);
       } catch (e: unknown) {
@@ -89,7 +95,7 @@ export function useRenameControl(
         setBusy(false);
       }
     })();
-  }, [current, onRenamed, value]);
+  }, [current, currentName, onRenamed, value]);
 
   return {
     slug: current,
@@ -111,7 +117,7 @@ export function RenameButton({ state, visible }: { state: RenameControlState; vi
       className="btn ghost"
       id="job-rename"
       hidden={!visible || state.open}
-      title="rename this job — its slug and, when live, its tmux session"
+      title="rename this job — the name on its card; the slug (and a live tmux session) follow"
       onClick={state.begin}
     >
       ✎ rename
@@ -155,7 +161,7 @@ export function RenameRow({ state }: { state: RenameControlState }) {
         <div className="rename-hint">
           {state.preview ? (
             <>
-              → slug will be <span className="slug">{state.preview}</span>
+              → slug <span className="slug">{state.preview}</span>
             </>
           ) : (
             "→ a name needs at least one letter or digit"

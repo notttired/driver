@@ -87,6 +87,7 @@ func (a *API) jobRename(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Slug string `json:"slug"`
 		To   string `json:"to"`
+		Name string `json:"name"`
 	}
 	if !decodePost(w, r, &req) {
 		return
@@ -96,7 +97,7 @@ func (a *API) jobRename(w http.ResponseWriter, r *http.Request) {
 		writeFailure(w, "rename", err)
 		return
 	}
-	to, err := a.Svc.Rename(j, req.To)
+	to, err := a.Svc.Rename(j, req.To, req.Name)
 	if err != nil {
 		writeFailure(w, "rename", err)
 		return

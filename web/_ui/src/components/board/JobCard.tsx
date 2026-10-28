@@ -1,6 +1,6 @@
 import type { CSSProperties, MouseEvent } from "react";
 
-import { age, columnFor, dirBase, jobColorVar, nameColorVar } from "../../lib/format.ts";
+import { age, columnFor, dirBase, jobColorVar, jobTitle, nameColorVar } from "../../lib/format.ts";
 import { jobKey } from "../../lib/jobKey.ts";
 import { statusToken } from "../../lib/status.ts";
 import type { WebJob } from "../../lib/types.ts";
@@ -82,7 +82,9 @@ function JobCardView({ job, submitting, drag, ghost, onOpen }: JobCardViewProps)
     >
       <div className="card-top">
         {submitting ? <span className="submit-spinner" aria-hidden="true" /> : null}
-        <span className="slug">{job.display_slug || job.slug}</span>
+        <span className="slug" title={job.name ? job.display_slug || job.slug : undefined}>
+          {jobTitle(job)}
+        </span>
         {job.has_notes ? (
           <span className="notes-mark" title="has notes">
             ✎

@@ -1,7 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { age, bucketJobs, columnFor, dirBase, isJobColor, jobColorVar, JOB_COLORS, nameColorVar } from "./format.ts";
+import { age, bucketJobs, columnFor, dirBase, isJobColor, jobColorVar, JOB_COLORS, jobTitle, nameColorVar } from "./format.ts";
 import { makeJob } from "../test/fixtures.ts";
+
+describe("jobTitle", () => {
+  it("prefers the typed name, then an archived job's original slug, then the slug", () => {
+    expect(jobTitle(makeJob({ slug: "fix-the-50-bug", name: "Fix the -50 bug" }))).toBe("Fix the -50 bug");
+    expect(jobTitle(makeJob({ slug: "e-12", display_slug: "e", archived: true }))).toBe("e");
+    expect(jobTitle(makeJob({ slug: "e-12", display_slug: "e", name: "E job", archived: true }))).toBe("E job");
+    expect(jobTitle(makeJob({ slug: "plain" }))).toBe("plain");
+  });
+});
 
 describe("bucketJobs", () => {
   it("routes archived jobs to the drawer whatever their state, others by state", () => {

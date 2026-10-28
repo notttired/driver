@@ -22,6 +22,7 @@ type webBoard struct {
 type webJob struct {
 	Slug          string       `json:"slug"`
 	DisplaySlug   string       `json:"display_slug,omitempty"`
+	Name          string       `json:"name,omitempty"`
 	Dir           string       `json:"dir"`
 	Model         string       `json:"model,omitempty"`
 	Color         string       `json:"color,omitempty"`
@@ -112,7 +113,7 @@ func (a *API) buildBoard() (*webBoard, error) {
 			live := snap.Live(sess)
 			obs := jobs.Observe(j, live, a.Svc.Cfg.ReadStatus(j), now)
 			out = append(out, webJob{
-				Slug: j.Slug, Dir: j.Dir, Model: j.Model, Color: j.Color,
+				Slug: j.Slug, Name: j.Name, Dir: j.Dir, Model: j.Model, Color: j.Color,
 				State: col, Outcome: j.Outcome, Live: live, Pi: obs.Pi,
 				HasNotes: j.Notes != "", Links: webLinksFrom(links[j.ID]),
 				StartedAt: j.StartedAt, FinishedAt: j.FinishedAt, MTime: j.UpdatedAt,
@@ -123,7 +124,7 @@ func (a *API) buildBoard() (*webBoard, error) {
 	sort.SliceStable(archived, func(i, k int) bool { return archived[i].ArchivedAt > archived[k].ArchivedAt })
 	for _, j := range archived {
 		out = append(out, webJob{
-			Slug: j.ArchivedName, DisplaySlug: j.Slug, Dir: j.Dir, Model: j.Model, Color: j.Color,
+			Slug: j.ArchivedName, DisplaySlug: j.Slug, Name: j.Name, Dir: j.Dir, Model: j.Model, Color: j.Color,
 			State: jobs.DisplayState(j), Outcome: j.Outcome, HasNotes: j.Notes != "",
 			Links: webLinksFrom(links[j.ID]), StartedAt: j.StartedAt, FinishedAt: j.FinishedAt,
 			MTime: j.UpdatedAt, Archived: true,

@@ -12,6 +12,7 @@ import (
 // jobForm is GET /api/job/form and the answer to /api/job/create.
 type jobForm struct {
 	Slug     string    `json:"slug"`
+	Name     string    `json:"name"`
 	Dir      string    `json:"dir"`
 	Model    string    `json:"model"`
 	Color    string    `json:"color"`
@@ -39,7 +40,7 @@ func (a *API) formFor(j *store.Job) (*jobForm, error) {
 		slug = j.ArchivedName
 	}
 	return &jobForm{
-		Slug: slug, Dir: j.Dir, Model: j.Model, Color: j.Color, Notes: j.Notes,
+		Slug: slug, Name: j.Name, Dir: j.Dir, Model: j.Model, Color: j.Color, Notes: j.Notes,
 		State: jobs.DisplayState(j), Editable: jobs.Editable(j), Archived: j.Archived(),
 		MTime: j.UpdatedAt, Links: wl,
 	}, nil
@@ -89,13 +90,14 @@ func (a *API) jobSaveForm(w http.ResponseWriter, r *http.Request) {
 func (a *API) jobCreate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Slug  string `json:"slug"`
+		Name  string `json:"name"`
 		Dir   string `json:"dir"`
 		Model string `json:"model"`
 	}
 	if !decodePost(w, r, &req) {
 		return
 	}
-	j, err := a.Svc.Create(strings.TrimSpace(req.Slug), req.Dir, req.Model)
+	j, err := a.Svc.Create(strings.TrimSpace(req.Slug), req.Name, req.Dir, req.Model)
 	if err != nil {
 		writeFailure(w, "create", err)
 		return

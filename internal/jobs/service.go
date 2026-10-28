@@ -56,12 +56,17 @@ func (s *Service) LookupArchivedFirst(slug string) (*store.Job, error) {
 	return s.Store.GetJobBySlug(slug)
 }
 
-// Create makes a not-started draft: slug, the directory pi will open in
+// Create makes a not-started draft: slug, the name the operator typed (what
+// the board calls the job; "" = the slug), the directory pi will open in
 // (the default dir when empty; it must exist) and the model ("" = pi's
 // default). Submit opens it.
-func (s *Service) Create(slug, dir, model string) (*store.Job, error) {
+func (s *Service) Create(slug, name, dir, model string) (*store.Job, error) {
 	if !ValidSlug(slug) {
 		return nil, Refuse("invalid slug %q (want ^[a-z0-9][a-z0-9-]{0,63}$)", util.OneLine(slug, 40))
+	}
+	name, err := CleanName(name)
+	if err != nil {
+		return nil, err
 	}
 	dir = util.ExpandTilde(strings.TrimSpace(dir))
 	if dir == "" {
@@ -70,7 +75,7 @@ func (s *Service) Create(slug, dir, model string) (*store.Job, error) {
 	if !util.IsDir(dir) {
 		return nil, Refuse("dir %q is not an existing directory", dir)
 	}
-	j := &store.Job{Slug: slug, Dir: dir, Model: strings.TrimSpace(model)}
+	j := &store.Job{Slug: slug, Name: name, Dir: dir, Model: strings.TrimSpace(model)}
 	if _, err := s.Store.CreateJob(j); err != nil {
 		if errors.Is(err, store.ErrSlugTaken) {
 			return nil, Refuse("slug %q is taken", slug)
@@ -360,17 +365,33 @@ func (s *Service) Delete(j *store.Job) error {
 	return nil
 }
 
-// Rename changes a job's slug (and its tmux session's name when the session
-// exists). Returns the new slug.
-func (s *Service) Rename(j *store.Job, to string) (string, error) {
+// Rename changes what a job is called: its name (what the board shows; "" =
+// the slug) and its slug (and its tmux session's name when the session
+// exists). Returns the slug the job now has.
+func (s *Service) Rename(j *store.Job, to, name string) (string, error) {
 	to = strings.TrimSpace(to)
 	if !ValidSlug(to) {
 		return "", Refuse("invalid slug %q (want ^[a-z0-9][a-z0-9-]{0,63}$)", util.OneLine(to, 40))
 	}
+	name, err := CleanName(name)
+	if err != nil {
+		return "", err
+	}
 	if j.Archived() {
 		return "", Refuse("job %s is archived", j.ArchivedName)
 	}
+	fields := map[string]any{}
+	if name != j.Name {
+		fields["name"] = name
+	}
 	if to == j.Slug {
+		// the name alone changes: no session to rename, no slug to free
+		if len(fields) == 0 {
+			return to, nil
+		}
+		if _, err := s.Store.UpdateJobFields(j.ID, j.Rev, fields); err != nil {
+			return "", mapStoreErr(err)
+		}
 		return to, nil
 	}
 	if _, err := s.Store.GetJobBySlug(to); err == nil {
@@ -378,7 +399,7 @@ func (s *Service) Rename(j *store.Job, to string) (string, error) {
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return "", err
 	}
-	fields := map[string]any{"slug": to}
+	fields["slug"] = to
 	renamed := &store.Job{ID: j.ID, Slug: to}
 	oldSess, newSess := SessionName(j), FreshSessionName(renamed)
 	sessionExists := j.Tmux != "" && s.Tmux.Available() && s.Tmux.HasSession(oldSess)

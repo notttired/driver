@@ -100,7 +100,7 @@ the same Mac; nothing here reads or writes its paths.
 
 ## Job model
 
-Columns on `jobs`: `id, slug, dir, model, color, spec, notes, state, outcome,
+Columns on `jobs`: `id, slug, name, dir, model, color, spec, notes, state, outcome,
 pi_session, tmux, started_at, finished_at, created_at, updated_at, archived_at,
 archived_name, rev`. `state` ∈ `'' | ready | working | blocked | done` (`''` = not
 started, `ready` = pi open at its prompt with nothing sent yet; both display as
@@ -110,7 +110,11 @@ draft);
 guards concurrent updates. `color` ∈ `'' | red blue green yellow purple orange
 pink cyan` (kraken's palette, same hexes). `spec` is a legacy column: nothing
 writes or reads it since the spec step was dropped. `model` is a pi model id or
-pattern (`--model`), empty = pi's default.
+pattern (`--model`), empty = pi's default. `name` is what the operator typed in
+NEW JOB (whitespace-collapsed, ≤ 200 runes): the card, the overlay head, pi's
+`--name` and the notifications go by it, while the slug derived from it stays
+the identifier — the API, `drv-<slug>-<id>`, the job dir. Empty (every job from
+before v4) = the slug.
 
 `PRAGMA user_version` tracks the schema. v2 rebuilt `jobs` for the `ready` state
 (the `CHECK` on `state` cannot be altered in place); the migration runs with
@@ -118,7 +122,7 @@ foreign keys off, so dropping the old table does not cascade into `links`, and
 restores `sqlite_sequence` afterwards, so a deleted job's id is never reused.
 v3 dropped `links.label` and forgot the session scan offsets, so the scanner,
 which from then on also attaches the URLs in your own messages, reads every
-existing session once more (attaching is idempotent).
+existing session once more (attaching is idempotent). v4 added `jobs.name`.
 
 `board_order("column", position, job_id)` holds the manual order per column
 exactly as kraken's does; the board emits each column's jobs in that order,
@@ -142,9 +146,10 @@ directory, or `pi` / `tmux` cannot be resolved. Then:
    an earlier run's `session.jsonl` is renamed `session-<unix>.jsonl`;
 2. `tmux new-session -d -x 220 -y 50 -s drv-<slug>-<id> -c <dir> -n <slug> <cmd>`
    where `<cmd>` is a `sh` string:
-   `env DRIVER_JOB_DIR='<jobdir>' DRIVER_JOB_SLUG='<slug>' DRIVER_SERVE='http://127.0.0.1:<port>' <pi> --session '<jobdir>/session.jsonl' --name '<slug>' [--model '<model>'] -e '<home>/ext/driver.ts' <DRIVER_PI_FLAGS>`
+   `env DRIVER_JOB_DIR='<jobdir>' DRIVER_JOB_SLUG='<slug>' DRIVER_SERVE='http://127.0.0.1:<port>' <pi> --session '<jobdir>/session.jsonl' --name '<name>' [--model '<model>'] -e '<home>/ext/driver.ts' <DRIVER_PI_FLAGS>`
    — no positional prompt: pi opens at its editor, and whatever is typed in the
-   pane first is its first prompt;
+   pane first is its first prompt; `<name>` is the job's name, else its slug,
+   so pi's footer reads as the board does;
 3. `tmux set-option -t <sess> @driver-job <slug>`;
    `tmux set-window-option -t <sess> remain-on-exit on` (a finished pi leaves a
    dead pane whose last screen the terminal can still show); `status off`;
@@ -193,7 +198,7 @@ before it is written (kraken's one-tick hold: it hides one-tick misreads and the
 idle a resumed session reports at `session_start` before pi picks the conversation
 back up). Ready → working is written at once: that is pi starting on the first
 message. On a write to `blocked` the daemon posts a
-notification `driver ⚑ <slug> — <reason>` via
+notification `driver ⚑ <name> — <reason>` (the slug when the job has no name) via
 `osascript -e 'display notification … with title …'`.
 
 `ext/driver.ts` (loaded with `-e`; a no-op without `DRIVER_JOB_DIR`): writes
@@ -266,7 +271,7 @@ optimistic). Cross-column moves:
 | done → archive drawer | `/api/archive` |
 | anything else | no-op |
 
-Card click → the job overlay: head (slug + rename, dir, colour swatch, actions:
+Card click → the job overlay: head (name + rename, with `as <slug>` beside a name that differs from the slug, dir, colour swatch, actions:
 start / stop / done / cancel / reactivate / archive by state), body = the pane
 for every opened job (pi at its prompt, working, blocked, done) or the launch
 form for a not-started one (dir with directory autocomplete, model datalist,

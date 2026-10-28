@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"driver/internal/store"
 )
@@ -74,6 +75,20 @@ var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 // ValidSlug reports whether s satisfies ^[a-z0-9][a-z0-9-]{0,63}$.
 func ValidSlug(s string) bool { return slugRe.MatchString(s) }
+
+// MaxNameLen bounds a job's name (in runes): one line on a card.
+const MaxNameLen = 200
+
+// CleanName normalises the name the operator typed: whitespace runs collapse
+// to one space and the ends are trimmed. Longer than MaxNameLen is
+// ErrBadInput; "" is fine (the job then shows its slug).
+func CleanName(s string) (string, error) {
+	s = strings.Join(strings.Fields(s), " ")
+	if utf8.RuneCountInString(s) > MaxNameLen {
+		return "", fmt.Errorf("name is too long (max %d characters): %w", MaxNameLen, ErrBadInput)
+	}
+	return s, nil
+}
 
 // FreshSessionName is the tmux session a job is launched in: drv-<slug>-<id>.
 func FreshSessionName(j *store.Job) string { return fmt.Sprintf("drv-%s-%d", j.Slug, j.ID) }

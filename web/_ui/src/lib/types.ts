@@ -41,6 +41,8 @@ export interface WebPi {
 export interface WebJob {
   slug: string;
   display_slug?: string;
+  /** the name you typed; cards and the overlay show it instead of the slug when set */
+  name?: string;
   dir: string;
   model?: string;
   color?: string;
@@ -81,6 +83,7 @@ export interface WebBoard {
 
 export interface JobForm {
   slug: string;
+  name: string;
   dir: string;
   model: string;
   color: string;
@@ -97,6 +100,8 @@ export interface JobForm {
 /** POST /api/job/create: dir "" means the daemon's default dir, model "" pi's default */
 export interface CreateJobBody {
   slug: string;
+  /** what the board calls the job; "" shows the slug */
+  name?: string;
   dir?: string;
   model?: string;
 }

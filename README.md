@@ -78,8 +78,10 @@ the shell that ran `make install`.
 manages its own checkout there — one repo, several, or none), pick a model or
 leave pi's default, and press START: the daemon opens a tmux session
 `drv-<slug>-<id>` in that directory running `pi`, and the card opens on its
-pane. There is no spec to write first — whatever you type into pi is its first
-prompt. Until pi starts on it the card sits in **draft** as `○ pi open`; it
+pane. The card carries the name as you typed it; the slug derived from it
+(`Fix the -50 bug` → `fix-the-50-bug`) names the tmux session and is what the
+API and `tmux attach` go by. There is no spec to write first — whatever you
+type into pi is its first prompt. Until pi starts on it the card sits in **draft** as `○ pi open`; it
 moves to **working** by itself. (A job cancelled back to draft shows a small
 form instead — directory, model, START — until it is started again.)
 
@@ -109,7 +111,8 @@ URL in your messages to pi and in its replies lands in the job's links by
 itself (tool output is not scanned, apart from the PR a `gh pr create` prints);
 add others by hand, or remove any with ✕. Click or ⌘-click a link to open it in
 your browser.
-Rename and recolour cards from the overlay; ⌘K searches the board. A
+Rename (the name on the card; the slug follows) and recolour cards from the
+overlay; ⌘K searches names, slugs and directories. A
 notification arrives when a job turns blocked or its pi exits. The `⊞ tabs`
 button lists your browser's open tabs; click one to attach it. The first time,
 macOS asks whether driver may control Google Chrome — allow it, or flip it later

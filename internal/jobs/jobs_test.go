@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -93,16 +94,17 @@ func TestHoldBlocked(t *testing.T) {
 
 func TestLaunchCommand(t *testing.T) {
 	cfg := Config{Home: "/h o/me", Port: 7781, PiFlags: []string{"-a", "--x"}}
-	j := &store.Job{ID: 7, Slug: "my-job", Model: "it's"}
+	j := &store.Job{ID: 7, Slug: "my-job", Name: "My Job", Model: "it's"}
 	cmd := cfg.LaunchCommand(j, "/opt/bin/pi", "/h o/me/jobs/my-job-7")
-	want := `env DRIVER_JOB_DIR='/h o/me/jobs/my-job-7' DRIVER_JOB_SLUG='my-job' DRIVER_SERVE='http://127.0.0.1:7781' '/opt/bin/pi' --session '/h o/me/jobs/my-job-7/session.jsonl' --name 'my-job' --model 'it'\''s' -e '/h o/me/ext/driver.ts' '-a' '--x'`
+	want := `env DRIVER_JOB_DIR='/h o/me/jobs/my-job-7' DRIVER_JOB_SLUG='my-job' DRIVER_SERVE='http://127.0.0.1:7781' '/opt/bin/pi' --session '/h o/me/jobs/my-job-7/session.jsonl' --name 'My Job' --model 'it'\''s' -e '/h o/me/ext/driver.ts' '-a' '--x'`
 	if cmd != want {
 		t.Fatalf("\n got %s\nwant %s", cmd, want)
 	}
 	j.Model = ""
+	j.Name = "" // no name recorded: pi's session is called after the slug
 	cfg.PiFlags = nil
 	cmd = cfg.LaunchCommand(j, "pi", "/d")
-	if strings.Contains(cmd, "--model") || strings.Contains(cmd, " -- ") || !strings.HasSuffix(cmd, "-e '/h o/me/ext/driver.ts'") {
+	if strings.Contains(cmd, "--model") || !strings.Contains(cmd, "--name 'my-job'") || strings.Contains(cmd, " -- ") || !strings.HasSuffix(cmd, "-e '/h o/me/ext/driver.ts'") {
 		t.Fatalf("bare cmd: %s", cmd)
 	}
 	if ShellQuote(`a'b`) != `'a'\''b'` {
@@ -137,6 +139,15 @@ func TestSlugColorKind(t *testing.T) {
 	}
 	if !ValidColor("cyan") || ValidColor("") || ValidColor("black") {
 		t.Error("ValidColor")
+	}
+	if n, err := CleanName("  Fix  the\n-50  bug "); err != nil || n != "Fix the -50 bug" {
+		t.Errorf("CleanName = %q, %v", n, err)
+	}
+	if n, err := CleanName(strings.Repeat("é", MaxNameLen)); err != nil || n == "" {
+		t.Errorf("CleanName at the limit: %q, %v", n, err)
+	}
+	if _, err := CleanName(strings.Repeat("a", MaxNameLen+1)); !errors.Is(err, ErrBadInput) {
+		t.Errorf("CleanName over the limit: %v", err)
 	}
 	kinds := map[string]string{
 		"https://github.com/o/r/pull/12":   "github_pr",
@@ -302,5 +313,61 @@ func TestScanGeneration(t *testing.T) {
 	}
 	if v, _ := st.GetKV(scanGenerationKey); v != scanGeneration {
 		t.Fatalf("generation %q after reread", v)
+	}
+}
+
+func TestCreateRename(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	svc := &Service{Store: st, Cfg: Config{DefaultDir: t.TempDir()}, Tmux: NewTmux()}
+
+	j, err := svc.Create("my-job", "  My   Job ", "", "")
+	if err != nil || j.Slug != "my-job" || j.Name != "My Job" || j.DisplayName() != "My Job" {
+		t.Fatalf("create: %v %+v", err, j)
+	}
+	if _, err := svc.Create("other", strings.Repeat("x", MaxNameLen+1), "", ""); !errors.Is(err, ErrBadInput) {
+		t.Fatalf("long name: %v", err)
+	}
+
+	// the name alone: same slug, no session business
+	if to, err := svc.Rename(j, "my-job", "Renamed"); err != nil || to != "my-job" {
+		t.Fatalf("rename name only: %v %q", err, to)
+	}
+	j, _ = st.GetJobBySlug("my-job")
+	if j.Name != "Renamed" {
+		t.Fatalf("name after rename: %+v", j)
+	}
+	// nothing changes: nothing is written
+	rev := j.Rev
+	if to, err := svc.Rename(j, "my-job", "Renamed"); err != nil || to != "my-job" {
+		t.Fatalf("no-op rename: %v %q", err, to)
+	}
+	if j, _ = st.GetJobBySlug("my-job"); j.Rev != rev {
+		t.Fatalf("no-op rename bumped rev %d → %d", rev, j.Rev)
+	}
+	// slug and name together
+	if to, err := svc.Rename(j, "new-job", "New Job"); err != nil || to != "new-job" {
+		t.Fatalf("rename both: %v %q", err, to)
+	}
+	if _, err := st.GetJobBySlug("my-job"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("old slug still there: %v", err)
+	}
+	j, _ = st.GetJobBySlug("new-job")
+	if j.Name != "New Job" || j.DisplayName() != "New Job" {
+		t.Fatalf("after rename both: %+v", j)
+	}
+	// clearing the name: the card goes by the slug again
+	if _, err := svc.Rename(j, "new-job", ""); err != nil {
+		t.Fatal(err)
+	}
+	j, _ = st.GetJobBySlug("new-job")
+	if j.Name != "" || j.DisplayName() != "new-job" {
+		t.Fatalf("cleared name: %+v", j)
+	}
+	if _, err := svc.Rename(j, "Bad Slug", "x"); err == nil {
+		t.Fatal("invalid slug accepted")
 	}
 }

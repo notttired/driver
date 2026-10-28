@@ -11,7 +11,7 @@ function fixtureBoard(): WebBoard {
   return makeBoard({
     daemon: { pid: 4242, started_at: NOW - 3600, last_tick: NOW - 1, live: 2 },
     jobs: [
-      makeJob({ slug: "stripe-webhooks", dir: "/Users/me/src/payments", color: "blue", state: "draft", has_notes: true }),
+      makeJob({ slug: "stripe-webhooks", name: "Stripe webhooks retry", dir: "/Users/me/src/payments", color: "blue", state: "draft", has_notes: true }),
       makeJob({ slug: "flaky-ci", dir: "/Users/me/src/platform", state: "draft" }),
       makeJob({
         slug: "search-reindex",
@@ -48,6 +48,7 @@ function installFetch(board: WebBoard) {
         if (!job) return json({ error: "no such job" }, 404);
         return json({
           slug: job.slug,
+          name: job.name ?? "",
           dir: job.dir,
           model: "",
           color: job.color ?? "",
@@ -90,8 +91,11 @@ describe("BoardView (DOM smoke test)", () => {
   it("renders the four columns, their counts, every card, status tokens and the archive drawer", async () => {
     render(<App />);
 
-    const draft = await screen.findByText("stripe-webhooks");
+    // a named job's card carries the name, with the slug as its tooltip
+    const draft = await screen.findByText("Stripe webhooks retry");
     expect(draft).toBeInTheDocument();
+    expect(draft).toHaveAttribute("title", "stripe-webhooks");
+    expect(screen.queryByText("stripe-webhooks")).toBeNull();
 
     const col = (name: string) => document.querySelector<HTMLElement>(`.col[data-col="${name}"]`)!;
     for (const name of ["draft", "working", "blocked", "done"]) {
@@ -138,24 +142,30 @@ describe("BoardView (DOM smoke test)", () => {
 
   it("filters cards by search and shows the matched read-out", async () => {
     render(<App />);
-    await screen.findByText("stripe-webhooks");
+    await screen.findByText("Stripe webhooks retry");
     const input = screen.getByLabelText("search jobs");
     fireEvent.change(input, { target: { value: "reindex" } });
     expect(screen.getByText("search-reindex")).toBeInTheDocument();
     expect(screen.queryByText("flaky-ci")).not.toBeInTheDocument();
     expect(screen.getByText("of 7 jobs", { exact: false })).toBeInTheDocument();
+    // the typed name is searched too
+    fireEvent.change(input, { target: { value: "retry" } });
+    expect(screen.getByText("Stripe webhooks retry")).toBeInTheDocument();
+    expect(screen.queryByText("search-reindex")).not.toBeInTheDocument();
     fireEvent.keyDown(input, { key: "Escape" });
     expect(await screen.findByText("flaky-ci")).toBeInTheDocument();
   });
 
   it("opens the job overlay on a card click with the launch form, and Escape closes it", async () => {
     render(<App />);
-    const card = (await screen.findByText("stripe-webhooks")).closest(".card")!;
+    const card = (await screen.findByText("Stripe webhooks retry")).closest(".card")!;
     fireEvent.click(card);
 
     const overlay = document.getElementById("job-overlay")!;
     await waitFor(() => expect(overlay).not.toHaveAttribute("hidden"));
-    expect(within(overlay).getByTitle("stripe-webhooks")).toBeInTheDocument();
+    // the head is called after the name; the slug sits beside it
+    expect(within(overlay).getByTitle("stripe-webhooks")).toHaveTextContent("Stripe webhooks retry");
+    expect(within(overlay).getByText("as stripe-webhooks")).toBeInTheDocument();
     expect(await within(overlay).findByLabelText(/DIRECTORY/)).toHaveValue("/Users/me/src/payments");
     expect(within(overlay).getByRole("button", { name: /START/ })).toBeInTheDocument();
     // no spec step: a job is briefed in its pane once pi is open

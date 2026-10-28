@@ -19,7 +19,7 @@ func open(t *testing.T) *Store {
 
 func TestJobsLifecycle(t *testing.T) {
 	s := open(t)
-	j := &Job{Slug: "alpha", Dir: "/tmp", Spec: "do it"}
+	j := &Job{Slug: "alpha", Name: "Alpha job", Dir: "/tmp", Spec: "do it"}
 	id, err := s.CreateJob(j)
 	if err != nil || id == 0 || j.Rev != 1 {
 		t.Fatalf("create: %v id=%d rev=%d", err, id, j.Rev)
@@ -28,7 +28,7 @@ func TestJobsLifecycle(t *testing.T) {
 		t.Fatalf("duplicate slug: %v", err)
 	}
 	got, err := s.GetJobBySlug("alpha")
-	if err != nil || got.Spec != "do it" || got.CreatedAt == 0 {
+	if err != nil || got.Spec != "do it" || got.Name != "Alpha job" || got.DisplayName() != "Alpha job" || got.CreatedAt == 0 {
 		t.Fatalf("get: %v %+v", err, got)
 	}
 	rev, err := s.UpdateJobFields(id, got.Rev, map[string]any{"state": "working", "started_at": int64(5)})
@@ -212,7 +212,7 @@ func TestMigrateV3(t *testing.T) {
 	defer s.Close()
 	var version int
 	s.db.QueryRow(`PRAGMA user_version`).Scan(&version)
-	if version != 3 {
+	if version != len(migrations) {
 		t.Fatalf("user_version %d", version)
 	}
 	var hasLabel int
@@ -273,5 +273,51 @@ func TestDeleteKVPrefix(t *testing.T) {
 	}
 	if v, _ := s.GetKV("scanner-generation"); v != "2" {
 		t.Fatalf("scanner-generation = %q (the prefix must not reach it)", v)
+	}
+}
+
+func TestMigrateV4(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v3.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{schemaV1, schemaV2, schemaV3, `PRAGMA user_version = 3`,
+		`INSERT INTO jobs (id, slug) VALUES (4, 'old-job')`} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	db.Close()
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var version int
+	s.db.QueryRow(`PRAGMA user_version`).Scan(&version)
+	if version != 4 {
+		t.Fatalf("user_version %d", version)
+	}
+	// a job from before v4 has no name and goes by its slug
+	old, err := s.GetJobByID(4)
+	if err != nil || old.Name != "" || old.DisplayName() != "old-job" {
+		t.Fatalf("old job after migration: %v %+v", err, old)
+	}
+	// names round-trip and can be cleared
+	j := &Job{Slug: "named", Name: "Named Job"}
+	if _, err := s.CreateJob(j); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.GetJobBySlug("named")
+	if got.Name != "Named Job" || got.DisplayName() != "Named Job" {
+		t.Fatalf("name: %+v", got)
+	}
+	if _, err := s.UpdateJobFields(got.ID, got.Rev, map[string]any{"name": ""}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.GetJobBySlug("named")
+	if got.Name != "" || got.DisplayName() != "named" {
+		t.Fatalf("cleared name: %+v", got)
 	}
 }

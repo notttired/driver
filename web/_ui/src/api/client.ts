@@ -145,8 +145,8 @@ export const reorderColumn = (column: Column, slugs: readonly string[]) =>
 export const setJobColor = (slug: string, color: string) =>
   postJSON<OkResponse>("/api/job/color", { slug, color });
 
-export const renameJob = (slug: string, to: string) =>
-  postJSON<RenameResult>("/api/job/rename", { slug, to });
+export const renameJob = (slug: string, to: string, name: string) =>
+  postJSON<RenameResult>("/api/job/rename", { slug, to, name });
 
 export const saveJobNotes = (slug: string, text: string) =>
   postJSON<OkResponse>("/api/job/notes", { slug, text });
