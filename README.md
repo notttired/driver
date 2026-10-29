@@ -104,15 +104,16 @@ asked a question (dialog), was interrupted, or exited. Open the card and answer
 in the pane; the board follows pi's state on its own. Drags: working → blocked
 sends Escape (stop the current task); blocked → working just opens the card;
 blocked → done ends the job (kills the tmux session); done → working or blocked
-**reactivates** (pi resumes the same session file); done → the archive drawer
+**reactivates** (pi resumes the job's session file, the one it was last writing); done → the archive drawer
 under DONE archives it. The overlay's buttons do the same: start · stop · done ·
 cancel (close pi; the job goes back to not started) · reactivate · archive.
 Archived jobs free their slug and can be unarchived or deleted.
 
 **Notes, the record and links.** Notes are yours — autosaved, never shown to
-pi. The conversation record follows pi's session file as it grows: each of
-your messages, then the last thing pi said before it stopped (an interrupted
-or failed turn is marked as such). pi's answers render as markdown — headings,
+pi. The conversation record follows pi's session file as it grows (and follows
+pi to the new file a `/fork` or `/new` inside it starts): each of your
+messages, then the last thing pi said before it stopped (an interrupted or
+failed turn is marked as such). pi's answers render as markdown — headings,
 lists, code, tables — your messages stay as typed, and URLs in either are
 clickable. Links are
 any URL, shown as the PR number or the host (no labels); GitHub PRs, GitHub,

@@ -183,7 +183,7 @@ func (s *Service) Submit(j *store.Job) error {
 	}
 	_ = os.Remove(filepath.Join(jobDir, "prompt.md")) // earlier builds passed a spec this way
 	_ = os.Remove(filepath.Join(jobDir, "status.json"))
-	cmd := s.Cfg.LaunchCommand(j, piBin, jobDir)
+	cmd := s.Cfg.LaunchCommand(j, piBin, jobDir, sessionFile)
 	if err := s.Tmux.NewSession(sess, j.Dir, j.Slug, j.Slug, cmd); err != nil {
 		_ = s.Tmux.KillSession(sess) // a half-made session must not linger
 		return Refuse("%v", err)
@@ -225,13 +225,19 @@ func (s *Service) Reactivate(j *store.Job) error {
 		return fmt.Errorf("mkdir %s: %w", jobDir, err)
 	}
 	_ = os.Remove(filepath.Join(jobDir, "status.json"))
-	cmd := s.Cfg.LaunchCommand(j, piBin, jobDir)
+	// pi resumes the file it was last writing: the launch's session.jsonl, or
+	// the one it moved to (a /fork or /new inside pi, followed by the tick)
+	sessionFile := filepath.Join(jobDir, "session.jsonl")
+	if fi, err := os.Stat(j.PiSession); j.PiSession != "" && err == nil && fi.Mode().IsRegular() {
+		sessionFile = j.PiSession
+	}
+	cmd := s.Cfg.LaunchCommand(j, piBin, jobDir, sessionFile)
 	if err := s.Tmux.NewSession(sess, j.Dir, j.Slug, j.Slug, cmd); err != nil {
 		_ = s.Tmux.KillSession(sess) // a half-made session must not linger
 		return Refuse("%v", err)
 	}
 	_, err = s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{
-		"tmux": sess, "pi_session": filepath.Join(jobDir, "session.jsonl"), "started_at": time.Now().Unix(),
+		"tmux": sess, "pi_session": sessionFile, "started_at": time.Now().Unix(),
 		"state": "working", "outcome": "", "finished_at": int64(0),
 	})
 	if err != nil {
@@ -523,7 +529,7 @@ func (s *Service) Fork(j *store.Job, to, name string) (*store.Job, error) {
 		if sessionFile == "" {
 			sessionFile = filepath.Join(jobDir, "session.jsonl")
 		}
-		cmd := s.Cfg.LaunchCommand(fork, piBin, jobDir)
+		cmd := s.Cfg.LaunchCommand(fork, piBin, jobDir, sessionFile)
 		if err := s.Tmux.NewSession(sess, fork.Dir, fork.Slug, fork.Slug, cmd); err != nil {
 			return undo(Refuse("%v", err))
 		}

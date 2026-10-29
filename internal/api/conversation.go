@@ -39,16 +39,19 @@ func webConversationFrom(c pi.Conversation, rev string) *webConversation {
 }
 
 // conversationCache keeps the record last derived for each job together
-// with the size and mtime of the session file it came from, so the
+// with the path, size and mtime of the session file it came from, so the
 // overlay's poll re-reads a multi-megabyte session only when pi appended
-// to it. Rev is that size and mtime, which lets the SPA tell an unchanged
-// record apart without comparing it.
+// to it — or moved to another file (the daemon keeps pi_session on the
+// file pi writes; a /fork or /new inside pi starts a new one). Rev is the
+// size and mtime, which lets the SPA tell an unchanged record apart without
+// comparing it.
 type conversationCache struct {
 	mu    sync.Mutex
 	byJob map[int64]cachedConversation
 }
 
 type cachedConversation struct {
+	path string
 	size int64
 	mod  time.Time
 	conv *webConversation
@@ -74,7 +77,7 @@ func (c *conversationCache) get(j *store.Job) (*webConversation, error) {
 	c.mu.Lock()
 	hit, ok := c.byJob[j.ID]
 	c.mu.Unlock()
-	if ok && hit.size == st.Size() && hit.mod.Equal(st.ModTime()) {
+	if ok && hit.path == j.PiSession && hit.size == st.Size() && hit.mod.Equal(st.ModTime()) {
 		return hit.conv, nil
 	}
 	// pi may append between the stat and the read; the record is then ahead
@@ -85,7 +88,7 @@ func (c *conversationCache) get(j *store.Job) (*webConversation, error) {
 	}
 	out := webConversationFrom(conv, fmt.Sprintf("%d-%d", st.Size(), st.ModTime().UnixNano()))
 	c.mu.Lock()
-	c.byJob[j.ID] = cachedConversation{size: st.Size(), mod: st.ModTime(), conv: out}
+	c.byJob[j.ID] = cachedConversation{path: j.PiSession, size: st.Size(), mod: st.ModTime(), conv: out}
 	c.mu.Unlock()
 	return out, nil
 }

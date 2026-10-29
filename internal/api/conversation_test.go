@@ -3,7 +3,9 @@ package api
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"driver/internal/store"
 )
@@ -51,5 +53,33 @@ func TestConversationCache(t *testing.T) {
 	}
 	if third == first || len(third.Messages) != 3 || !third.Pending || third.Rev == first.Rev {
 		t.Fatalf("third = %+v (same object: %v)", third, third == first)
+	}
+
+	// pi moved to another file (its /fork or /new; the daemon followed) of the
+	// same size and mtime: the path is part of the stamp, so it is re-read
+	other := filepath.Join(filepath.Dir(p), "2026-10-29T13-19-45-964Z_other.jsonl")
+	if err := os.WriteFile(other, []byte(strings.Replace(body, "Hi there.", "Yo there.", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.Date(2026, 10, 29, 13, 20, 0, 0, time.UTC)
+	for _, f := range []string{p, other} {
+		if err := os.Chtimes(f, stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil { // back to the 2-message body, same length as other
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(p, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+	before, err := c.get(j)
+	if err != nil || len(before.Messages) != 2 || before.Messages[1].Text != "Hi there." {
+		t.Fatalf("before the move = %+v %v", before, err)
+	}
+	j.PiSession = other
+	moved, err := c.get(j)
+	if err != nil || moved == before || len(moved.Messages) != 2 || moved.Messages[1].Text != "Yo there." {
+		t.Fatalf("after the move = %+v %v (same object: %v)", moved, err, moved == before)
 	}
 }

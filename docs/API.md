@@ -142,9 +142,11 @@ subdirectories.
 
 `GET /api/job/conversation?slug=<slug>` → `WebConversation` — the overlay's
 record of the session: your messages and pi's final answer to each
-(docs/DESIGN.md "Conversation record"). Derived from the session file on each
-request, cached on the file's size and mtime; a job with no session yet answers
-an empty record. 404 for an unknown slug.
+(docs/DESIGN.md "Conversation record"). Derived on each request from the job's
+current session file — the one pi is writing; the daemon follows pi to the new
+file a `/fork` or `/new` inside it starts (docs/DESIGN.md "State derivation") —
+cached on the file's path, size and mtime; a job with no session yet answers an
+empty record. 404 for an unknown slug.
 
 ```ts
 type WebConversation = {

@@ -125,7 +125,7 @@ func TestHoldBlocked(t *testing.T) {
 func TestLaunchCommand(t *testing.T) {
 	cfg := Config{Home: "/h o/me", Port: 7781, PiFlags: []string{"-a", "--x"}}
 	j := &store.Job{ID: 7, Slug: "my-job", Name: "My Job", Model: "it's"}
-	cmd := cfg.LaunchCommand(j, "/opt/bin/pi", "/h o/me/jobs/my-job-7")
+	cmd := cfg.LaunchCommand(j, "/opt/bin/pi", "/h o/me/jobs/my-job-7", "/h o/me/jobs/my-job-7/session.jsonl")
 	want := `env DRIVER_JOB_DIR='/h o/me/jobs/my-job-7' DRIVER_JOB_SLUG='my-job' DRIVER_SERVE='http://127.0.0.1:7781' '/opt/bin/pi' --session '/h o/me/jobs/my-job-7/session.jsonl' --name 'My Job' --model 'it'\''s' -e '/h o/me/ext/driver.ts' '-a' '--x'`
 	if cmd != want {
 		t.Fatalf("\n got %s\nwant %s", cmd, want)
@@ -133,7 +133,7 @@ func TestLaunchCommand(t *testing.T) {
 	j.Model = ""
 	j.Name = "" // no name recorded: pi's session is called after the slug
 	cfg.PiFlags = nil
-	cmd = cfg.LaunchCommand(j, "pi", "/d")
+	cmd = cfg.LaunchCommand(j, "pi", "/d", "/d/session.jsonl")
 	if strings.Contains(cmd, "--model") || !strings.Contains(cmd, "--name 'my-job'") || strings.Contains(cmd, " -- ") || !strings.HasSuffix(cmd, "-e '/h o/me/ext/driver.ts'") {
 		t.Fatalf("bare cmd: %s", cmd)
 	}
@@ -560,4 +560,107 @@ func equalIDs(a, b []int64) bool {
 		}
 	}
 	return true
+}
+
+func TestFollowSession(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	home, work := t.TempDir(), t.TempDir()
+	svc := &Service{Store: st, Cfg: Config{Home: home, DefaultDir: work}, Tmux: NewTmux()}
+	d := NewDaemon(svc)
+	j, err := svc.Create("mover", "Mover", work, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobDir := svc.Cfg.FreshJobDir(j)
+	if err := os.MkdirAll(jobDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	line := func(id, parent, text string) string {
+		return `{"type":"message","id":"` + id + `","parentId":` + parent + `,"timestamp":"2026-10-29T13:19:00.000Z","message":{"role":"user","content":[{"type":"text","text":"` + text + `"}]}}` + "\n"
+	}
+	header := `{"type":"session","version":3,"id":"0199f2a0-0000-7000-8000-000000000002","timestamp":"2026-10-29T13:19:38.000Z","cwd":"` + work + `"}` + "\n"
+	launched := filepath.Join(jobDir, "session.jsonl")
+	if err := os.WriteFile(launched, []byte(header+line("a", "null", "see https://example.com/first")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpdateJobFields(j.ID, j.Rev, map[string]any{"state": "working", "pi_session": launched, "started_at": int64(100)}); err != nil {
+		t.Fatal(err)
+	}
+	j, _ = st.GetJobBySlug("mover")
+	if err := d.scanner.scan(j); err != nil { // the launch file: a link and a saved offset
+		t.Fatal(err)
+	}
+	if off, err := st.GetKV(scanOffsetKey(j.ID)); err != nil || off == "0" {
+		t.Fatalf("offset after the first scan: %q %v", off, err)
+	}
+	rev := j.Rev
+
+	// nothing to follow: no path, the launch file (also under another
+	// spelling), a file pi has not written yet, a file outside the job dir
+	outside := filepath.Join(t.TempDir(), "elsewhere.jsonl")
+	if err := os.WriteFile(outside, []byte(header), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"", launched, filepath.Join(jobDir, ".", "session.jsonl"), filepath.Join(jobDir, "ghost.jsonl"), outside} {
+		if err := d.followSession(j, p); err != nil {
+			t.Fatalf("follow %q: %v", p, err)
+		}
+		if j.PiSession != launched || j.Rev != rev {
+			t.Fatalf("follow %q moved the job: %+v", p, j)
+		}
+	}
+	if d.elsewhere[j.ID] != outside {
+		t.Errorf("the outside path is remembered so it is logged once: %q", d.elsewhere[j.ID])
+	}
+	if got, _ := st.GetJobBySlug("mover"); got.PiSession != launched || got.Rev != rev {
+		t.Fatalf("stored job moved: %+v", got)
+	}
+
+	// pi's /fork: a new file beside the launch file holding the branch and
+	// then more, named by status.json → the job follows it, and the scanner
+	// starts over on the new file
+	moved := filepath.Join(jobDir, "2026-10-29T13-19-45-964Z_0199f2a0-0000-7000-8000-000000000003.jsonl")
+	body := strings.Replace(header, "000000000002", "000000000003", 1) + line("a", "null", "see https://example.com/first") + line("b", `"a"`, "and https://example.com/moved")
+	if err := os.WriteFile(moved, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.followSession(j, moved); err != nil {
+		t.Fatal(err)
+	}
+	if j.PiSession != moved || j.Rev == rev {
+		t.Fatalf("job after the move: %+v", j)
+	}
+	if got, _ := st.GetJobBySlug("mover"); got.PiSession != moved || got.Rev != j.Rev {
+		t.Fatalf("stored job after the move: %+v (in memory rev %d)", got, j.Rev)
+	}
+	if v, err := st.GetKV(scanOffsetKey(j.ID)); err == nil {
+		t.Fatalf("the scan offset must be forgotten, still %q", v)
+	}
+	if _, ok := d.elsewhere[j.ID]; ok {
+		t.Error("the outside note goes once the job moved")
+	}
+	if err := d.scanner.scan(j); err != nil {
+		t.Fatal(err)
+	}
+	if off, _ := st.GetKV(scanOffsetKey(j.ID)); off != strconv.Itoa(len(body)) {
+		t.Fatalf("offset after rescanning the new file: %q (file is %d bytes)", off, len(body))
+	}
+	for _, u := range []string{"https://example.com/first", "https://example.com/moved"} {
+		_, created, err := st.AddLink(j.ID, "link", u)
+		if err != nil && !errors.Is(err, store.ErrDuplicate) {
+			t.Fatal(err)
+		}
+		if err == nil && created {
+			t.Errorf("%s should have been attached by the rescan", u)
+		}
+	}
+	// the same path again changes nothing
+	rev = j.Rev
+	if err := d.followSession(j, moved); err != nil || j.Rev != rev {
+		t.Fatalf("second follow: %v, rev %d → %d", err, rev, j.Rev)
+	}
 }

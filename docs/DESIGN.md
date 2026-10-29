@@ -82,7 +82,7 @@ docs/                 this file, API.md
 | home | `~/.driver` (`DRIVER_HOME`) |
 | database | `~/.driver/driver.db` (`DRIVER_DB_PATH`), WAL |
 | env file | `~/.driver/env` — `KEY=VALUE` lines, `#` comments; loaded by `driver serve` and the Makefile |
-| job dir | `~/.driver/jobs/<slug>-<id>/` with `session.jsonl`, `status.json` |
+| job dir | `~/.driver/jobs/<slug>-<id>/` with `session.jsonl` (and any session file pi moves to — "State derivation"), `status.json` |
 | log | `~/.driver/driver.log` (launchd stdout/stderr) |
 | port | `7781` (`-p`, `DRIVER_PORT`); loopback only |
 | tmux session | `drv-<slug>-<id>`, session option `@driver-job=<slug>` |
@@ -180,9 +180,10 @@ The session file stays on disk; a later start begins a fresh one (session.jsonl
 renamed `session-<unix>.jsonl`).
 
 **Reactivate** (done → working/blocked drags, or button; `POST /api/reactivate`):
-the same launch as start on the existing `--session <file>`, so pi resumes the
-conversation; `state=working` (the hold below absorbs the idle pi reports at
-`session_start` before it picks the conversation back up).
+the same launch as start with `--session` naming the job's current `pi_session`
+(the launch's `session.jsonl`, or the file pi moved to — "State derivation"),
+so pi resumes the conversation; `state=working` (the hold below absorbs the
+idle pi reports at `session_start` before it picks the conversation back up).
 
 **Fork** (`POST /api/job/fork {slug, to, name}`): a copy of the job under a new
 slug and name — dir, model, colour, spec, notes and links (`CopyLinks`, status
@@ -244,11 +245,28 @@ session branch holds no user message yet — a fresh job at its prompt — else 
 `e.aborted`), `session_shutdown` (exited). Type import:
 `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";`.
 
+**Following pi's session file.** pi can leave the file it was launched on
+without leaving the job: its `/fork` (a new session holding the branch up to
+the chosen message, which the operator then re-sends) and `/new` both create
+`<timestamp>_<id>.jsonl` beside it — `--session` pins only the first file — and
+`/resume` switches to any file. `status.json`'s `session` names the file pi is
+writing. Each tick, when that is another regular file in the job dir, the job
+follows: `pi_session` moves (the record, the link scanner, reactivate and fork
+all read it), the scanner forgets the job's offset and pending PR calls and
+reads the new file from its start (attaching is idempotent, so the branch the
+new file copied costs nothing), and the daemon logs `<slug>: pi moved to
+<file>`. A file outside the job dir is not followed — the job dir is
+`pi_session`'s directory — and is logged once; a file pi has not written yet (a
+`/new` before its first message) is picked up on a later tick. Until 2026-10-29
+a `/fork` inside pi froze the record, the scanner and reactivate on the
+abandoned `session.jsonl`.
+
 ## Link detection and PR status
 
 Each tick, for every job with a `pi_session` file, the daemon reads the bytes
-appended since the offset saved in `kv` (`scan:<job id>`) and parses complete
-JSONL lines. Two kinds of `message` entry yield links, both attached idempotently
+appended since the offset saved in `kv` (`scan:<job id>`) — from the start again
+once pi moved to another file ("State derivation") — and parses complete JSONL
+lines. Two kinds of `message` entry yield links, both attached idempotently
 on `(job_id, url)` with the kind derived from the URL:
 
 - role `user` and role `assistant` — the conversation: every `http(s)://` URL
@@ -274,10 +292,12 @@ Links of kind github_pr whose
 
 ## Conversation record
 
-`GET /api/job/conversation` derives the overlay's record from the session file
-on request, cached on the file's size and mtime, so the overlay's 3-second poll
-re-reads a session only when pi appended to it (`rev` is that stamp; the SPA
-keeps its rendered list while it does not change). The entries read are those
+`GET /api/job/conversation` derives the overlay's record from the job's
+current session file (`pi_session`, which the tick keeps on the file pi is
+writing — "State derivation") on request, cached on the file's path, size and
+mtime, so the overlay's 3-second poll re-reads a session only when pi appended
+to it or moved (`rev` is the size-and-mtime stamp; the SPA keeps its rendered
+list while it does not change). The entries read are those
 on the branch of the file's last entry: every entry names its parent, and a
 `/tree` jump leaves the abandoned branch in the file, off the path. Walking that
 path, every `message` of role `user` is a row of yours (its text blocks,

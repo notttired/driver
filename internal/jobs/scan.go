@@ -173,6 +173,17 @@ func (p *sessionScanner) scan(j *store.Job) error {
 	return p.st.SetKV(scanOffsetKey(j.ID), strconv.FormatInt(next, 10))
 }
 
+// forget drops j's saved offset and pending PR calls: the next scan reads
+// the job's session from its start — for a job whose pi moved to another
+// file (daemon.followSession).
+func (p *sessionScanner) forget(jobID int64) error {
+	delete(p.pending, jobID)
+	if err := p.st.DeleteKV(scanOffsetKey(jobID)); err != nil {
+		return err
+	}
+	return p.st.DeleteKV(scanPendingKey(jobID))
+}
+
 // attach adds url to j's links; a URL already there is left alone. what names
 // the find in the log ("link", "PR").
 func (p *sessionScanner) attach(j *store.Job, kind, url, what string) error {

@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -39,6 +40,7 @@ type Daemon struct {
 	tickN        int
 	blockedSince map[int64]int    // job id → tick the current hold began
 	lastReason   map[int64]string // job id → last blocked reason seen
+	elsewhere    map[int64]string // job id → a session path pi reported outside the job dir, logged once
 	scanner      *sessionScanner
 	prBackoff    map[string]time.Time // PR url → last failed gh call
 	ghMissing    bool
@@ -51,6 +53,7 @@ func NewDaemon(svc *Service) *Daemon {
 		svc:          svc,
 		blockedSince: map[int64]int{},
 		lastReason:   map[int64]string{},
+		elsewhere:    map[int64]string{},
 		scanner:      newSessionScanner(svc.Store),
 		prBackoff:    map[string]time.Time{},
 	}
@@ -126,7 +129,11 @@ func (d *Daemon) tick() (live int, firstErr error) {
 		if isLive {
 			live++
 		}
-		obs := Observe(j, isLive, d.svc.Cfg.ReadStatus(j), now)
+		st := d.svc.Cfg.ReadStatus(j)
+		if st != nil {
+			note(d.followSession(j, st.Session))
+		}
+		obs := Observe(j, isLive, st, now)
 		state, hold := holdBlocked(j.State, obs.State, d.blockedSince[j.ID], d.tickN)
 		if hold == 0 {
 			delete(d.blockedSince, j.ID)
@@ -179,6 +186,11 @@ func (d *Daemon) tick() (live int, firstErr error) {
 	for id := range d.lastReason {
 		if !seen[id] {
 			delete(d.lastReason, id)
+		}
+	}
+	for id := range d.elsewhere {
+		if !seen[id] {
+			delete(d.elsewhere, id)
 		}
 	}
 	for _, j := range jobs {
@@ -339,4 +351,52 @@ func mapPRState(state string, draft bool) string {
 		return "open"
 	}
 	return ""
+}
+
+// followSession keeps j's pi_session on the file pi is writing. pi can leave
+// the file it was launched on without leaving the job: its /fork (a new
+// session holding the branch up to the chosen message) and /new both create
+// `<timestamp>_<id>.jsonl` beside it, and /resume switches to any file;
+// status.json's `session` names the current one. When that is another regular
+// file in the job dir the job follows it: pi_session moves — the record, the
+// link scanner, reactivate and fork all read it — the scanner forgets its
+// offset so the new file is read from its start (attaching is idempotent),
+// and j carries the new path and rev for the rest of the tick. A file
+// outside the job dir is not followed (the job dir IS pi_session's
+// directory) and is logged once; a path pi has not written yet (a /new
+// before its first message) is left for a later tick.
+func (d *Daemon) followSession(j *store.Job, session string) error {
+	if session == "" {
+		return nil
+	}
+	path := filepath.Clean(session)
+	if path == j.PiSession {
+		return nil
+	}
+	if filepath.Dir(path) != d.svc.Cfg.JobDir(j) {
+		if d.elsewhere[j.ID] != path {
+			d.elsewhere[j.ID] = path
+			log.Printf("%s: pi is on %s, outside the job dir: not followed", j.Slug, path)
+		}
+		return nil
+	}
+	fi, err := os.Stat(path)
+	if err != nil || !fi.Mode().IsRegular() {
+		return nil
+	}
+	was := "nothing"
+	if j.PiSession != "" {
+		if old, err := os.Stat(j.PiSession); err == nil && os.SameFile(old, fi) {
+			return nil // the same file under another spelling
+		}
+		was = filepath.Base(j.PiSession)
+	}
+	rev, err := d.svc.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{"pi_session": path})
+	if err != nil {
+		return fmt.Errorf("%s: follow session %s: %w", j.Slug, filepath.Base(path), err)
+	}
+	log.Printf("%s: pi moved to %s (was %s)", j.Slug, filepath.Base(path), was)
+	j.PiSession, j.Rev = path, rev
+	delete(d.elsewhere, j.ID)
+	return d.scanner.forget(j.ID)
 }
