@@ -17,14 +17,15 @@ func ShellQuote(s string) string {
 //	  <pi> --session '<sessionFile>' --name '<name>' [--model '<model>'] \
 //	  -e '<home>/ext/driver.ts' <DRIVER_PI_FLAGS>
 //
-// No prompt: pi opens at its editor and the job is briefed in its pane. The
-// same command serves a submit (sessionFile is a fresh `<jobdir>/session.jsonl`)
-// and a reactivate (the job's current session file, which pi resumes; pi may
-// have moved off session.jsonl with a /fork or /new of its own — the tick
-// follows it, see daemon.followSession). pi's session name is the job's
-// display name (the name the operator typed, else the slug), so pi's footer
-// reads as the board does.
-func (c Config) LaunchCommand(j *store.Job, piBin, jobDir, sessionFile string) string {
+// No prompt unless one is given (a retry resumes a turn pi was cut off in
+// with `-- 'continue'`): pi opens at its editor and the job is briefed in
+// its pane. The same command serves a submit (sessionFile is a fresh
+// `<jobdir>/session.jsonl`), a reactivate and a retry (the job's current
+// session file, which pi resumes; pi may have moved off session.jsonl with a
+// /fork or /new of its own — the tick follows it, see daemon.followSession).
+// pi's session name is the job's display name (the name the operator typed,
+// else the slug), so pi's footer reads as the board does.
+func (c Config) LaunchCommand(j *store.Job, piBin, jobDir, sessionFile string, prompt ...string) string {
 	words := []string{
 		"env",
 		"DRIVER_JOB_DIR=" + ShellQuote(jobDir),
@@ -40,6 +41,12 @@ func (c Config) LaunchCommand(j *store.Job, piBin, jobDir, sessionFile string) s
 	words = append(words, "-e", ShellQuote(c.ExtPath()))
 	for _, f := range c.PiFlags {
 		words = append(words, ShellQuote(f))
+	}
+	if len(prompt) > 0 {
+		words = append(words, "--")
+		for _, p := range prompt {
+			words = append(words, ShellQuote(p))
+		}
 	}
 	return strings.Join(words, " ")
 }

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 
-import { deleteJob, openJobDir, pinJobLink, unarchiveJob } from "./api/client.ts";
+import { deleteJob, openJobDir, pinJobLink, retryJob, unarchiveJob } from "./api/client.ts";
 import { BoardView, type BoardActions } from "./components/board/BoardView.tsx";
 import { DragProvider } from "./components/board/DragProvider.tsx";
 import { GhostJobCard } from "./components/board/JobCard.tsx";
@@ -27,6 +27,14 @@ export function App() {
       },
       onOpenLink: (slug, url) => {
         void mutate(() => pinJobLink(slug, url));
+      },
+      onRetry: async (slugs) => {
+        await Promise.all(
+          slugs.map(async (slug) => {
+            const err = await mutate(() => retryJob(slug));
+            if (err) showToast(`${slug}: ${err.message}`);
+          }),
+        );
       },
       onNewJob: () => setNewJob(true),
       onUnarchive: (slug) => {

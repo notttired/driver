@@ -183,6 +183,49 @@ func TestReadConversation(t *testing.T) {
 	}
 }
 
+func TestConversationFailed(t *testing.T) {
+	turn := func(last ...string) Conversation {
+		lines := []string{entry("h", "", "session", "", nil, nil), entry("u1", "h", "message", "user", text("Go."), nil)}
+		return BuildConversation(parse(append(lines, last...)))
+	}
+	cases := []struct {
+		name   string
+		conv   Conversation
+		msg    string
+		failed bool
+	}{
+		{"gave up on the network", turn(
+			entry("a1", "u1", "message", "assistant", []map[string]any{}, map[string]any{"stopReason": "error", "errorMessage": "Connection error."}),
+			entry("ce", "a1", "context_edit", "", nil, map[string]any{"targetId": "a1", "replacement": nil}),
+			entry("a2", "ce", "message", "assistant", []map[string]any{}, map[string]any{"stopReason": "error", "errorMessage": "Request timed out."}),
+		), "Request timed out.", true},
+		{"failed after a tool call", turn(
+			entry("a1", "u1", "message", "assistant", []map[string]any{{"type": "toolCall", "id": "c1", "name": "bash", "arguments": map[string]any{"command": "ls"}}}, map[string]any{"stopReason": "toolUse"}),
+			entry("r1", "a1", "message", "toolResult", text("x"), map[string]any{"toolCallId": "c1"}),
+			entry("a2", "r1", "message", "assistant", text("Half an"), map[string]any{"stopReason": "error", "errorMessage": "terminated"}),
+		), "terminated", true},
+		{"answered", turn(entry("a1", "u1", "message", "assistant", text("Done."), map[string]any{"stopReason": "stop"})), "", false},
+		{"interrupted", turn(entry("a1", "u1", "message", "assistant", text(""), map[string]any{"stopReason": "aborted", "errorMessage": "Operation aborted"})), "", false},
+		{"your message is the last", turn(), "", false},
+		{"nothing yet", Conversation{}, "", false},
+	}
+	for _, c := range cases {
+		if msg, failed := c.conv.Failed(); msg != c.msg || failed != c.failed {
+			t.Errorf("%s: Failed() = %q, %v", c.name, msg, failed)
+		}
+	}
+}
+
+func parse(lines []string) []Entry {
+	var out []Entry
+	for _, l := range lines {
+		if e, ok := ParseEntry([]byte(l)); ok {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func TestParseEntryTree(t *testing.T) {
 	e := mustParse(t, entry("a1", "u1", "message", "assistant", text("x"), map[string]any{"stopReason": "error", "errorMessage": "terminated"}))
 	if e.ID != "a1" || e.ParentID != "u1" || e.StopReason != "error" || e.ErrorMessage != "terminated" || e.Time != 1793181600 {

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"driver/internal/pi"
 	"driver/internal/store"
@@ -140,6 +141,173 @@ func TestLaunchCommand(t *testing.T) {
 	}
 	if ShellQuote(`a'b`) != `'a'\''b'` {
 		t.Fatal("ShellQuote")
+	}
+	cmd = cfg.LaunchCommand(j, "pi", "/d", "/d/session.jsonl", "continue")
+	if !strings.HasSuffix(cmd, "-e '/h o/me/ext/driver.ts' -- 'continue'") {
+		t.Fatalf("cmd with a first prompt: %s", cmd)
+	}
+}
+
+func TestPlanRetry(t *testing.T) {
+	user := pi.Message{Role: "user", Text: "Go."}
+	failed := pi.Conversation{Messages: []pi.Message{user, {Role: "assistant", End: "error", Error: "Connection error."}}}
+	answered := pi.Conversation{Messages: []pi.Message{user, {Role: "assistant", Text: "Done."}}}
+	interrupted := pi.Conversation{Messages: []pi.Message{user, {Role: "assistant", End: "aborted"}}}
+	cutOff := pi.Conversation{Messages: []pi.Message{user}, Pending: true}
+	blocked, working := &store.Job{State: "blocked"}, &store.Job{State: "working"}
+	idle, dialog, aborted := &pi.Status{State: "idle"}, &pi.Status{State: "dialog"}, &pi.Status{State: "aborted"}
+	cases := []struct {
+		name string
+		j    *store.Job
+		live bool
+		st   *pi.Status
+		conv pi.Conversation
+		want RetryPlan
+	}{
+		{"pi gave up on the network", blocked, true, idle, failed, RetryContinue},
+		{"pi answered and waits on you", blocked, true, idle, answered, RetryNone},
+		{"pi asks you something", blocked, true, dialog, failed, RetryNone},
+		{"you stopped it", blocked, true, aborted, interrupted, RetryNone},
+		{"no word from pi yet", blocked, true, nil, failed, RetryNone},
+		{"pi exited after answering", blocked, false, nil, answered, RetryRestart},
+		{"pi exited on a failed turn", blocked, false, idle, failed, RetryResume},
+		{"pi exited mid-turn", blocked, false, nil, cutOff, RetryResume},
+		{"pi exited after you stopped it", blocked, false, aborted, interrupted, RetryRestart},
+		{"pi exited before anything was said", blocked, false, nil, pi.Conversation{}, RetryRestart},
+		{"not blocked", working, true, idle, failed, RetryNone},
+		{"archived", &store.Job{State: "blocked", ArchivedAt: 9}, false, nil, failed, RetryNone},
+	}
+	for _, c := range cases {
+		if got := PlanRetry(c.j, c.live, c.st, c.conv); got != c.want {
+			t.Errorf("%s: %q want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// TestRetry drives Retry against a tmux server of its own, with a stand-in
+// for pi that records its arguments and what is typed into its pane.
+func TestRetry(t *testing.T) {
+	if !NewTmux().Available() {
+		t.Skip("tmux not on PATH")
+	}
+	sock, err := os.MkdirTemp("", "drvtmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(sock) })
+	t.Setenv("TMUX_TMPDIR", sock)
+	t.Setenv("TMUX", "")
+	t.Cleanup(func() { NewTmux().run("kill-server") })
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	home, work := t.TempDir(), t.TempDir()
+	fakePi := filepath.Join(t.TempDir(), "pi")
+	os.WriteFile(fakePi, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$DRIVER_JOB_DIR/argv\"\ncat > \"$DRIVER_JOB_DIR/typed\"\n"), 0o755)
+	svc := &Service{Store: st, Cfg: Config{Home: home, Port: 7781, PiBin: fakePi}, Tmux: NewTmux()}
+
+	j, err := svc.Create("flaky", "", work, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Submit(j); err != nil {
+		t.Fatal(err)
+	}
+	j, _ = st.GetJobBySlug("flaky")
+	sess, jobDir := SessionName(j), filepath.Dir(j.PiSession)
+	read := func(name string) string {
+		b, _ := os.ReadFile(filepath.Join(jobDir, name))
+		return string(b)
+	}
+	waitFor := func(what string, ok func() bool) {
+		t.Helper()
+		for deadline := time.Now().Add(5 * time.Second); !ok(); time.Sleep(20 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %s", what)
+			}
+		}
+	}
+	waitFor("pi to start", func() bool { return read("argv") != "" })
+	transcript := func(last string) {
+		t.Helper()
+		body := `{"type":"session","version":3,"id":"h"}` + "\n" +
+			`{"type":"message","id":"u1","parentId":"h","message":{"role":"user","content":"Go."}}` + "\n" + last + "\n"
+		if err := os.WriteFile(j.PiSession, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	failedTurn := `{"type":"message","id":"a1","parentId":"u1","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"Connection error."}}`
+	answeredTurn := `{"type":"message","id":"a1","parentId":"u1","message":{"role":"assistant","content":[{"type":"text","text":"Done."}],"stopReason":"stop"}}`
+	block := func() {
+		t.Helper()
+		cur, _ := st.GetJobBySlug("flaky")
+		if _, err := st.UpdateJobFields(cur.ID, cur.Rev, map[string]any{"state": "blocked", "attention_at": int64(77)}); err != nil {
+			t.Fatal(err)
+		}
+		j, _ = st.GetJobBySlug("flaky")
+	}
+	exitPi := func() {
+		t.Helper()
+		svc.Tmux.run("send-keys", "-t", "="+sess+":", "C-d")
+		waitFor("pi to exit", func() bool { return svc.Tmux.PaneDead(sess) })
+	}
+
+	if err := svc.Retry(j); !IsRefusal(err) {
+		t.Fatalf("a job that is not blocked: %v", err)
+	}
+
+	block()
+	os.WriteFile(filepath.Join(jobDir, "status.json"), []byte(`{"state":"idle"}`), 0o644)
+	transcript(answeredTurn)
+	if err := svc.Retry(j); !IsRefusal(err) {
+		t.Fatalf("pi answered and waits on you: %v", err)
+	}
+
+	transcript(failedTurn)
+	if err := svc.Retry(j); err != nil {
+		t.Fatal(err)
+	}
+	waitFor("continue typed into the pane", func() bool { return read("typed") == "continue\n" })
+	if got, _ := st.GetJobBySlug("flaky"); got.State != "blocked" || got.Rev != j.Rev {
+		t.Fatalf("typing continue writes nothing; the tick moves the card: %+v", got)
+	}
+
+	exitPi()
+	os.Remove(filepath.Join(jobDir, "argv"))
+	if err := svc.Retry(j); err != nil {
+		t.Fatal(err)
+	}
+	waitFor("pi to start again", func() bool { return read("argv") != "" })
+	if args := read("argv"); !strings.Contains(args, "--session\n"+j.PiSession+"\n") || !strings.HasSuffix(args, "--\ncontinue\n") {
+		t.Fatalf("a failed turn resumes with continue:\n%s", args)
+	}
+	got, _ := st.GetJobBySlug("flaky")
+	if got.State != "working" || got.AttentionAt != 0 || got.Tmux != sess || got.PiSession != j.PiSession || svc.Tmux.PaneDead(sess) {
+		t.Fatalf("after resume: %+v", got)
+	}
+	if order, _ := st.GetBoardOrder(); !equalIDs(order["working"], []int64{j.ID}) {
+		t.Fatalf("a resumed job arrives in WORKING: %v", order)
+	}
+	if _, err := os.Stat(filepath.Join(jobDir, "status.json")); !os.IsNotExist(err) {
+		t.Fatalf("the dead pi's status.json must go: %v", err)
+	}
+
+	exitPi()
+	block()
+	transcript(answeredTurn)
+	os.Remove(filepath.Join(jobDir, "argv"))
+	if err := svc.Retry(j); err != nil {
+		t.Fatal(err)
+	}
+	waitFor("pi to start again", func() bool { return read("argv") != "" })
+	if args := read("argv"); strings.Contains(args, "continue") {
+		t.Fatalf("a finished turn comes back without a prompt:\n%s", args)
+	}
+	if got, _ := st.GetJobBySlug("flaky"); got.State != "blocked" || got.AttentionAt != 77 || svc.Tmux.PaneDead(sess) {
+		t.Fatalf("after restart: %+v", got)
 	}
 }
 

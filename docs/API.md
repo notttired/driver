@@ -38,11 +38,13 @@ type WebJob = {
   state: 'draft' | 'working' | 'blocked' | 'done';   // the DISPLAY state (stored '' → 'draft')
   outcome?: string;            // done only: 'accepted'
   live: boolean;               // tmux session exists and its pane is not dead
-  pi?: { state: string; tool?: string; reason?: string; ts: number };
+  pi?: { state: string; tool?: string; reason?: string; error?: string; ts: number };
                                // state: starting|ready|working|idle|dialog|aborted|exited|silent
                                // ready = pi at its prompt, nothing sent yet: a draft whose pane
                                // exists. A not-started draft has no pi at all.
                                // reason: why the board calls it blocked (same vocabulary)
+                               // error: blocked only — pi's last turn ended in this error
+                               // (it gave up after its own retries: "Connection error." …)
   has_notes: boolean;
   links?: WebLink[];           // in display order (below)
   started_at?: number;
@@ -51,6 +53,7 @@ type WebJob = {
   archived?: boolean;
   reactivatable?: boolean;     // done and not archived
   attention?: boolean;         // turned blocked on its own and not opened since (the card's ring)
+  retryable?: boolean;         // blocked, and its pi exited or its last turn failed: /api/retry
 };
 
 type WebLink = {
@@ -90,6 +93,7 @@ blocked drag — interrupts you sent yourself); it goes off when the job leaves
 | `POST /api/done` | kill session, state done (allowed for an open, unbriefed draft) | not started · done |
 | `POST /api/kill` | kill session, back to not started ("cancel") | not started |
 | `POST /api/reactivate` | relaunch pi on the same session file, state working, last in WORKING | not done · archived · dir gone |
+| `POST /api/retry` | a blocked job whose pi gave up or died: pi up and its last turn failed → `continue` + Enter typed into the pane (the tick moves the card when pi starts on it); pi exited (dead pane, or no session at all) → pi started again in a fresh tmux session on the job's current session file, with `continue` as its first prompt when the turn it died in was unfinished (failed, or cut off before pi answered) — state working, last in WORKING — and otherwise at its prompt, still blocked | not blocked · nothing to retry (pi is up and its last turn did not fail, or it is not at its prompt) · dir gone · pi or tmux not found · tmux failure (text) |
 | `POST /api/archive` | archive (slug freed) | not done · live session |
 | `POST /api/unarchive` | restore; refuses if an active job now holds the slug | — |
 | `POST /api/delete` | delete forever; removes the job dir | not archived |

@@ -6,6 +6,7 @@ import { ArchiveDrawer } from "./ArchiveDrawer.tsx";
 import { BoardBar } from "./BoardBar.tsx";
 import { BoardColumn } from "./Column.tsx";
 import { JobCard } from "./JobCard.tsx";
+import { RetryAll } from "./RetryAll.tsx";
 
 /** What a card can ask the app to do. Every write goes through the app's
  *  mutate so the board refreshes the same way whatever triggered it. */
@@ -15,6 +16,7 @@ export interface BoardActions {
   /** ⌘-click: open the job's directory in the editor (no overlay) */
   onOpenDir(slug: string): void;
   onOpenLink(slug: string, url: string): void;
+  onRetry(slugs: string[]): Promise<void>;
   /** open the new-job row */
   onNewJob(): void;
   onUnarchive(slug: string): void;
@@ -41,6 +43,7 @@ export function BoardView({ board, search, actions, overlayOpen }: BoardViewProp
             jobs={byColumn[col]}
             total={active ? board.byColumn[col].length : undefined}
             onNewJob={actions.onNewJob}
+            head={col === "blocked" ? <RetryAll jobs={byColumn.blocked} onRetry={actions.onRetry} /> : undefined}
             footer={
               col === "done" ? (
                 <ArchiveDrawer

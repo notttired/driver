@@ -1,5 +1,5 @@
 // A stand-in for `driver serve` on 127.0.0.1:7781 while the Go daemon is not
-// running: six jobs across the four columns plus one archived, the job-editor
+// running: seven jobs across the four columns plus one archived, the job-editor
 // routes, and `{"ok":true}` for every action. `/api/term` answers 409 before
 // any upgrade, which the UI shows as the "session ended" banner.
 //
@@ -19,6 +19,7 @@ const jobs = [
     links: [{ id: 1, kind: "github_pr", url: "https://github.com/acme/search/pull/482", status: "open", status_at: now() - 120, mentions: 3 }] },
   { slug: "onboarding-copy", name: "Onboarding copy pass", dir: `${DEFAULT_DIR}/web`, model: "", color: "pink", state: "blocked", live: true, has_notes: true, mtime: now() - 1800, started_at: now() - 7200, pi: { state: "idle", ts: now() - 1700 },
     links: [{ id: 2, kind: "linear", url: "https://linear.app/acme/issue/WEB-231", mentions: 1, yours: true }] },
+  { slug: "net-flake", dir: `${DEFAULT_DIR}/web`, model: "", color: "", state: "blocked", live: true, has_notes: false, mtime: now() - 300, started_at: now() - 3600, pi: { state: "idle", error: "Connection error.", ts: now() - 290 }, retryable: true },
   { slug: "rate-limits", dir: `${DEFAULT_DIR}/gateway`, model: "", color: "green", state: "done", live: false, has_notes: false, mtime: now() - 86400, started_at: now() - 90000, finished_at: now() - 86400, outcome: "accepted", reactivatable: true,
     links: [{ id: 3, kind: "github_pr", url: "https://github.com/acme/gateway/pull/77", status: "merged", status_at: now() - 80000, mentions: 1 }] },
   { slug: "legacy-export", dir: `${DEFAULT_DIR}/exports`, model: "", color: "", state: "done", live: false, has_notes: false, mtime: now() - 172800, finished_at: now() - 172800, outcome: "accepted", reactivatable: false },
@@ -95,6 +96,7 @@ const server = http.createServer(async (req, res) => {
     case "/api/stop": if (!j.live) return err(res, 409, "no live session"); setTimeout(() => touch(j, { state: "blocked", pi: { state: "aborted", ts: now() } }), 800); break;
     case "/api/done": if (j.state === "draft" || j.state === "done") return err(res, 409, "draft or done"); touch(j, { state: "done", live: false, finished_at: now(), outcome: "accepted", reactivatable: true, pi: undefined }); break;
     case "/api/kill": if (j.state === "draft") return err(res, 409, "already a draft"); touch(j, { state: "draft", live: false, started_at: undefined, pi: undefined }); break;
+    case "/api/retry": if (j.state !== "blocked") return err(res, 409, "not blocked"); if (!j.retryable) return err(res, 409, "nothing to retry"); touch(j, { state: "working", live: true, retryable: undefined, pi: { state: "working", ts: now() } }); break;
     case "/api/reactivate": if (j.state !== "done") return err(res, 409, "not done"); if (j.archived) return err(res, 409, "archived"); if (j.reactivatable === false) return err(res, 409, "dir gone"); await sleep(800); touch(j, { state: "working", live: true, pi: { state: "starting", ts: now() } }); break;
     case "/api/archive": if (j.state !== "done") return err(res, 409, "not done"); if (j.live) return err(res, 409, "live session"); touch(j, { archived: true, display_slug: j.slug, slug: `${j.slug}-${Math.floor(Math.random() * 90 + 10)}` }); forms.set(j.slug, forms.get(b.slug)); forms.delete(b.slug); break;
     case "/api/unarchive": if (!j.archived) return err(res, 409, "not archived"); if (find(j.display_slug)) return err(res, 409, "slug taken"); forms.set(j.display_slug, forms.get(j.slug)); forms.delete(j.slug); touch(j, { archived: false, slug: j.display_slug, display_slug: undefined }); break;

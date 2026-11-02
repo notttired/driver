@@ -54,6 +54,7 @@ type cachedConversation struct {
 	path string
 	size int64
 	mod  time.Time
+	raw  pi.Conversation
 	conv *webConversation
 }
 
@@ -64,33 +65,45 @@ func newConversationCache() *conversationCache {
 // get returns j's record. A job without a session file — not started, or
 // its file gone — has an empty one.
 func (c *conversationCache) get(j *store.Job) (*webConversation, error) {
+	hit, err := c.load(j)
+	return hit.conv, err
+}
+
+func (c *conversationCache) record(j *store.Job) (pi.Conversation, error) {
+	hit, err := c.load(j)
+	return hit.raw, err
+}
+
+func (c *conversationCache) load(j *store.Job) (cachedConversation, error) {
+	empty := cachedConversation{conv: webConversationFrom(pi.Conversation{}, "")}
 	if j.PiSession == "" {
-		return webConversationFrom(pi.Conversation{}, ""), nil
+		return empty, nil
 	}
 	st, err := os.Stat(j.PiSession)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return webConversationFrom(pi.Conversation{}, ""), nil
+			return empty, nil
 		}
-		return nil, fmt.Errorf("stat %s: %w", j.PiSession, err)
+		return cachedConversation{}, fmt.Errorf("stat %s: %w", j.PiSession, err)
 	}
 	c.mu.Lock()
 	hit, ok := c.byJob[j.ID]
 	c.mu.Unlock()
 	if ok && hit.path == j.PiSession && hit.size == st.Size() && hit.mod.Equal(st.ModTime()) {
-		return hit.conv, nil
+		return hit, nil
 	}
 	// pi may append between the stat and the read; the record is then ahead
 	// of the stamp it is filed under, and the next request re-reads — fine
 	conv, err := pi.ReadConversation(j.PiSession)
 	if err != nil {
-		return nil, err
+		return cachedConversation{}, err
 	}
-	out := webConversationFrom(conv, fmt.Sprintf("%d-%d", st.Size(), st.ModTime().UnixNano()))
+	hit = cachedConversation{path: j.PiSession, size: st.Size(), mod: st.ModTime(), raw: conv,
+		conv: webConversationFrom(conv, fmt.Sprintf("%d-%d", st.Size(), st.ModTime().UnixNano()))}
 	c.mu.Lock()
-	c.byJob[j.ID] = cachedConversation{path: j.PiSession, size: st.Size(), mod: st.ModTime(), conv: out}
+	c.byJob[j.ID] = hit
 	c.mu.Unlock()
-	return out, nil
+	return hit, nil
 }
 
 func (a *API) jobConversation(w http.ResponseWriter, r *http.Request) {

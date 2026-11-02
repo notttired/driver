@@ -140,6 +140,7 @@ export const doneJob = slugAction("/api/done");
 /** "cancel": kill the session, back to draft. */
 export const killJob = slugAction("/api/kill");
 export const reactivateJob = slugAction("/api/reactivate", { timeoutMs: SUBMIT_TIMEOUT_MS });
+export const retryJob = slugAction("/api/retry", { timeoutMs: SUBMIT_TIMEOUT_MS });
 export const archiveJob = slugAction("/api/archive");
 export const unarchiveJob = slugAction("/api/unarchive");
 export const deleteJob = slugAction("/api/delete");

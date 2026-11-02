@@ -225,12 +225,7 @@ func (s *Service) Reactivate(j *store.Job) error {
 		return fmt.Errorf("mkdir %s: %w", jobDir, err)
 	}
 	_ = os.Remove(filepath.Join(jobDir, "status.json"))
-	// pi resumes the file it was last writing: the launch's session.jsonl, or
-	// the one it moved to (a /fork or /new inside pi, followed by the tick)
-	sessionFile := filepath.Join(jobDir, "session.jsonl")
-	if fi, err := os.Stat(j.PiSession); j.PiSession != "" && err == nil && fi.Mode().IsRegular() {
-		sessionFile = j.PiSession
-	}
+	sessionFile := resumeFile(j, jobDir)
 	cmd := s.Cfg.LaunchCommand(j, piBin, jobDir, sessionFile)
 	if err := s.Tmux.NewSession(sess, j.Dir, j.Slug, j.Slug, cmd); err != nil {
 		_ = s.Tmux.KillSession(sess) // a half-made session must not linger
@@ -246,6 +241,85 @@ func (s *Service) Reactivate(j *store.Job) error {
 	// WORKING reads in arrival order; a reactivated job arrives last
 	if _, err := s.Store.AppendToColumn("working", j.ID); err != nil {
 		log.Printf("reactivate %s: board order: %v", j.Slug, err)
+	}
+	return nil
+}
+
+// resumeFile is the session file pi resumes: the one it was last writing —
+// the launch's session.jsonl, or the one it moved to (a /fork or /new inside
+// pi, followed by the tick).
+func resumeFile(j *store.Job, jobDir string) string {
+	if fi, err := os.Stat(j.PiSession); j.PiSession != "" && err == nil && fi.Mode().IsRegular() {
+		return j.PiSession
+	}
+	return filepath.Join(jobDir, "session.jsonl")
+}
+
+func (s *Service) Retry(j *store.Job) error {
+	if j.Archived() || j.State != "blocked" {
+		return Refuse("job %s is not blocked (%s)", j.Slug, stage(j))
+	}
+	sess := SessionName(j)
+	live := s.Tmux.HasSession(sess) && !s.Tmux.PaneDead(sess)
+	conv, err := pi.ReadConversation(j.PiSession)
+	if err != nil {
+		return err
+	}
+	switch PlanRetry(j, live, s.Cfg.ReadStatus(j), conv) {
+	case RetryContinue:
+		if err := s.Tmux.SendLine(sess, "continue"); err != nil {
+			return Refuse("%v", err)
+		}
+		return nil
+	case RetryRestart:
+		return s.restart(j, false)
+	case RetryResume:
+		return s.restart(j, true)
+	}
+	return Refuse("job %s has nothing to retry: its pi is up and its last turn did not fail", j.Slug)
+}
+
+func (s *Service) restart(j *store.Job, resume bool) error {
+	if j.Dir == "" || !util.IsDir(j.Dir) {
+		return Refuse("dir %q is gone", j.Dir)
+	}
+	piBin, err := s.resolveTools()
+	if err != nil {
+		return err
+	}
+	if err := s.killIfPresent(j); err != nil {
+		return err
+	}
+	sess := FreshSessionName(j)
+	if err := s.clearStaleSession(sess); err != nil {
+		return Refuse("%v", err)
+	}
+	jobDir := s.Cfg.JobDir(j)
+	if err := os.MkdirAll(jobDir, 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", jobDir, err)
+	}
+	_ = os.Remove(filepath.Join(jobDir, "status.json"))
+	sessionFile := resumeFile(j, jobDir)
+	var prompt []string
+	if resume {
+		prompt = []string{"continue"}
+	}
+	cmd := s.Cfg.LaunchCommand(j, piBin, jobDir, sessionFile, prompt...)
+	if err := s.Tmux.NewSession(sess, j.Dir, j.Slug, j.Slug, cmd); err != nil {
+		_ = s.Tmux.KillSession(sess)
+		return Refuse("%v", err)
+	}
+	fields := map[string]any{"tmux": sess, "pi_session": sessionFile, "started_at": time.Now().Unix()}
+	if resume {
+		fields["state"], fields["attention_at"] = "working", int64(0)
+	}
+	if _, err := s.Store.UpdateJobFields(j.ID, j.Rev, fields); err != nil {
+		return fmt.Errorf("session %s is up but the state write failed: %w", sess, mapStoreErr(err))
+	}
+	if resume {
+		if _, err := s.Store.AppendToColumn("working", j.ID); err != nil {
+			log.Printf("retry %s: board order: %v", j.Slug, err)
+		}
 	}
 	return nil
 }

@@ -12,6 +12,7 @@ import {
   pinJobLink,
   queueJob,
   reactivateJob,
+  retryJob,
   seenJob,
   setJobColor,
   stopJob,
@@ -314,6 +315,17 @@ function JobPanel({
       case "working":
       case "blocked":
         return [
+          ...(job?.retryable
+            ? [
+                b("retry", "↻ RETRY", () => retryJob(slug), {
+                  cls: "btn primary",
+                  title:
+                    job.pi?.state === "exited"
+                      ? "start pi again on this conversation; it continues if it was cut off mid-turn"
+                      : "pi gave up on its last turn: tell it to continue",
+                }),
+              ]
+            : []),
           b("stop", "■ STOP", () => stopJob(slug), {
             disabled: !live,
             title: "send Escape to the pane — interrupt what pi is doing",
@@ -369,7 +381,7 @@ function JobPanel({
           disabled={archived || busy !== null}
           onPick={(c) => void run("color", () => setJobColor(slug, c))}
         />
-        <span className={`status status-${tok.variant}` + (live ? " live" : "")} title={tok.detail}>
+        <span className={`status status-${tok.variant}` + (live ? " live" : "")} title={tok.title ?? tok.detail}>
           {archived ? "■ archived" : tok.text}
           {tok.detail ? <i className="tool">{tok.detail}</i> : null}
         </span>

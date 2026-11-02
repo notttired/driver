@@ -10,11 +10,12 @@ export interface ColumnProps {
   /** the unfiltered count while a search is active — "2/7" */
   total?: number;
   renderCard(job: WebJob): ReactNode;
+  head?: ReactNode;
   footer?: ReactNode;
   onNewJob(): void;
 }
 
-export function BoardColumn({ col, jobs, total, renderCard, footer, onNewJob }: ColumnProps) {
+export function BoardColumn({ col, jobs, total, renderCard, head, footer, onNewJob }: ColumnProps) {
   const ordered = useColumnJobs(col, jobs);
   const drop = useColumnDrop(col);
   return (
@@ -28,6 +29,7 @@ export function BoardColumn({ col, jobs, total, renderCard, footer, onNewJob }: 
       <div className="col-head">
         <b>{col.toUpperCase()}</b>
         <span className="n">{total === undefined ? ordered.length : `${ordered.length}/${total}`}</span>
+        {head}
       </div>
       <div className="col-cards">
         {col === "draft" ? (

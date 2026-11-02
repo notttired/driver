@@ -42,6 +42,20 @@ describe("statusToken", () => {
     expect(statusToken({ state: "blocked" })).toMatchObject({ text: "⚑ needs you", variant: "needs-you" });
   });
 
+  it("blocked on a failed turn: the error, cut short", () => {
+    expect(statusToken({ state: "blocked", pi: { state: "idle", error: "Connection error.", ts: 1 } })).toMatchObject({
+      text: "✗ Connection error",
+      variant: "failed",
+    });
+    const long = statusToken({ state: "blocked", pi: { state: "idle", error: `400 {"type":"error","error":{"type":"invalid_request_error"}}`, ts: 1 } });
+    expect(long.text).toBe(`✗ 400 {"type":"error","er…`);
+    expect(long.title).toBe(`400 {"type":"error","error":{"type":"invalid_request_error"}}`);
+    expect(statusToken({ state: "blocked", pi: { state: "exited", error: "Connection error.", ts: 1 } })).toMatchObject({
+      text: "✕ exited",
+      variant: "exited",
+    });
+  });
+
   it("done", () => {
     expect(statusToken({ state: "done" })).toMatchObject({ text: "✓ done", variant: "done" });
   });

@@ -34,6 +34,15 @@ type Conversation struct {
 	Pending  bool
 }
 
+func (c Conversation) Failed() (string, bool) {
+	if n := len(c.Messages); n > 0 {
+		if m := c.Messages[n-1]; m.Role == "assistant" && m.End == "error" {
+			return m.Error, true
+		}
+	}
+	return "", false
+}
+
 // ReadConversation derives the record from the session JSONL at path. The
 // branch read is the one the file's last entry sits on (every entry names
 // its parent; a `/tree` jump away from an older branch leaves that branch's

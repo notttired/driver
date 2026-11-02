@@ -51,6 +51,12 @@ usage, accounts, self-update) is left out on purpose.
   by hand counts one. An opened link stays pinned until you unpin it (📌 in
   the links panel); a link you mentioned cannot be unpinned.
 - macOS notifications when a job turns blocked (needs you) or its pi exits.
+- Retry (2026-11-02): network drops leave pi up but stuck on a failed turn
+  ("Connection error.", "Request timed out.", "terminated" — after its own
+  three retries), and a console logout kills every pi at once (dead panes,
+  `exited`). Both are told apart from a job that finished and waits on you:
+  such cards read `✗ <error>` or `✕ exited`, the BLOCKED head carries
+  `↻ retry N` for all of them, and the overlay a RETRY for one.
 - ⌘-click on a card (or on the dir in the overlay head) opens the job's
   directory in VS Code: the daemon runs `code <dir>` (`DRIVER_EDITOR` swaps the
   command, `open -b com.microsoft.VSCode` covers a missing CLI). No editor
@@ -200,6 +206,22 @@ the same launch as start with `--session` naming the job's current `pi_session`
 (the launch's `session.jsonl`, or the file pi moved to — "State derivation"),
 so pi resumes the conversation; `state=working` (the hold below absorbs the
 idle pi reports at `session_start` before it picks the conversation back up).
+
+**Retry** (`POST /api/retry`, blocked jobs only): the plan comes from tmux
+liveness, status.json and the conversation record (`PlanRetry`, shared with
+the board's `retryable`). pi up, at its prompt (`idle`) and its last turn
+ended in an error → `tmux send-keys -l continue` + Enter, what the operator
+typed by hand after most failures; no state write, the tick moves the card
+when pi starts on it. pi exited — a dead pane, or no session at all — → the
+dead session is killed and the reactivate launch runs on the job's current
+`pi_session` in a fresh session (`new-session` takes the daemon's
+environment, so a re-login's `SSH_AUTH_SOCK` is current, which
+`respawn-pane` would not give). When the turn pi died in was unfinished (it
+failed, or the record is pending: cut off before pi answered), `-- 'continue'`
+is its first prompt and the job is written `working` (ring off, last in
+WORKING); otherwise pi comes back at its prompt and the job stays blocked.
+Anything else — pi answered and waits, a dialog, an interrupt you sent — is
+refused: nothing to retry.
 
 **Fork** (`POST /api/job/fork {slug, to, name}`): a copy of the job under a new
 slug and name — dir, model, colour, spec, notes and links (`CopyLinks`, status
@@ -386,7 +408,7 @@ blocked on its own wears a ring until it is opened. Cross-column moves:
 | anything else | no-op |
 
 Card click → the job overlay: head (name + rename, with `as <slug>` beside a name that differs from the slug, dir, colour swatch, actions:
-start / stop / done / cancel / reactivate / archive by state), body = the pane
+retry / start / stop / done / cancel / reactivate / archive by state), body = the pane
 for every opened job (pi at its prompt, working, blocked, done) or the launch
 form for a not-started one (dir with directory autocomplete, model datalist,
 START), sidebar = notes (autosaved) and the conversation record side by side,

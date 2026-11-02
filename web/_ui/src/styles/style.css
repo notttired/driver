@@ -317,6 +317,7 @@ input:disabled, textarea:disabled { opacity: 0.6; }
 .col[data-col="blocked"] .col-head { border-left-color: var(--ac2); }
 .col[data-col="done"] .col-head { border-left-color: var(--ok); }
 .col[data-col="draft"] .col-head { border-left-color: var(--muted); }
+.col-head .col-retry { height: 16px; padding: 0 6px; font-size: 9px; color: var(--warn); border-color: var(--warn); }
 .col-cards { display: flex; flex-direction: column; gap: 8px; min-height: 60px; }
 .col.droptarget .col-cards {
   outline: 1px dashed var(--accent-edge);
@@ -392,6 +393,7 @@ input:disabled, textarea:disabled { opacity: 0.6; }
 .status-ready { color: var(--tint); }
 .status-needs-you, .status-dialog { color: var(--ac2); }
 .status-exited, .status-aborted { color: var(--stopped); }
+.status-failed { color: var(--warn); }
 .status-silent { color: var(--muted); }
 .status-done { color: var(--ok); }
 .status-draft { color: var(--muted); }

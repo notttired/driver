@@ -5,9 +5,12 @@ export interface StatusToken {
   text: string;
   /** A second, quieter token (the tool a working session is inside). */
   detail?: string;
+  title?: string;
   /** Class modifier: `status-<variant>`, beside the column class. */
-  variant: "draft" | "ready" | "starting" | "working" | "needs-you" | "dialog" | "exited" | "silent" | "aborted" | "done";
+  variant: "draft" | "ready" | "starting" | "working" | "needs-you" | "dialog" | "exited" | "silent" | "aborted" | "failed" | "done";
 }
+
+const MAX_ERROR = 24;
 
 /** Whether the job has a pi session to show: every column but DRAFT, and a
  *  draft whose pi is open (the daemon reports a `pi` state for it; a
@@ -46,10 +49,16 @@ export function statusToken(job: Pick<WebJob, "state" | "pi">): StatusToken {
           return { text: "… silent", variant: "silent" };
         case "aborted":
           return { text: "■ aborted", variant: "aborted" };
-        default:
+        default: {
+          if (pi?.error) {
+            const err = pi.error.trim().replace(/\.$/, "");
+            const text = err.length > MAX_ERROR ? err.slice(0, MAX_ERROR - 1) + "…" : err;
+            return { text: `✗ ${text}`, title: pi.error, variant: "failed" };
+          }
           // idle — pi is at its prompt waiting for a human (and the fallback
           // for a blocked job the daemon has no fresher word on)
           return { text: "⚑ needs you", variant: "needs-you" };
+        }
       }
     case "done":
       return { text: "✓ done", variant: "done" };

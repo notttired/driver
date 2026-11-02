@@ -19,6 +19,7 @@ type PiInfo struct {
 	State  string `json:"state"` // starting|ready|working|idle|dialog|aborted|exited|silent
 	Tool   string `json:"tool,omitempty"`
 	Reason string `json:"reason,omitempty"`
+	Error  string `json:"error,omitempty"`
 	TS     int64  `json:"ts"`
 }
 
@@ -97,4 +98,30 @@ func (c Config) ReadStatus(j *store.Job) *pi.Status {
 		return nil
 	}
 	return &st
+}
+
+type RetryPlan string
+
+const (
+	RetryNone     RetryPlan = ""
+	RetryContinue RetryPlan = "continue"
+	RetryRestart  RetryPlan = "restart"
+	RetryResume   RetryPlan = "resume"
+)
+
+func PlanRetry(j *store.Job, live bool, st *pi.Status, conv pi.Conversation) RetryPlan {
+	if j.Archived() || j.State != "blocked" {
+		return RetryNone
+	}
+	_, failed := conv.Failed()
+	if !live {
+		if failed || conv.Pending {
+			return RetryResume
+		}
+		return RetryRestart
+	}
+	if st != nil && st.State == "idle" && failed {
+		return RetryContinue
+	}
+	return RetryNone
 }

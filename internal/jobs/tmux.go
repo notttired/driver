@@ -151,6 +151,12 @@ func (t *Tmux) SendEscape(sess string) error {
 	return err
 }
 
+func (t *Tmux) SendLine(sess, text string) error {
+	target := "=" + sess + ":"
+	_, err := t.run("send-keys", "-t", target, "-l", text, ";", "send-keys", "-t", target, "Enter")
+	return err
+}
+
 // RenameSession renames a session and keeps its @driver-job marker current.
 func (t *Tmux) RenameSession(from, to, slug string) error {
 	if _, err := t.run("rename-session", "-t", "="+from, to); err != nil {

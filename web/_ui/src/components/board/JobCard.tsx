@@ -108,7 +108,7 @@ function JobCardView({ job, submitting, drag, ghost, onOpen, onOpenLink }: JobCa
         <span className="age" data-age title={job.model ? `model ${job.model}` : undefined}>
           {age(job.mtime)}
         </span>
-        <span className={`status status-${col} status-${tok.variant}`} title={tok.detail}>
+        <span className={`status status-${col} status-${tok.variant}`} title={tok.title ?? tok.detail}>
           {tok.text}
           {tok.detail ? <i className="tool">{tok.detail}</i> : null}
         </span>

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"net/http"
 	"sort"
 	"time"
@@ -38,6 +39,7 @@ type webJob struct {
 	Archived      bool         `json:"archived,omitempty"`
 	Reactivatable bool         `json:"reactivatable,omitempty"`
 	Attention     bool         `json:"attention,omitempty"` // turned blocked on its own, not opened since
+	Retryable     bool         `json:"retryable,omitempty"`
 }
 
 type webLink struct {
@@ -116,13 +118,23 @@ func (a *API) buildBoard() (*webBoard, error) {
 			j := byID[id]
 			sess := jobs.SessionName(j)
 			live := snap.Live(sess)
-			obs := jobs.Observe(j, live, a.Svc.Cfg.ReadStatus(j), now)
+			status := a.Svc.Cfg.ReadStatus(j)
+			obs := jobs.Observe(j, live, status, now)
+			retryable := false
+			if col == "blocked" && obs.Pi != nil {
+				if conv, err := a.conversations.record(j); err == nil {
+					retryable = jobs.PlanRetry(j, live, status, conv) != jobs.RetryNone
+					if msg, failed := conv.Failed(); failed {
+						obs.Pi.Error = cmp.Or(msg, "error")
+					}
+				}
+			}
 			out = append(out, webJob{
 				Slug: j.Slug, Name: j.Name, Dir: j.Dir, Model: j.Model, Color: j.Color,
 				State: col, Outcome: j.Outcome, Live: live, Pi: obs.Pi,
 				HasNotes: j.Notes != "", Links: webLinksFrom(links[j.ID]),
 				StartedAt: j.StartedAt, FinishedAt: j.FinishedAt, MTime: j.UpdatedAt,
-				Reactivatable: j.State == "done", Attention: j.AttentionAt != 0,
+				Reactivatable: j.State == "done", Attention: j.AttentionAt != 0, Retryable: retryable,
 			})
 		}
 	}

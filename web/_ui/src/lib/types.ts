@@ -38,6 +38,7 @@ export interface WebPi {
   state: PiState | string;
   tool?: string;
   reason?: string;
+  error?: string;
   /** unix seconds */
   ts: number;
 }
@@ -66,6 +67,7 @@ export interface WebJob {
   reactivatable?: boolean;
   /** turned blocked on its own (pi idle, asking, exited, silent) and not opened since: the card wears a ring */
   attention?: boolean;
+  retryable?: boolean;
 }
 
 export interface WebDaemon {

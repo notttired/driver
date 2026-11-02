@@ -203,6 +203,37 @@ describe("BoardView (DOM smoke test)", () => {
     expect(document.getElementById("job-overlay")!).toHaveAttribute("hidden");
   });
 
+  it("retries every blocked job that failed or exited from the BLOCKED head, and one from its overlay", async () => {
+    const board = fixtureBoard();
+    board.jobs.push(
+      makeJob({ slug: "net-flake", state: "blocked", live: true, pi: { state: "idle", error: "Connection error.", ts: NOW - 50 }, retryable: true }),
+      makeJob({ slug: "logged-out", state: "blocked", pi: { state: "exited", reason: "exited", ts: NOW - 900 }, retryable: true }),
+    );
+    installFetch(board);
+    render(<App />);
+    const blocked = await waitFor(() => document.querySelector<HTMLElement>('.col[data-col="blocked"]')!);
+    expect(await within(blocked).findByText("✗ Connection error")).toBeInTheDocument();
+    fireEvent.click(within(blocked).getByRole("button", { name: "↻ retry 2" }));
+    await waitFor(() => expect(bodies.filter((b) => b.path === "/api/retry").map((b) => b.slug).sort()).toEqual(["logged-out", "net-flake"]));
+
+    fireEvent.click(within(blocked).getByText("net-flake").closest(".card")!);
+    const overlay = document.getElementById("job-overlay")!;
+    fireEvent.click(await within(overlay).findByRole("button", { name: /RETRY/ }));
+    await waitFor(() => expect(bodies.filter((b) => b.path === "/api/retry")).toHaveLength(3));
+    expect(bodies.at(-1)).toEqual({ path: "/api/retry", slug: "net-flake" });
+  });
+
+  it("has no retry button when nothing blocked failed, and none in a job that waits on you", async () => {
+    render(<App />);
+    const blocked = await waitFor(() => document.querySelector<HTMLElement>('.col[data-col="blocked"]')!);
+    await within(blocked).findByText("onboarding-copy");
+    expect(within(blocked).queryByRole("button", { name: /retry/ })).toBeNull();
+    fireEvent.click(within(blocked).getByText("onboarding-copy").closest(".card")!);
+    const overlay = document.getElementById("job-overlay")!;
+    await within(overlay).findByRole("button", { name: /STOP/ });
+    expect(within(overlay).queryByRole("button", { name: /RETRY/ })).toBeNull();
+  });
+
   it("⌘-click on a card opens its directory in the editor instead of the overlay", async () => {
     render(<App />);
     const card = (await screen.findByText("flaky-ci")).closest(".card")!;
