@@ -186,8 +186,21 @@ func (a *API) jobLinks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	case "pin":
+		pinned, err := a.Svc.PinLink(j, req.URL)
+		if err != nil {
+			writeFailure(w, "links", err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "pinned": pinned})
+	case "unpin":
+		if err := a.Svc.UnpinLink(j, req.ID); err != nil {
+			writeLinkFailure(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	default:
-		writeError(w, http.StatusBadRequest, "op must be add or remove")
+		writeError(w, http.StatusBadRequest, "op must be add, remove, pin or unpin")
 	}
 }
 

@@ -12,8 +12,9 @@ import (
 	"driver/internal/store"
 )
 
-func scanOffsetKey(jobID int64) string  { return fmt.Sprintf("scan:%d", jobID) }
-func scanPendingKey(jobID int64) string { return fmt.Sprintf("scan-pending:%d", jobID) }
+func scanOffsetKey(jobID int64) string   { return fmt.Sprintf("scan:%d", jobID) }
+func scanPendingKey(jobID int64) string  { return fmt.Sprintf("scan-pending:%d", jobID) }
+func scanMentionsKey(jobID int64) string { return fmt.Sprintf("scan-mentions:%d", jobID) }
 
 // scanGeneration names what the scanner looks for. Bump it when that grows:
 // a scanner meeting a different value in kv forgets every saved offset, so
@@ -31,24 +32,27 @@ type scanStore interface {
 	DeleteKV(string) error
 	DeleteKVPrefix(string) error
 	AddLink(jobID int64, kind, url string) (*store.Link, bool, error)
+	LinkByURL(jobID int64, url string) (*store.Link, error)
+	AddMention(linkID int64, entryID, role string) error
 }
 
 // sessionScanner tails each job's session JSONL and attaches links from the
 // conversation: every URL in your messages and in pi's replies (what you
 // hand the agent and what it hands back is what the job is about), plus the
-// PR URLs printed by the result of a `gh pr create` bash tool call. Other
-// tool output is not scanned — a curl of a page would litter the card. The
-// byte offset lives in kv (scan:<id>); the ids of PR calls still awaiting a
-// result ride beside it as JSON (scan-pending:<id>) so a restart loses
-// nothing.
+// PR URLs printed by the result of a `gh pr create` bash tool call — and
+// counts each message that mentions one, by whom. Other tool output is not
+// scanned — a curl of a page would litter the card. The byte offset lives
+// in kv (scan:<id>); the ids of PR calls still awaiting a result ride beside
+// it as JSON (scan-pending:<id>) so a restart loses nothing.
 type sessionScanner struct {
-	st      scanStore
-	pending map[int64]map[string]bool // job id → tool call ids awaiting a result
-	checked bool                      // scanGeneration compared with kv once
+	st       scanStore
+	pending  map[int64]map[string]bool // job id → tool call ids awaiting a result
+	backfill map[int64]map[string]bool
+	checked  bool // scanGeneration compared with kv once
 }
 
 func newSessionScanner(st scanStore) *sessionScanner {
-	return &sessionScanner{st: st, pending: map[int64]map[string]bool{}}
+	return &sessionScanner{st: st, pending: map[int64]map[string]bool{}, backfill: map[int64]map[string]bool{}}
 }
 
 func (p *sessionScanner) offset(jobID int64) int64 {
@@ -120,6 +124,9 @@ func (p *sessionScanner) scan(j *store.Job) error {
 	if err := p.checkGeneration(); err != nil {
 		return err
 	}
+	if err := p.countMentions(j); err != nil {
+		return err
+	}
 	offset := p.offset(j.ID)
 	lines, next, err := pi.ReadNewLines(j.PiSession, offset)
 	if err != nil {
@@ -136,34 +143,9 @@ func (p *sessionScanner) scan(j *store.Job) error {
 		}
 	}
 	for _, line := range lines {
-		e, ok := pi.ParseEntry(line)
-		if !ok || e.Kind != "message" {
-			continue
-		}
-		switch e.Role {
-		case "user", "assistant":
-			for _, u := range pi.DetectURLs(e.Text) {
-				if !ValidLinkURL(u) {
-					continue
-				}
-				if err := p.attach(j, LinkKind(u), u, "link"); err != nil {
-					return err
-				}
-			}
-			for _, tc := range e.ToolCalls {
-				if tc.Name == "bash" && pi.IsPRCreateCommand(tc.Command) {
-					pending[tc.ID] = true
-				}
-			}
-		case "toolResult":
-			if e.Result == nil || !pending[e.Result.ToolCallID] {
-				continue
-			}
-			delete(pending, e.Result.ToolCallID)
-			for _, u := range pi.DetectPRURLs(e.Result.Text) {
-				if err := p.attach(j, "github_pr", u, "PR"); err != nil {
-					return err
-				}
+		for _, s := range sightingsIn(line, pending) {
+			if err := p.attach(j, s); err != nil {
+				return err
 			}
 		}
 	}
@@ -171,6 +153,76 @@ func (p *sessionScanner) scan(j *store.Job) error {
 		return err
 	}
 	return p.st.SetKV(scanOffsetKey(j.ID), strconv.FormatInt(next, 10))
+}
+
+type sighting struct{ kind, url, entry, role, what string }
+
+func sightingsIn(line []byte, pending map[string]bool) []sighting {
+	e, ok := pi.ParseEntry(line)
+	if !ok || e.Kind != "message" {
+		return nil
+	}
+	var out []sighting
+	switch e.Role {
+	case "user", "assistant":
+		for _, u := range pi.DetectURLs(e.Text) {
+			if ValidLinkURL(u) {
+				out = append(out, sighting{LinkKind(u), u, e.ID, e.Role, "link"})
+			}
+		}
+		for _, tc := range e.ToolCalls {
+			if tc.Name == "bash" && pi.IsPRCreateCommand(tc.Command) {
+				pending[tc.ID] = true
+			}
+		}
+	case "toolResult":
+		if e.Result == nil || !pending[e.Result.ToolCallID] {
+			return nil
+		}
+		delete(pending, e.Result.ToolCallID)
+		for _, u := range pi.DetectPRURLs(e.Result.Text) {
+			out = append(out, sighting{"github_pr", u, e.ID, e.Role, "PR"})
+		}
+	}
+	return out
+}
+
+func (p *sessionScanner) countMentions(j *store.Job) error {
+	v, err := p.st.GetKV(scanMentionsKey(j.ID))
+	if err != nil {
+		return nil
+	}
+	from, _ := strconv.ParseInt(v, 10, 64)
+	upTo := p.offset(j.ID)
+	next := from
+	if from < upTo {
+		var lines [][]byte
+		if lines, next, err = pi.ReadNewLines(j.PiSession, from); err != nil {
+			return fmt.Errorf("%s: count mentions: %w", j.Slug, err)
+		}
+		if p.backfill[j.ID] == nil {
+			p.backfill[j.ID] = map[string]bool{}
+		}
+		for _, line := range lines {
+			for _, s := range sightingsIn(line, p.backfill[j.ID]) {
+				l, err := p.st.LinkByURL(j.ID, s.url)
+				if errors.Is(err, store.ErrNotFound) {
+					continue
+				}
+				if err != nil {
+					return fmt.Errorf("%s: count mentions: %w", j.Slug, err)
+				}
+				if err := p.st.AddMention(l.ID, s.entry, s.role); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if next > from && next < upTo {
+		return p.st.SetKV(scanMentionsKey(j.ID), strconv.FormatInt(next, 10))
+	}
+	delete(p.backfill, j.ID)
+	return p.st.DeleteKV(scanMentionsKey(j.ID))
 }
 
 // forget drops j's saved offset and pending PR calls: the next scan reads
@@ -184,18 +236,19 @@ func (p *sessionScanner) forget(jobID int64) error {
 	return p.st.DeleteKV(scanPendingKey(jobID))
 }
 
-// attach adds url to j's links; a URL already there is left alone. what names
-// the find in the log ("link", "PR").
-func (p *sessionScanner) attach(j *store.Job, kind, url, what string) error {
-	_, created, err := p.st.AddLink(j.ID, kind, url)
+// attach adds the sighted URL to j's links — a URL already there is left
+// alone — and counts the sighting as a mention of it. what names the find in
+// the log ("link", "PR").
+func (p *sessionScanner) attach(j *store.Job, s sighting) error {
+	l, created, err := p.st.AddLink(j.ID, s.kind, s.url)
 	if err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
 			return nil
 		}
-		return fmt.Errorf("%s: attach %s: %w", j.Slug, url, err)
+		return fmt.Errorf("%s: attach %s: %w", j.Slug, s.url, err)
 	}
 	if created {
-		log.Printf("%s: attached %s %s", j.Slug, what, url)
+		log.Printf("%s: attached %s %s", j.Slug, s.what, s.url)
 	}
-	return nil
+	return p.st.AddMention(l.ID, s.entry, s.role)
 }

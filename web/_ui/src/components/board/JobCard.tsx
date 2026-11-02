@@ -23,6 +23,7 @@ export function JobCard({ job, actions }: JobCardProps) {
       job={job}
       drag={drag}
       submitting={submitting}
+      onOpenLink={(url) => actions.onOpenLink(job.slug, url)}
       onOpen={(e) => {
         // a click that ends a text selection is not a click on the card
         if (window.getSelection()?.toString()) return;
@@ -51,9 +52,10 @@ interface JobCardViewProps {
   drag?: SortableCard;
   ghost?: boolean;
   onOpen?: (e: MouseEvent<HTMLDivElement>) => void;
+  onOpenLink?: (url: string) => void;
 }
 
-function JobCardView({ job, submitting, drag, ghost, onOpen }: JobCardViewProps) {
+function JobCardView({ job, submitting, drag, ghost, onOpen, onOpenLink }: JobCardViewProps) {
   const col = columnFor(job.state);
   const jc = jobColorVar(job);
   const base = dirBase(job.dir);
@@ -114,7 +116,7 @@ function JobCardView({ job, submitting, drag, ghost, onOpen }: JobCardViewProps)
       {submitting ? (
         <div className="submitting-line">starting session… (request in flight)</div>
       ) : null}
-      <LinkChips links={job.links} />
+      <LinkChips links={job.links} onOpen={onOpenLink} />
     </div>
   );
 }

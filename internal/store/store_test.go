@@ -3,7 +3,9 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -188,6 +190,87 @@ func TestLinks(t *testing.T) {
 	}
 }
 
+func TestLinkOrderAndPins(t *testing.T) {
+	s := open(t)
+	id, _ := s.CreateJob(&Job{Slug: "order"})
+	other, _ := s.CreateJob(&Job{Slug: "other"})
+	add := func(url string, mentions ...[2]string) *Link {
+		t.Helper()
+		l, _, err := s.AddLink(id, "url", url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range mentions {
+			if err := s.AddMention(l.ID, m[0], m[1]); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return l
+	}
+	add("https://pi.io/once", [2]string{"e1", "assistant"})
+	add("https://pi.io/thrice", [2]string{"e1", "assistant"}, [2]string{"e2", "assistant"}, [2]string{"e2", "assistant"}, [2]string{"e3", "assistant"})
+	add("https://you.io/said", [2]string{"e4", "user"})
+	add("https://you.io/by-hand", [2]string{"", "user"}, [2]string{"e5", "assistant"})
+	opened := add("https://pi.io/opened", [2]string{"e6", "assistant"})
+	add("https://pi.io/pr-output", [2]string{"e7", "toolResult"})
+
+	if ok, err := s.PinLink(id, "https://pi.io/opened", 500); err != nil || !ok {
+		t.Fatalf("pin: %v %v", ok, err)
+	}
+	if ok, err := s.PinLink(id, "https://not.linked/x", 500); err != nil || ok {
+		t.Fatalf("pin of a URL the job does not have: %v %v", ok, err)
+	}
+	if ok, err := s.PinLink(other, "https://pi.io/opened", 500); err != nil || ok {
+		t.Fatalf("pin under another job: %v %v", ok, err)
+	}
+
+	read := func(ls []*Link) string {
+		var out []string
+		for _, l := range ls {
+			out = append(out, fmt.Sprintf("%s %d yours=%v pinned=%d", l.URL, l.Mentions, l.Yours, l.PinnedAt))
+		}
+		return strings.Join(out, "\n")
+	}
+	want := strings.Join([]string{
+		"https://you.io/by-hand 2 yours=true pinned=0",
+		"https://you.io/said 1 yours=true pinned=0",
+		"https://pi.io/opened 1 yours=false pinned=500",
+		"https://pi.io/thrice 3 yours=false pinned=0",
+		"https://pi.io/once 1 yours=false pinned=0",
+		"https://pi.io/pr-output 1 yours=false pinned=0",
+	}, "\n")
+	ls, _ := s.ListLinks(id)
+	if got := read(ls); got != want {
+		t.Fatalf("order:\n%s\nwant:\n%s", got, want)
+	}
+	all, _ := s.ListAllLinks()
+	if got := read(all[id]); got != want {
+		t.Fatalf("board order:\n%s\nwant:\n%s", got, want)
+	}
+	if l, err := s.GetLink(id, opened.ID); err != nil || l.PinnedAt != 500 || l.Mentions != 1 {
+		t.Fatalf("get: %+v %v", l, err)
+	}
+
+	if err := s.UnpinLink(id, opened.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UnpinLink(other, opened.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unpin under another job: %v", err)
+	}
+	ls, _ = s.ListLinks(id)
+	if ls[2].URL != "https://pi.io/thrice" || ls[4].URL != "https://pi.io/opened" || ls[4].PinnedAt != 0 {
+		t.Fatalf("after unpin:\n%s", read(ls))
+	}
+
+	if err := s.RemoveLink(id, opened.ID); err != nil {
+		t.Fatal(err)
+	}
+	again := add("https://pi.io/opened")
+	if l, _ := s.GetLink(id, again.ID); l.Mentions != 0 || l.PinnedAt != 0 {
+		t.Fatalf("a removed link comes back without its mentions or pin: %+v", l)
+	}
+}
+
 // TestMigrateV3 upgrades a v2 database by hand: the label column goes, the
 // links stay, the scan offsets are forgotten and other kv rows are kept.
 func TestCopyLinks(t *testing.T) {
@@ -196,6 +279,14 @@ func TestCopyLinks(t *testing.T) {
 	to, _ := s.CreateJob(&Job{Slug: "to"})
 	pr, _, _ := s.AddLink(from, "github_pr", "https://github.com/o/r/pull/7")
 	if err := s.SetLinkStatus(pr.ID, "merged", 100); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range [][2]string{{"u1", "user"}, {"a1", "assistant"}} {
+		if err := s.AddMention(pr.ID, m[0], m[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.PinLink(from, pr.URL, 300); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := s.AddLink(from, "url", "https://example.com/doc"); err != nil {
@@ -218,8 +309,12 @@ func TestCopyLinks(t *testing.T) {
 		byURL[l.URL] = l
 	}
 	got := byURL["https://github.com/o/r/pull/7"]
-	if got == nil || got.Kind != "github_pr" || got.Status != "merged" || got.StatusAt != 100 || got.CreatedAt != pr.CreatedAt || got.JobID != to {
+	if got == nil || got.Kind != "github_pr" || got.Status != "merged" || got.StatusAt != 100 || got.CreatedAt != pr.CreatedAt || got.JobID != to ||
+		got.Mentions != 2 || !got.Yours || got.PinnedAt != 300 {
 		t.Fatalf("copied PR link: %+v", got)
+	}
+	if ls, _ := s.ListLinks(from); ls[0].Mentions != 2 {
+		t.Fatalf("the original keeps its mentions: %+v", ls[0])
 	}
 	if n, err := s.CopyLinks(from, to); err != nil || n != 0 {
 		t.Fatalf("second copy: %d %v", n, err)
@@ -416,6 +511,45 @@ func TestAppendToColumn(t *testing.T) {
 	order, _ = s.GetBoardOrder()
 	if got := order["working"]; len(got) != 2 || got[0] != a || got[1] != c {
 		t.Fatalf("working order after re-append %v", got)
+	}
+}
+
+func TestMigrateV6(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v5.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, `PRAGMA user_version = 5`,
+		`INSERT INTO jobs (id, slug) VALUES (3, 'scanned'), (4, 'never-scanned')`,
+		`INSERT INTO links (job_id, kind, url, created_at) VALUES (3, 'url', 'https://e.com/kept', 10)`,
+		`INSERT INTO kv VALUES ('scan:3', '4096'), ('scan-pending:3', '["c1"]'), ('scanner-generation', '2')`} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	db.Close()
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var version int
+	s.db.QueryRow(`PRAGMA user_version`).Scan(&version)
+	if version != len(migrations) {
+		t.Fatalf("user_version %d", version)
+	}
+	ls, _ := s.ListLinks(3)
+	if len(ls) != 1 || ls[0].URL != "https://e.com/kept" || ls[0].Mentions != 0 || ls[0].Yours || ls[0].PinnedAt != 0 {
+		t.Fatalf("links after migration: %+v", ls)
+	}
+	for k, want := range map[string]string{"scan:3": "4096", "scan-pending:3": `["c1"]`, "scanner-generation": "2", "scan-mentions:3": "0"} {
+		if v, err := s.GetKV(k); err != nil || v != want {
+			t.Errorf("%s = %q %v, want %q", k, v, err, want)
+		}
+	}
+	if _, err := s.GetKV("scan-mentions:4"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("a job never scanned has nothing to count again: %v", err)
 	}
 }
 

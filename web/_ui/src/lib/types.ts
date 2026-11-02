@@ -28,6 +28,10 @@ export interface WebLink {
   status?: PRStatus;
   /** unix seconds */
   status_at?: number;
+  mentions: number;
+  yours?: boolean;
+  /** unix seconds */
+  pinned_at?: number;
 }
 
 export interface WebPi {
@@ -164,6 +168,10 @@ export interface SaveFormResult extends OkResponse {
 
 export interface AddLinkResult extends OkResponse {
   link: WebLink;
+}
+
+export interface PinLinkResult extends OkResponse {
+  pinned: boolean;
 }
 
 export interface DirsResponse {

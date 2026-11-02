@@ -861,6 +861,10 @@ a.link-text:hover { color: var(--fg); text-decoration: underline; }
 .pr-status.pr-draft { color: var(--warn); }
 .pr-status.pr-merged { color: var(--tint); }
 .link-remove { padding: 0 5px; height: 18px; }
+.link-count { flex: none; font: 500 8px/1 var(--mono); color: var(--muted); }
+.link-pin { flex: none; font-size: 9px; line-height: 1; filter: grayscale(1); opacity: 0.7; }
+button.link-pin { padding: 0 4px; height: 18px; }
+button.link-pin:hover { filter: none; opacity: 1; }
 .link-empty { font: 400 9px/1.5 var(--mono); color: var(--muted); }
 .link-add { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .link-input {

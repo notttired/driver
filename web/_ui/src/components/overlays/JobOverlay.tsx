@@ -9,6 +9,7 @@ import {
   fetchModels,
   killJob,
   openJobDir,
+  pinJobLink,
   queueJob,
   reactivateJob,
   seenJob,
@@ -248,6 +249,8 @@ function JobPanel({
     }
   };
 
+  const openLink = (url: string) => void mutate(() => pinJobLink(slug, url));
+
   const tok = statusToken(job ?? { state: form?.state ?? "draft" });
   const dir = job?.dir ?? form?.dir ?? "";
   const live = job?.live ?? false;
@@ -413,7 +416,7 @@ function JobPanel({
           ) : (
             <>
               <Suspense fallback={<div className="editor-hint">loading terminal…</div>}>
-                <TerminalPane slug={slug} attach={attach} />
+                <TerminalPane slug={slug} attach={attach} onOpenLink={openLink} />
               </Suspense>
             </>
           )}
@@ -456,7 +459,7 @@ function JobPanel({
                   onSaved={() => void board.refetch()}
                   registerFlush={registerNotesFlush}
                 />
-                <ConversationPanel slug={slug} opened={opened} pi={job?.pi} />
+                <ConversationPanel slug={slug} opened={opened} pi={job?.pi} onOpenLink={openLink} />
               </div>
               <LinksPanel
                 slug={slug}

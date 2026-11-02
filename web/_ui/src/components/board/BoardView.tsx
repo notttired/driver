@@ -14,6 +14,7 @@ export interface BoardActions {
   onOpenJob(key: string): void;
   /** ⌘-click: open the job's directory in the editor (no overlay) */
   onOpenDir(slug: string): void;
+  onOpenLink(slug: string, url: string): void;
   /** open the new-job row */
   onNewJob(): void;
   onUnarchive(slug: string): void;

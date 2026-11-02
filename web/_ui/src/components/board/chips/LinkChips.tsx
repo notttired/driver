@@ -4,18 +4,18 @@ import type { WebLink } from "../../../lib/types.ts";
 /** One chip per link on a card: a PR reads `#N` in its status colour, every
  *  other kind its host behind a kind glyph. Anchors stop the click so the
  *  card underneath does not open. */
-export function LinkChips({ links }: { links: WebLink[] | undefined }) {
+export function LinkChips({ links, onOpen }: { links: WebLink[] | undefined; onOpen?: (url: string) => void }) {
   if (!links?.length) return null;
   return (
     <div className="prs">
       {links.map((l) => (
-        <LinkChip key={l.id} link={l} />
+        <LinkChip key={l.id} link={l} onOpen={onOpen} />
       ))}
     </div>
   );
 }
 
-export function LinkChip({ link }: { link: WebLink }) {
+export function LinkChip({ link, onOpen }: { link: WebLink; onOpen?: (url: string) => void }) {
   const label = linkLabel(link);
   const glyph = KIND_GLYPH[link.kind] ?? KIND_GLYPH.url;
   const cls =
@@ -42,7 +42,10 @@ export function LinkChip({ link }: { link: WebLink }) {
       rel="noreferrer"
       title={title}
       data-no-drag
-      onClick={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen?.(link.url);
+      }}
     >
       {body}
     </a>

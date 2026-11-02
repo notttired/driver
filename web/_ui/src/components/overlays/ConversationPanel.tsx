@@ -17,6 +17,7 @@ export interface ConversationPanelProps {
   opened: boolean;
   /** the board's word on pi, for the row of a turn still in progress */
   pi?: WebPi;
+  onOpenLink?: (url: string) => void;
 }
 
 /**
@@ -28,7 +29,7 @@ export interface ConversationPanelProps {
  * yours stay as typed. Polled while the overlay is open; the list keeps to
  * its end until you scroll up.
  */
-export function ConversationPanel({ slug, opened, pi }: ConversationPanelProps) {
+export function ConversationPanel({ slug, opened, pi, onOpenLink }: ConversationPanelProps) {
   const last = useRef<WebConversation | null>(null);
   const { data, error } = usePoll<WebConversation>(
     async (signal) => {
@@ -78,6 +79,10 @@ export function ConversationPanel({ slug, opened, pi }: ConversationPanelProps) 
           onScroll={(e) => {
             const el = e.currentTarget;
             pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+          }}
+          onClick={(e) => {
+            const href = (e.target as Element).closest("a[href]")?.getAttribute("href");
+            if (href) onOpenLink?.(href);
           }}
         >
           {messages.map((m, i) => (

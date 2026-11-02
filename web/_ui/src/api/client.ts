@@ -11,6 +11,7 @@ import type {
   JobForm,
   ModelsResponse,
   OkResponse,
+  PinLinkResult,
   RenameResult,
   SaveFormResult,
   WebBoard,
@@ -166,6 +167,12 @@ export const addJobLink = (slug: string, url: string) =>
 
 export const removeJobLink = (slug: string, id: number) =>
   postJSON<OkResponse>("/api/job/links", { slug, op: "remove", id });
+
+export const pinJobLink = (slug: string, url: string) =>
+  postJSON<PinLinkResult>("/api/job/links", { slug, op: "pin", url });
+
+export const unpinJobLink = (slug: string, id: number) =>
+  postJSON<OkResponse>("/api/job/links", { slug, op: "unpin", id });
 
 // ------------------------------------------------------------- the editor
 

@@ -8,7 +8,7 @@ import (
 
 // migrations is the append-only list of schema steps; migrations[i] brings a
 // database at user_version i to i+1. Never edit a shipped step — append.
-var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5}
+var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6}
 
 // schemaV1 creates the four tables the design calls for. Every column a Go
 // scan reads into a plain string/int64 is NOT NULL with a same-typed default;
@@ -206,4 +206,15 @@ ALTER TABLE jobs ADD COLUMN name TEXT NOT NULL DEFAULT '';
 // The board draws such a card with a ring until it is opened.
 const schemaV5 = `
 ALTER TABLE jobs ADD COLUMN attention_at INTEGER NOT NULL DEFAULT 0;
+`
+
+const schemaV6 = `
+ALTER TABLE links ADD COLUMN pinned_at INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE link_mentions (
+	link_id  INTEGER NOT NULL REFERENCES links(id) ON DELETE CASCADE,
+	entry_id TEXT NOT NULL,
+	role     TEXT NOT NULL,
+	PRIMARY KEY (link_id, entry_id)
+);
+INSERT INTO kv (key, value) SELECT 'scan-mentions:' || substr(key, 6), '0' FROM kv WHERE substr(key, 1, 5) = 'scan:';
 `

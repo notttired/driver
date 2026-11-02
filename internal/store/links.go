@@ -17,15 +17,24 @@ type Link struct {
 	Status    string // github_pr: '' | open | draft | merged | closed
 	StatusAt  int64
 	CreatedAt int64
+	PinnedAt  int64
+	Mentions  int
+	Yours     bool
 }
 
-const linkColumns = `id, job_id, kind, url, status, status_at, created_at`
+const linkSelect = `SELECT l.id, l.job_id, l.kind, l.url, l.status, l.status_at, l.created_at, l.pinned_at,
+	COUNT(m.link_id) AS mentions, COALESCE(MAX(m.role = 'user'), 0) AS yours
+	FROM links l LEFT JOIN link_mentions m ON m.link_id = l.id`
+
+const linkOrder = ` GROUP BY l.id ORDER BY yours DESC, l.pinned_at > 0 DESC, mentions DESC, l.created_at, l.id`
 
 func scanLink(row interface{ Scan(...any) error }) (*Link, error) {
 	var l Link
-	if err := row.Scan(&l.ID, &l.JobID, &l.Kind, &l.URL, &l.Status, &l.StatusAt, &l.CreatedAt); err != nil {
+	var yours int64
+	if err := row.Scan(&l.ID, &l.JobID, &l.Kind, &l.URL, &l.Status, &l.StatusAt, &l.CreatedAt, &l.PinnedAt, &l.Mentions, &yours); err != nil {
 		return nil, err
 	}
+	l.Yours = yours != 0
 	return &l, nil
 }
 
@@ -36,7 +45,7 @@ func (s *Store) AddLink(jobID int64, kind, url string) (link *Link, created bool
 		jobID, kind, url, now())
 	if err != nil {
 		if isUniqueErr(err) {
-			l, gerr := s.linkByURL(jobID, url)
+			l, gerr := s.LinkByURL(jobID, url)
 			if gerr != nil {
 				return nil, false, gerr
 			}
@@ -56,11 +65,16 @@ func (s *Store) AddLink(jobID int64, kind, url string) (link *Link, created bool
 }
 
 // CopyLinks gives job to every link of job from that it does not have yet —
-// kind, url, status and timestamps carried over, so a fork's links read
-// exactly as the original's. It returns how many were added.
+// kind, url, status, pin, mentions and timestamps carried over, so a fork's
+// links read exactly as the original's. It returns how many were added.
 func (s *Store) CopyLinks(from, to int64) (int, error) {
-	res, err := s.db.Exec(`INSERT OR IGNORE INTO links (job_id, kind, url, status, status_at, created_at)
-		SELECT ?, kind, url, status, status_at, created_at FROM links WHERE job_id = ? ORDER BY created_at, id`, to, from)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("copy links %d → %d: %w", from, to, err)
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`INSERT OR IGNORE INTO links (job_id, kind, url, status, status_at, created_at, pinned_at)
+		SELECT ?, kind, url, status, status_at, created_at, pinned_at FROM links WHERE job_id = ? ORDER BY created_at, id`, to, from)
 	if err != nil {
 		return 0, fmt.Errorf("copy links %d → %d: %w", from, to, err)
 	}
@@ -68,11 +82,21 @@ func (s *Store) CopyLinks(from, to int64) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("copy links %d → %d: %w", from, to, err)
 	}
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO link_mentions (link_id, entry_id, role)
+		SELECT n.id, m.entry_id, m.role FROM link_mentions m
+		JOIN links o ON o.id = m.link_id
+		JOIN links n ON n.job_id = ? AND n.url = o.url
+		WHERE o.job_id = ?`, to, from); err != nil {
+		return 0, fmt.Errorf("copy link mentions %d → %d: %w", from, to, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("copy links %d → %d: %w", from, to, err)
+	}
 	return int(n), nil
 }
 
-func (s *Store) linkByURL(jobID int64, url string) (*Link, error) {
-	l, err := scanLink(s.db.QueryRow(`SELECT `+linkColumns+` FROM links WHERE job_id = ? AND url = ?`, jobID, url))
+func (s *Store) LinkByURL(jobID int64, url string) (*Link, error) {
+	l, err := scanLink(s.db.QueryRow(linkSelect+` WHERE l.job_id = ? AND l.url = ? GROUP BY l.id`, jobID, url))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -84,7 +108,7 @@ func (s *Store) linkByURL(jobID int64, url string) (*Link, error) {
 
 // GetLink returns link id, which must belong to job jobID.
 func (s *Store) GetLink(jobID, id int64) (*Link, error) {
-	l, err := scanLink(s.db.QueryRow(`SELECT `+linkColumns+` FROM links WHERE id = ? AND job_id = ?`, id, jobID))
+	l, err := scanLink(s.db.QueryRow(linkSelect+` WHERE l.id = ? AND l.job_id = ? GROUP BY l.id`, id, jobID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -94,15 +118,17 @@ func (s *Store) GetLink(jobID, id int64) (*Link, error) {
 	return l, nil
 }
 
-// ListLinks returns a job's links in created order.
+// ListLinks returns a job's links in display order: the ones you mentioned
+// or added, then the ones you opened, then the rest; each group by mentions,
+// then in created order.
 func (s *Store) ListLinks(jobID int64) ([]*Link, error) {
-	return s.queryLinks(`SELECT `+linkColumns+` FROM links WHERE job_id = ? ORDER BY created_at, id`, jobID)
+	return s.queryLinks(linkSelect+` WHERE l.job_id = ?`+linkOrder, jobID)
 }
 
-// ListAllLinks returns every link keyed by job id, in created order — one
+// ListAllLinks returns every link keyed by job id, in display order — one
 // query for the whole board.
 func (s *Store) ListAllLinks() (map[int64][]*Link, error) {
-	ls, err := s.queryLinks(`SELECT ` + linkColumns + ` FROM links ORDER BY created_at, id`)
+	ls, err := s.queryLinks(linkSelect + linkOrder)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +142,7 @@ func (s *Store) ListAllLinks() (map[int64][]*Link, error) {
 // StalePRLinks returns up to limit github_pr links whose status_at is older
 // than before (unix seconds), oldest first — the PR refresh's work list.
 func (s *Store) StalePRLinks(before int64, limit int) ([]*Link, error) {
-	return s.queryLinks(`SELECT `+linkColumns+` FROM links WHERE kind = 'github_pr' AND status_at < ? ORDER BY status_at, id LIMIT ?`, before, limit)
+	return s.queryLinks(linkSelect+` WHERE l.kind = 'github_pr' AND l.status_at < ? GROUP BY l.id ORDER BY l.status_at, l.id LIMIT ?`, before, limit)
 }
 
 func (s *Store) queryLinks(query string, args ...any) ([]*Link, error) {
@@ -152,6 +178,33 @@ func (s *Store) RemoveLink(jobID, id int64) error {
 func (s *Store) SetLinkStatus(id int64, status string, at int64) error {
 	if _, err := s.db.Exec(`UPDATE links SET status = ?, status_at = ? WHERE id = ?`, status, at, id); err != nil {
 		return fmt.Errorf("set link %d status: %w", id, err)
+	}
+	return nil
+}
+
+func (s *Store) AddMention(linkID int64, entryID, role string) error {
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO link_mentions (link_id, entry_id, role) VALUES (?, ?, ?)`, linkID, entryID, role); err != nil {
+		return fmt.Errorf("add mention of link %d: %w", linkID, err)
+	}
+	return nil
+}
+
+func (s *Store) PinLink(jobID int64, url string, at int64) (bool, error) {
+	res, err := s.db.Exec(`UPDATE links SET pinned_at = ? WHERE job_id = ? AND url = ?`, at, jobID, url)
+	if err != nil {
+		return false, fmt.Errorf("pin link %s: %w", url, err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+func (s *Store) UnpinLink(jobID, id int64) error {
+	res, err := s.db.Exec(`UPDATE links SET pinned_at = 0 WHERE id = ? AND job_id = ?`, id, jobID)
+	if err != nil {
+		return fmt.Errorf("unpin link %d: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("unpin link %d: %w", id, ErrNotFound)
 	}
 	return nil
 }

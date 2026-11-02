@@ -11,8 +11,8 @@ export const SESSION_ENDED = "session ended — reactivate to continue";
 
 /** URLs in the pane — plain text (web-links addon) or OSC 8 hyperlinks —
  *  open in the browser on ⌘-click, as in any macOS terminal. */
-export function activatePaneLink(e: Pick<MouseEvent, "metaKey" | "ctrlKey">, url: string): void {
-  if (isOpenClick(e)) openExternal(url);
+export function activatePaneLink(e: Pick<MouseEvent, "metaKey" | "ctrlKey">, url: string, onOpen?: (url: string) => void): void {
+  if (isOpenClick(e) && openExternal(url)) onOpen?.(url);
 }
 
 /** `ws(s)://<host>/api/term?slug=…` — same origin, so the vite proxy and the
@@ -48,6 +48,7 @@ export interface TerminalPaneProps {
    *  exits (dead pane, last screen); false for done jobs, whose session was
    *  killed: the pane shows the ended banner without connecting */
   attach: boolean;
+  onOpenLink?: (url: string) => void;
 }
 
 interface Ended {
@@ -60,8 +61,10 @@ interface Ended {
  * fit, `exit` in right before the server closes). A 404/409 before the
  * upgrade closes the socket at once, which lands in the same banner.
  */
-export function TerminalPane({ slug, attach }: TerminalPaneProps) {
+export function TerminalPane({ slug, attach, onOpenLink }: TerminalPaneProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const onOpenLinkRef = useRef(onOpenLink);
+  onOpenLinkRef.current = onOpenLink;
   const [ended, setEnded] = useState<Ended | null>(attach ? null : { code: null });
   const [connected, setConnected] = useState(false);
 
@@ -72,6 +75,7 @@ export function TerminalPane({ slug, attach }: TerminalPaneProps) {
     const host = hostRef.current;
     if (!host) return;
 
+    const activate = (e: MouseEvent, url: string) => activatePaneLink(e, url, (u) => onOpenLinkRef.current?.(u));
     const term = new Terminal({
       fontFamily: "'IBM Plex Mono', Menlo, Monaco, monospace",
       fontSize: 12,
@@ -80,11 +84,11 @@ export function TerminalPane({ slug, attach }: TerminalPaneProps) {
       scrollback: 5000,
       allowProposedApi: true,
       theme: readTheme(),
-      linkHandler: { activate: activatePaneLink },
+      linkHandler: { activate },
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    term.loadAddon(new WebLinksAddon(activatePaneLink));
+    term.loadAddon(new WebLinksAddon(activate));
     term.open(host);
 
     const ws = new WebSocket(termSocketUrl(slug));

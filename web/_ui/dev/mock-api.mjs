@@ -16,11 +16,11 @@ const jobs = [
   { slug: "stripe-webhooks", dir: `${DEFAULT_DIR}/payments`, model: "", color: "blue", state: "draft", live: false, has_notes: true, mtime: now() - 400 },
   { slug: "flaky-ci", dir: `${DEFAULT_DIR}/platform`, model: "anthropic/claude-sonnet-4-5", color: "", state: "draft", live: false, has_notes: false, mtime: now() - 9000 },
   { slug: "search-reindex", dir: `${DEFAULT_DIR}/search`, model: "", color: "orange", state: "working", live: true, has_notes: false, mtime: now() - 60, started_at: now() - 600, pi: { state: "working", tool: "bash", ts: now() - 5 },
-    links: [{ id: 1, kind: "github_pr", url: "https://github.com/acme/search/pull/482", status: "open", status_at: now() - 120 }] },
+    links: [{ id: 1, kind: "github_pr", url: "https://github.com/acme/search/pull/482", status: "open", status_at: now() - 120, mentions: 3 }] },
   { slug: "onboarding-copy", name: "Onboarding copy pass", dir: `${DEFAULT_DIR}/web`, model: "", color: "pink", state: "blocked", live: true, has_notes: true, mtime: now() - 1800, started_at: now() - 7200, pi: { state: "idle", ts: now() - 1700 },
-    links: [{ id: 2, kind: "linear", url: "https://linear.app/acme/issue/WEB-231" }] },
+    links: [{ id: 2, kind: "linear", url: "https://linear.app/acme/issue/WEB-231", mentions: 1, yours: true }] },
   { slug: "rate-limits", dir: `${DEFAULT_DIR}/gateway`, model: "", color: "green", state: "done", live: false, has_notes: false, mtime: now() - 86400, started_at: now() - 90000, finished_at: now() - 86400, outcome: "accepted", reactivatable: true,
-    links: [{ id: 3, kind: "github_pr", url: "https://github.com/acme/gateway/pull/77", status: "merged", status_at: now() - 80000 }] },
+    links: [{ id: 3, kind: "github_pr", url: "https://github.com/acme/gateway/pull/77", status: "merged", status_at: now() - 80000, mentions: 1 }] },
   { slug: "legacy-export", dir: `${DEFAULT_DIR}/exports`, model: "", color: "", state: "done", live: false, has_notes: false, mtime: now() - 172800, finished_at: now() - 172800, outcome: "accepted", reactivatable: false },
   { slug: "spike-graphql-12", display_slug: "spike-graphql", dir: `${DEFAULT_DIR}/api`, model: "", color: "purple", state: "done", live: false, has_notes: true, mtime: now() - 400000, finished_at: now() - 400000, archived: true },
 ];
@@ -104,8 +104,12 @@ const server = http.createServer(async (req, res) => {
     case "/api/job/notes": { const f = forms.get(j.slug); if (f) f.notes = b.text ?? ""; touch(j, { has_notes: !!(b.text ?? "").trim() }); break; }
     case "/api/job/links": {
       j.links = j.links ?? [];
-      if (b.op === "add") { if (!/^https?:\/\//.test(b.url || "")) return err(res, 409, "bad URL"); const pr = /github\.com\/[^/]+\/[^/]+\/pull\/\d+/.test(b.url); const link = { id: nextLinkId++, kind: pr ? "github_pr" : /github\.com/.test(b.url) ? "github" : /slack\.com/.test(b.url) ? "slack" : /linear\.app/.test(b.url) ? "linear" : "url", url: b.url, ...(pr ? { status: "open", status_at: now() } : {}) }; j.links.push(link); touch(j, {}); syncForm(j); return send(res, 200, { ok: true, link }); }
+      const rank = (l) => [l.yours ? 0 : 1, l.pinned_at ? 0 : 1, -l.mentions, l.id];
+      const order = () => j.links.sort((x, y) => rank(x).reduce((d, v, i) => d || v - rank(y)[i], 0));
+      if (b.op === "add") { if (!/^https?:\/\//.test(b.url || "")) return err(res, 409, "bad URL"); const pr = /github\.com\/[^/]+\/[^/]+\/pull\/\d+/.test(b.url); const link = { id: nextLinkId++, kind: pr ? "github_pr" : /github\.com/.test(b.url) ? "github" : /slack\.com/.test(b.url) ? "slack" : /linear\.app/.test(b.url) ? "linear" : "url", url: b.url, mentions: 1, yours: true, ...(pr ? { status: "open", status_at: now() } : {}) }; j.links.push(link); order(); touch(j, {}); syncForm(j); return send(res, 200, { ok: true, link }); }
       if (b.op === "remove") { j.links = j.links.filter((l) => l.id !== b.id); touch(j, {}); break; }
+      if (b.op === "pin") { const l = j.links.find((x) => x.url === b.url); if (l) { l.pinned_at = now(); order(); syncForm(j); } return send(res, 200, { ok: true, pinned: !!l }); }
+      if (b.op === "unpin") { const l = j.links.find((x) => x.id === b.id); if (!l) return err(res, 404, "no such link"); delete l.pinned_at; order(); break; }
       return err(res, 400, "bad op");
     }
     case "/api/job/saveform": { const f = forms.get(j.slug); if (!f) return err(res, 404, "no such job"); if (!f.editable) return err(res, 409, "not editable"); if (b.mtime && b.mtime !== f.mtime) return err(res, 409, "edited elsewhere — reload"); Object.assign(f, { dir: b.dir ?? f.dir, model: b.model ?? f.model, spec: b.spec ?? f.spec }); touch(j, { dir: f.dir, model: f.model }); f.mtime = j.mtime; return send(res, 200, { ok: true, mtime: f.mtime }); }

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 
-import { deleteJob, openJobDir, unarchiveJob } from "./api/client.ts";
+import { deleteJob, openJobDir, pinJobLink, unarchiveJob } from "./api/client.ts";
 import { BoardView, type BoardActions } from "./components/board/BoardView.tsx";
 import { DragProvider } from "./components/board/DragProvider.tsx";
 import { GhostJobCard } from "./components/board/JobCard.tsx";
@@ -24,6 +24,9 @@ export function App() {
       // nothing on the board changes, so this bypasses mutate (no refetch)
       onOpenDir: (slug) => {
         openJobDir(slug).catch((e: unknown) => showToast(`${slug}: ${e instanceof Error ? e.message : String(e)}`));
+      },
+      onOpenLink: (slug, url) => {
+        void mutate(() => pinJobLink(slug, url));
       },
       onNewJob: () => setNewJob(true),
       onUnarchive: (slug) => {

@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -229,7 +230,7 @@ func TestPRScanner(t *testing.T) {
 		t.Fatal(err)
 	}
 	ls, _ := st.ListLinks(j.ID)
-	if len(ls) != 1 || ls[0].URL != "https://github.com/o/r/pull/12" || ls[0].Kind != "github_pr" {
+	if len(ls) != 1 || ls[0].URL != "https://github.com/o/r/pull/12" || ls[0].Kind != "github_pr" || ls[0].Mentions != 1 || ls[0].Yours {
 		t.Fatalf("links = %+v", ls)
 	}
 	if _, err := st.GetKV(scanPendingKey(j.ID)); err == nil {
@@ -276,27 +277,95 @@ func TestConversationLinkScanner(t *testing.T) {
 	if err := sc.scan(j); err != nil {
 		t.Fatal(err)
 	}
-	ls, _ := st.ListLinks(j.ID)
-	var got []string
-	for _, l := range ls {
-		got = append(got, l.Kind+" "+l.URL)
+	read := func() []string {
+		ls, _ := st.ListLinks(j.ID)
+		var got []string
+		for _, l := range ls {
+			got = append(got, fmt.Sprintf("%s %s %d yours=%v", l.Kind, l.URL, l.Mentions, l.Yours))
+		}
+		return got
 	}
 	want := []string{
-		"linear https://linear.app/t/issue/X-1",
-		"github_pr https://github.com/o/r/pull/5",
-		"url https://example.com/doc",
-		"url https://example.com/pi-said-this",
-		"url http://host.local:8080/x",
+		"linear https://linear.app/t/issue/X-1 2 yours=true",
+		"github_pr https://github.com/o/r/pull/5 1 yours=true",
+		"url https://example.com/doc 1 yours=true",
+		"url http://host.local:8080/x 1 yours=true",
+		"url https://example.com/pi-said-this 1 yours=false",
 	}
-	if strings.Join(got, "|") != strings.Join(want, "|") {
+	if got := read(); strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("\n got %q\nwant %q", got, want)
 	}
-	// rescanning attaches nothing twice
+	// rescanning attaches nothing twice and counts nothing twice
+	st.DeleteKV(scanOffsetKey(j.ID))
 	if err := sc.scan(j); err != nil {
 		t.Fatal(err)
 	}
-	if ls, _ := st.ListLinks(j.ID); len(ls) != 5 {
-		t.Fatalf("rescan duplicated: %d", len(ls))
+	if got := read(); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("after a rescan\n got %q\nwant %q", got, want)
+	}
+}
+
+// TestMentionBackfill: a session scanned before mentions were counted is
+// read once more from its start to count them; the links you removed stay
+// removed, and what pi writes next is scanned as usual.
+func TestMentionBackfill(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	j := &store.Job{Slug: "b", State: "working"}
+	st.CreateJob(j)
+	j.PiSession = filepath.Join(t.TempDir(), "session.jsonl")
+	lines := []string{
+		`{"type":"session","version":3}`,
+		`{"type":"message","id":"u1","message":{"role":"user","content":"see https://x.io/kept"}}`,
+		`{"type":"message","id":"a1","message":{"role":"assistant","content":[{"type":"text","text":"https://x.io/kept and https://x.io/removed"},{"type":"toolCall","id":"c1","name":"bash","arguments":{"command":"gh pr create --fill"}}]}}`,
+		`{"type":"message","id":"r1","message":{"role":"toolResult","toolCallId":"c1","content":[{"type":"text","text":"https://github.com/o/r/pull/3"}]}}`,
+	}
+	body := strings.Join(lines, "\n") + "\n"
+	os.WriteFile(j.PiSession, []byte(body), 0o644)
+	st.AddLink(j.ID, "url", "https://x.io/kept")
+	st.AddLink(j.ID, "github_pr", "https://github.com/o/r/pull/3")
+	st.SetKV(scanGenerationKey, scanGeneration)
+	st.SetKV(scanOffsetKey(j.ID), strconv.Itoa(len(body)))
+	st.SetKV(scanMentionsKey(j.ID), "0")
+
+	read := func() []string {
+		ls, _ := st.ListLinks(j.ID)
+		var got []string
+		for _, l := range ls {
+			got = append(got, fmt.Sprintf("%s %d yours=%v", l.URL, l.Mentions, l.Yours))
+		}
+		return got
+	}
+	sc := newSessionScanner(st)
+	if err := sc.scan(j); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"https://x.io/kept 2 yours=true", "https://github.com/o/r/pull/3 1 yours=false"}
+	if got := read(); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("\n got %q\nwant %q", got, want)
+	}
+	if v, err := st.GetKV(scanMentionsKey(j.ID)); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the backfill mark must go once it caught up: %q %v", v, err)
+	}
+	if err := newSessionScanner(st).scan(j); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("a second scan counted again\n got %q\nwant %q", got, want)
+	}
+
+	f, _ := os.OpenFile(j.PiSession, os.O_APPEND|os.O_WRONLY, 0)
+	f.WriteString(`{"type":"message","id":"a2","message":{"role":"assistant","content":[{"type":"text","text":"https://x.io/removed is back, https://x.io/kept too"}]}}` + "\n")
+	f.Close()
+	if err := sc.scan(j); err != nil {
+		t.Fatal(err)
+	}
+	want = []string{"https://x.io/kept 3 yours=true", "https://github.com/o/r/pull/3 1 yours=false", "https://x.io/removed 1 yours=false"}
+	if got := read(); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("after pi mentioned it again\n got %q\nwant %q", got, want)
 	}
 }
 
@@ -438,8 +507,9 @@ func TestFork(t *testing.T) {
 		t.Fatalf("draft fork: %+v", fork)
 	}
 	ls, _ := st.ListLinks(fork.ID)
-	if len(ls) != 2 || ls[0].URL != "https://github.com/o/r/pull/9" || ls[0].Kind != "github_pr" || ls[1].URL != "https://example.com/doc" {
-		t.Fatalf("fork links: %+v", ls)
+	if len(ls) != 2 || ls[0].URL != "https://github.com/o/r/pull/9" || ls[0].Kind != "github_pr" || ls[1].URL != "https://example.com/doc" ||
+		!ls[0].Yours || ls[0].Mentions != 1 || !ls[1].Yours || ls[1].Mentions != 1 {
+		t.Fatalf("fork links: %+v %+v", ls[0], ls[1])
 	}
 	order, _ := st.GetBoardOrder()
 	if want := []int64{zzz.ID, src.ID, fork.ID, aaa.ID}; !equalIDs(order["draft"], want) {
@@ -650,12 +720,15 @@ func TestFollowSession(t *testing.T) {
 		t.Fatalf("offset after rescanning the new file: %q (file is %d bytes)", off, len(body))
 	}
 	for _, u := range []string{"https://example.com/first", "https://example.com/moved"} {
-		_, created, err := st.AddLink(j.ID, "link", u)
+		l, created, err := st.AddLink(j.ID, "link", u)
 		if err != nil && !errors.Is(err, store.ErrDuplicate) {
 			t.Fatal(err)
 		}
 		if err == nil && created {
 			t.Errorf("%s should have been attached by the rescan", u)
+		}
+		if l != nil && l.Mentions != 1 {
+			t.Errorf("%s: %d mentions — the branch the new file copied is counted once", u, l.Mentions)
 		}
 	}
 	// the same path again changes nothing

@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { WebConversation } from "../../lib/types.ts";
@@ -39,6 +39,23 @@ describe("ConversationPanel", () => {
     expect(screen.getByText("3 turns")).toBeInTheDocument();
     expect(screen.getAllByText("you")).toHaveLength(3);
     expect(fetchConversation).toHaveBeenCalledWith("demo", expect.anything());
+  });
+
+  it("tells the overlay which link you opened, in your rows and in pi's", async () => {
+    fetchConversation.mockResolvedValue({
+      rev: "4",
+      pending: false,
+      messages: [
+        { role: "user", text: "look at https://you.io/brief please", ts: 1793181600 },
+        { role: "assistant", text: "See [the PR](https://github.com/o/r/pull/7).", ts: 1793181660 },
+      ],
+    });
+    const onOpenLink = vi.fn();
+    render(<ConversationPanel slug="demo" opened pi={{ state: "idle", ts: 1 }} onOpenLink={onOpenLink} />);
+    fireEvent.click(await screen.findByRole("link", { name: "https://you.io/brief" }));
+    fireEvent.click(screen.getByRole("link", { name: "the PR" }));
+    fireEvent.click(screen.getByText(/look at/));
+    expect(onOpenLink.mock.calls).toEqual([["https://you.io/brief"], ["https://github.com/o/r/pull/7"]]);
   });
 
   it("says when pi stopped without answering, and reads nothing before the job is opened", async () => {

@@ -19,7 +19,7 @@ function fixtureBoard(): WebBoard {
         state: "working",
         live: true,
         pi: { state: "working", tool: "bash", ts: NOW - 5 },
-        links: [{ id: 1, kind: "github_pr", url: "https://github.com/acme/search/pull/482", status: "open" }],
+        links: [{ id: 1, kind: "github_pr", url: "https://github.com/acme/search/pull/482", status: "open", mentions: 1 }],
       }),
       makeJob({ slug: "onboarding-copy", dir: "/Users/me/src/web", state: "blocked", live: true, pi: { state: "idle", ts: NOW - 100 }, attention: true }),
       makeJob({ slug: "rate-limits", dir: "/Users/me/src/gateway", state: "done", finished_at: NOW - 86400 }),
@@ -33,12 +33,14 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 const requests: string[] = [];
+const bodies: Record<string, unknown>[] = [];
 
 function installFetch(board: WebBoard) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const u = new URL(url, "http://localhost");
     requests.push(`${init?.method ?? "GET"} ${u.pathname}${u.search}`);
+    if (init?.body) bodies.push({ path: u.pathname, ...(JSON.parse(String(init.body)) as Record<string, unknown>) });
     switch (u.pathname) {
       case "/api/board":
         return json(board);
@@ -83,6 +85,7 @@ function installFetch(board: WebBoard) {
 describe("BoardView (DOM smoke test)", () => {
   beforeEach(() => {
     requests.length = 0;
+    bodies.length = 0;
     installFetch(fixtureBoard());
   });
   afterEach(() => {
@@ -183,6 +186,21 @@ describe("BoardView (DOM smoke test)", () => {
       fireEvent.keyDown(document, { key: "Escape" });
     });
     expect(overlay).toHaveAttribute("hidden");
+  });
+
+  it("pins a link you open from its chip on a card, without opening the card", async () => {
+    render(<App />);
+    const chip = (await screen.findByText("#482")).closest("a")!;
+    fireEvent.click(chip);
+    await waitFor(() =>
+      expect(bodies).toContainEqual({
+        path: "/api/job/links",
+        slug: "search-reindex",
+        op: "pin",
+        url: "https://github.com/acme/search/pull/482",
+      }),
+    );
+    expect(document.getElementById("job-overlay")!).toHaveAttribute("hidden");
   });
 
   it("⌘-click on a card opens its directory in the editor instead of the overlay", async () => {

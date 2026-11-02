@@ -636,7 +636,10 @@ func (s *Service) AddLink(j *store.Job, rawURL string) (*store.Link, error) {
 	if !created {
 		return nil, Refuse("that URL is already linked")
 	}
-	return l, nil
+	if err := s.Store.AddMention(l.ID, "", "user"); err != nil {
+		return nil, err
+	}
+	return s.Store.GetLink(j.ID, l.ID)
 }
 
 // AttachPR idempotently adds a github_pr link; attached is false when the
@@ -646,12 +649,21 @@ func (s *Service) AttachPR(j *store.Job, rawURL string) (attached bool, err erro
 	if LinkKind(rawURL) != "github_pr" {
 		return false, Refuse("not a GitHub pull request URL")
 	}
-	_, created, err := s.Store.AddLink(j.ID, "github_pr", rawURL)
-	return created, err
+	l, created, err := s.Store.AddLink(j.ID, "github_pr", rawURL)
+	if err != nil {
+		return false, err
+	}
+	return created, s.Store.AddMention(l.ID, "", "user")
 }
 
 // RemoveLink deletes one of the job's links.
 func (s *Service) RemoveLink(j *store.Job, id int64) error { return s.Store.RemoveLink(j.ID, id) }
+
+func (s *Service) PinLink(j *store.Job, rawURL string) (bool, error) {
+	return s.Store.PinLink(j.ID, strings.TrimSpace(rawURL), time.Now().Unix())
+}
+
+func (s *Service) UnpinLink(j *store.Job, id int64) error { return s.Store.UnpinLink(j.ID, id) }
 
 // Reorder saves a column's full intended order; slugs whose display state no
 // longer matches the column are dropped silently.

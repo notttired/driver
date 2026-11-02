@@ -43,6 +43,13 @@ usage, accounts, self-update) is left out on purpose.
   hands back is what the job is about, so it belongs on the card. Chips, the
   URLs in the links panel and the URLs in the pane open in the browser (click
   or ⌘-click; the pane wants ⌘, as any terminal does).
+- Link order (2026-11-02): the links you mentioned in a message or added by
+  hand come first, then the ones you opened (anywhere — chip, links panel,
+  record, pane), then the rest; within each group the most mentioned first,
+  ties in arrival order. A mention is a message that carries the URL (yours
+  or pi's, or the result of the `gh pr create` that printed it); a link added
+  by hand counts one. An opened link stays pinned until you unpin it (📌 in
+  the links panel); a link you mentioned cannot be unpinned.
 - macOS notifications when a job turns blocked (needs you) or its pi exits.
 - ⌘-click on a card (or on the dir in the overlay head) opens the job's
   directory in VS Code: the daemon runs `code <dir>` (`DRIVER_EDITOR` swaps the
@@ -138,11 +145,20 @@ reactivate does), the daemon appends it to that column's order
 every other column and onto the end). Cross-column drags do not reorder the
 destination, so they count as arrivals too.
 
-`links(id, job_id, kind, url, status, status_at, created_at)` with
+`links(id, job_id, kind, url, status, status_at, created_at, pinned_at)` with
 `UNIQUE(job_id, url)`; no label column — a link is its URL. `kind` ∈ `github_pr | github | slack | linear | url`,
 derived from the URL on insert (`github.com/<o>/<r>/pull/<n>` → github_pr;
 `github.com` → github; host ends `slack.com` → slack; `linear.app` → linear).
-`status` for github_pr ∈ `'' | open | draft | merged | closed`.
+`status` for github_pr ∈ `'' | open | draft | merged | closed`. `pinned_at`:
+when you last opened it, 0 when not pinned.
+
+`link_mentions(link_id, entry_id, role)`, keyed on `(link_id, entry_id)` and
+cascading with its link: one row per session entry that mentions the link,
+with that entry's role (`user | assistant | toolResult`); a link added by hand
+carries one `user` row with an empty entry id. Keying on the entry id makes
+counting idempotent: pi's `/fork` copies entries under their ids, and a
+reread counts nothing twice. v6 added both and a `scan-mentions:<job id>`
+backfill mark for every job already scanned ("Link detection").
 
 `kv(key, value)` for daemon bookkeeping (session scan offsets, model cache).
 
@@ -279,6 +295,13 @@ on `(job_id, url)` with the kind derived from the URL:
   `arguments.command` contains `gh pr create` is remembered; when the matching
   `toolResult` (`toolCallId`) arrives, every
   `https://github.com/<owner>/<repo>/pull/<n>` in its text is a `github_pr` link.
+
+Every link the scanner sees is also a mention of it (`link_mentions`, the
+entry's id and role), the first sighting included. A job that was scanned
+before v6 carries a `scan-mentions:<job id>` mark: its session is read once
+more from that mark up to the scan offset, counting mentions of the links it
+still has and attaching nothing — the links you removed stay removed — then
+the mark goes.
 
 `kv.scanner-generation` names what the scanner looks for (`2`); a daemon that
 finds an older value, or none, forgets every `scan:*` offset once and reads each

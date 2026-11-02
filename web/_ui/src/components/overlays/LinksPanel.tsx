@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { addJobLink, fetchTabs, removeJobLink } from "../../api/client.ts";
+import { addJobLink, fetchTabs, pinJobLink, removeJobLink, unpinJobLink } from "../../api/client.ts";
 import { isHttpUrl, linkLabel } from "../../lib/links.ts";
 import type { TabsResponse, WebLink } from "../../lib/types.ts";
 import { LinkChip } from "../board/chips/LinkChips.tsx";
@@ -74,6 +74,23 @@ export function LinksPanel({ slug, links, onChanged }: LinksPanelProps) {
     }
   };
 
+  const open = (href: string) => {
+    pinJobLink(slug, href).then(onChanged, () => {});
+  };
+
+  const unpin = async (id: number) => {
+    setBusy(true);
+    setError("");
+    try {
+      await unpinJobLink(slug, id);
+      onChanged();
+    } catch (e: unknown) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const loadTabs = async () => {
     setTabsBusy(true);
     setTabsError("");
@@ -104,11 +121,38 @@ export function LinksPanel({ slug, links, onChanged }: LinksPanelProps) {
         <ul className="link-list">
           {links.map((l) => (
             <li key={l.id} className="link-row">
-              <LinkChip link={l} />
-              <a className="link-text" href={l.url} target="_blank" rel="noreferrer" title={`${l.url}\nclick or ⌘-click: open in the browser`}>
+              <LinkChip link={l} onOpen={open} />
+              <a
+                className="link-text"
+                href={l.url}
+                target="_blank"
+                rel="noreferrer"
+                title={`${l.url}\nclick or ⌘-click: open in the browser`}
+                onClick={() => open(l.url)}
+              >
                 {l.url.replace(/^https?:\/\//, "")}
               </a>
+              {l.mentions > 1 ? (
+                <span className="link-count" title={`${l.mentions} mentions`}>
+                  ×{l.mentions}
+                </span>
+              ) : null}
               {l.kind === "github_pr" && l.status ? <span className={`pr-status pr-${l.status}`}>{l.status}</span> : null}
+              {l.yours ? (
+                <span className="link-pin" title="pinned: you mentioned it">
+                  📌
+                </span>
+              ) : l.pinned_at ? (
+                <button
+                  className="btn ghost link-pin"
+                  title="pinned: you opened it — click to unpin"
+                  aria-label={`unpin ${linkLabel(l)}`}
+                  disabled={busy}
+                  onClick={() => void unpin(l.id)}
+                >
+                  📌
+                </button>
+              ) : null}
               <button
                 className="btn ghost link-remove"
                 title="remove this link"

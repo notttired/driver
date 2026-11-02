@@ -121,7 +121,9 @@ Slack and Linear are recognised by kind and PR status is polled with `gh`. Every
 URL in your messages to pi and in its replies lands in the job's links by
 itself (tool output is not scanned, apart from the PR a `gh pr create` prints);
 add others by hand, or remove any with ✕. Click or ⌘-click a link to open it in
-your browser.
+your browser. Links you mentioned or added are pinned on top, then the ones you
+have opened (📌 unpins), then the rest — each group most mentioned first, ties
+in the order they arrived.
 Rename (the name on the card; the slug follows), recolour and **fork** cards
 from the overlay: a fork is a copy — conversation, notes, links, directory,
 model — under the name you give it, placed beside the original in its column;
