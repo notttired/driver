@@ -375,13 +375,15 @@ from the client. Closing the socket kills the attach process (the tmux session
 lives on). Because tmux's `window-size` is `latest` on this machine, the newest
 client's size wins; the bridge does not fight other attached clients.
 
-Keys go through xterm untouched except ⌘← / ⌘→: xterm has no sequence for a
+Keys go through xterm untouched except ⌘← / ⌘→ and ⌘⌫: xterm has no sequence for a
 ⌘-arrow and drops it (WebKit then moves the caret of xterm's hidden textarea),
 so the pane sends what the Home / End keys send instead (`ESC [ H` / `ESC [ F`,
 or `ESC O H` / `ESC O F` in application cursor keys mode — `lib/paneKeys.ts`).
 tmux knows both forms and pi binds `home` / `end` to its editor's line start /
-line end, so the macOS line jumps work in pi. Other modifiers (⌥-arrows for
-words, ⇧) are left to xterm.
+line end, so the macOS line jumps work in pi. ⌘⌫, which xterm sends as a plain
+backspace, deletes the whole line: End, then Ctrl+U (pi's delete to line
+start) — on an empty line Ctrl+U joins it to the line above, so the line goes
+either way. Other modifiers (⌥-arrows for words, ⇧) are left to xterm.
 
 URLs in the pane — plain text found by xterm's web-links addon, and OSC 8
 hyperlinks — open in the browser on ⌘-click through `window.open(url, "_blank")`.
