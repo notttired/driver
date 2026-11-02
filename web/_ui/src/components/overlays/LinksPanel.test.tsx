@@ -41,9 +41,10 @@ describe("LinksPanel", () => {
       "pi.io/once",
     ]);
     expect(within(rows[0]!).getByTitle("pinned: you mentioned it")).toBeInTheDocument();
-    expect(within(rows[0]!).queryByRole("button", { name: /unpin/ })).toBeNull();
+    expect(within(rows[0]!).queryByRole("button", { name: /pin/ })).toBeNull();
     expect(within(rows[1]!).getByRole("button", { name: "unpin #7" })).toBeInTheDocument();
-    expect(rows[2]!.querySelector(".link-pin")).toBeNull();
+    expect(within(rows[2]!).getByRole("button", { name: "pin pi.io" })).toBeInTheDocument();
+    expect(within(rows[3]!).getByRole("button", { name: "pin pi.io" })).toBeInTheDocument();
     expect(within(rows[2]!).getByTitle("4 mentions")).toHaveTextContent("×4");
     expect(within(rows[0]!).getByTitle("2 mentions")).toHaveTextContent("×2");
     expect(rows[3]!.querySelector(".link-count")).toBeNull();
@@ -62,5 +63,17 @@ describe("LinksPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "unpin #7" }));
     await waitFor(() => expect(unpinJobLink).toHaveBeenCalledWith("demo", 2));
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(3));
+  });
+
+  it("pins a link on its pin button without opening it", async () => {
+    const onChanged = vi.fn();
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    const { container } = render(<LinksPanel slug="demo" links={LINKS} onChanged={onChanged} />);
+    const once = [...container.querySelectorAll<HTMLElement>(".link-row")][3]!;
+    fireEvent.click(within(once).getByRole("button", { name: "pin pi.io" }));
+    await waitFor(() => expect(pinJobLink).toHaveBeenCalledWith("demo", "https://pi.io/once"));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+    expect(open).not.toHaveBeenCalled();
+    open.mockRestore();
   });
 });

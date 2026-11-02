@@ -853,8 +853,19 @@ body.splitting .term-pane, body.splitting .job-side { pointer-events: none; }
 .convo-md th { font-weight: 600; background: color-mix(in srgb, var(--fg) 5%, transparent); }
 .convo-md img { max-width: 100%; height: auto; }
 .convo-md del { color: var(--muted); }
-.link-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.link-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.link-list {
+  --link-row: 18px;
+  --link-gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--link-gap);
+  max-height: calc(5 * var(--link-row) + 4 * var(--link-gap));
+  overflow-y: auto;
+}
+.link-row { display: flex; align-items: center; gap: 6px; min-width: 0; flex: none; height: var(--link-row); }
 .link-row .pr-chip { flex: none; }
 .link-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 9px/1 var(--mono); color: var(--muted); text-decoration: none; }
 a.link-text:hover { color: var(--fg); text-decoration: underline; }
@@ -864,7 +875,8 @@ a.link-text:hover { color: var(--fg); text-decoration: underline; }
 .pr-status.pr-merged { color: var(--tint); }
 .link-remove { padding: 0 5px; height: 18px; }
 .link-count { flex: none; font: 500 8px/1 var(--mono); color: var(--muted); }
-.link-pin { flex: none; font-size: 9px; line-height: 1; filter: grayscale(1); opacity: 0.7; }
+.link-pin { flex: none; font-size: 9px; line-height: 1; filter: grayscale(1); opacity: 0.25; }
+.link-pin.on { opacity: 0.7; }
 button.link-pin { padding: 0 4px; height: 18px; }
 button.link-pin:hover { filter: none; opacity: 1; }
 .link-empty { font: 400 9px/1.5 var(--mono); color: var(--muted); }

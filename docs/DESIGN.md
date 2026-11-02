@@ -48,8 +48,10 @@ usage, accounts, self-update) is left out on purpose.
   record, pane), then the rest; within each group the most mentioned first,
   ties in arrival order. A mention is a message that carries the URL (yours
   or pi's, or the result of the `gh pr create` that printed it); a link added
-  by hand counts one. An opened link stays pinned until you unpin it (📌 in
-  the links panel); a link you mentioned cannot be unpinned.
+  by hand counts one. A link is pinned when you open it or press its 📌 in
+  the links panel, and stays pinned until you press 📌 again; a link you
+  mentioned cannot be unpinned. The panel's list shows five rows and scrolls
+  for the rest.
 - macOS notifications when a job turns blocked (needs you) or its pi exits.
 - Retry (2026-11-02): network drops leave pi up but stuck on a failed turn
   ("Connection error.", "Request timed out.", "terminated" — after its own

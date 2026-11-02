@@ -61,11 +61,11 @@ export function LinksPanel({ slug, links, onChanged }: LinksPanelProps) {
     if (await attach(url.trim())) setUrl("");
   };
 
-  const remove = async (id: number) => {
+  const write = async (op: () => Promise<unknown>) => {
     setBusy(true);
     setError("");
     try {
-      await removeJobLink(slug, id);
+      await op();
       onChanged();
     } catch (e: unknown) {
       setError(errorText(e));
@@ -73,22 +73,11 @@ export function LinksPanel({ slug, links, onChanged }: LinksPanelProps) {
       setBusy(false);
     }
   };
+
+  const remove = (id: number) => write(() => removeJobLink(slug, id));
 
   const open = (href: string) => {
     pinJobLink(slug, href).then(onChanged, () => {});
-  };
-
-  const unpin = async (id: number) => {
-    setBusy(true);
-    setError("");
-    try {
-      await unpinJobLink(slug, id);
-      onChanged();
-    } catch (e: unknown) {
-      setError(errorText(e));
-    } finally {
-      setBusy(false);
-    }
   };
 
   const loadTabs = async () => {
@@ -139,20 +128,21 @@ export function LinksPanel({ slug, links, onChanged }: LinksPanelProps) {
               ) : null}
               {l.kind === "github_pr" && l.status ? <span className={`pr-status pr-${l.status}`}>{l.status}</span> : null}
               {l.yours ? (
-                <span className="link-pin" title="pinned: you mentioned it">
+                <span className="link-pin on" title="pinned: you mentioned it">
                   📌
                 </span>
-              ) : l.pinned_at ? (
+              ) : (
                 <button
-                  className="btn ghost link-pin"
-                  title="pinned: you opened it — click to unpin"
-                  aria-label={`unpin ${linkLabel(l)}`}
+                  className={"btn ghost link-pin" + (l.pinned_at ? " on" : "")}
+                  title={l.pinned_at ? "pinned — click to unpin" : "pin to the top"}
+                  aria-label={`${l.pinned_at ? "unpin" : "pin"} ${linkLabel(l)}`}
+                  aria-pressed={Boolean(l.pinned_at)}
                   disabled={busy}
-                  onClick={() => void unpin(l.id)}
+                  onClick={() => void write(() => (l.pinned_at ? unpinJobLink(slug, l.id) : pinJobLink(slug, l.url)))}
                 >
                   📌
                 </button>
-              ) : null}
+              )}
               <button
                 className="btn ghost link-remove"
                 title="remove this link"
