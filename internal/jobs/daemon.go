@@ -178,6 +178,11 @@ func (d *Daemon) tick() (live int, firstErr error) {
 			delete(d.lastReason, j.ID)
 		}
 	}
+	archived, err := d.svc.ArchiveStale(jobs, now)
+	note(err)
+	for _, slug := range archived {
+		log.Printf("%s: archived — done for a day", slug)
+	}
 	for id := range d.blockedSince {
 		if !seen[id] {
 			delete(d.blockedSince, id)

@@ -788,6 +788,83 @@ func TestFork(t *testing.T) {
 	}
 }
 
+func TestArchiveStale(t *testing.T) {
+	if !NewTmux().Available() {
+		t.Skip("tmux not on PATH")
+	}
+	sock, err := os.MkdirTemp("", "drvtmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(sock) })
+	t.Setenv("TMUX_TMPDIR", sock)
+	t.Setenv("TMUX", "")
+	t.Cleanup(func() { NewTmux().run("kill-server") })
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	work := t.TempDir()
+	svc := &Service{Store: st, Cfg: Config{Home: t.TempDir(), DefaultDir: work}, Tmux: NewTmux()}
+	put := func(slug, state string) *store.Job {
+		t.Helper()
+		j, err := svc.Create(slug, "", work, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.UpdateJobFields(j.ID, j.Rev, map[string]any{"state": state, "finished_at": int64(1)}); err != nil {
+			t.Fatal(err)
+		}
+		return j
+	}
+	put("done-a", "done")
+	put("done-b", "done")
+	put("busy", "working")
+	live := put("done-live", "done")
+	if err := svc.Tmux.NewSession(FreshSessionName(live), work, "w", live.Slug, "sleep 60"); err != nil {
+		t.Fatal(err)
+	}
+	active := func() []string {
+		jobs, _ := st.ListJobs()
+		var out []string
+		for _, j := range jobs {
+			out = append(out, j.Slug)
+		}
+		return out
+	}
+	sweep := func(after time.Duration) []string {
+		t.Helper()
+		jobs, _ := st.ListJobs()
+		got, err := svc.ArchiveStale(jobs, time.Now().Add(after).Unix())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	if got := sweep(23 * time.Hour); len(got) != 0 {
+		t.Fatalf("done for less than a day: archived %v", got)
+	}
+	if got := sweep(25 * time.Hour); strings.Join(got, " ") != "done-a done-b" {
+		t.Fatalf("done for a day: archived %v", got)
+	}
+	if got := strings.Join(active(), " "); got != "busy done-live" {
+		t.Fatalf("left on the board: %s (a live session stays, and so does a job that is not done)", got)
+	}
+	arch, _ := st.ListArchivedJobs()
+	if len(arch) != 2 {
+		t.Fatalf("archived: %d", len(arch))
+	}
+	if err := svc.Unarchive(arch[0]); err != nil {
+		t.Fatal(err)
+	}
+	if got := sweep(time.Hour); len(got) != 0 {
+		t.Fatalf("an unarchived job gets a fresh day: archived %v", got)
+	}
+}
+
 func equalIDs(a, b []int64) bool {
 	if len(a) != len(b) {
 		return false

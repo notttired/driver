@@ -107,7 +107,9 @@ sends Escape (stop the current task); blocked → working just opens the card;
 blocked → done ends the job (kills the tmux session); done → working or blocked
 **reactivates** (pi resumes the job's session file, the one it was last writing); done → the archive drawer
 under DONE archives it. The overlay's buttons do the same: start · stop · done ·
-cancel (close pi; the job goes back to not started) · reactivate · archive.
+cancel (close pi; the job goes back to not started) · reactivate · archive. A
+done job left alone for a day moves to the archive by itself (unarchiving one
+gives it another day).
 **Retry** is for blocked jobs that did not stop for you: a dropped network
 leaves pi up on a failed turn (the card reads `✗ Connection error` and the
 like), a logout kills pi (`✕ exited`). `↻ retry N` in the BLOCKED head (or

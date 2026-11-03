@@ -94,7 +94,7 @@ blocked drag — interrupts you sent yourself); it goes off when the job leaves
 | `POST /api/kill` | kill session, back to not started ("cancel") | not started |
 | `POST /api/reactivate` | relaunch pi on the same session file, state working, last in WORKING | not done · archived · dir gone |
 | `POST /api/retry` | a blocked job whose pi gave up or died: pi up and its last turn failed → `continue` + Enter typed into the pane (the tick moves the card when pi starts on it); pi exited (dead pane, or no session at all) → pi started again in a fresh tmux session on the job's current session file, with `continue` as its first prompt when the turn it died in was unfinished (failed, or cut off before pi answered) — state working, last in WORKING — and otherwise at its prompt, still blocked | not blocked · nothing to retry (pi is up and its last turn did not fail, or it is not at its prompt) · dir gone · pi or tmux not found · tmux failure (text) |
-| `POST /api/archive` | archive (slug freed) | not done · live session |
+| `POST /api/archive` | archive (slug freed); the daemon also archives every done job untouched for 24h by itself | not done · live session |
 | `POST /api/unarchive` | restore; refuses if an active job now holds the slug | — |
 | `POST /api/delete` | delete forever; removes the job dir | not archived |
 | `POST /api/reorder` | body `{"column": "draft\|working\|blocked\|done", "slugs": string[]}` — the column's full intended order; slugs whose display state no longer matches are dropped silently | unknown column |

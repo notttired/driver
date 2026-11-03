@@ -247,7 +247,10 @@ session, job dir, row). Archived originals are refused; the UI hides the
 button for them. The overlay re-points itself at the fork when it lands.
 
 **Archive / unarchive / delete**: kraken semantics. Archive only from done;
-delete only when archived; both refuse a live tmux session.
+delete only when archived; both refuse a live tmux session. Each tick also
+archives every done job untouched for 24 hours (`updated_at` — the done
+write, a fork, an unarchive or an edit restarts the day; a live session is
+left alone) and logs `<slug>: archived — done for a day`.
 
 ## State derivation (tick every 2s)
 

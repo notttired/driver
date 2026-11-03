@@ -397,6 +397,25 @@ func (s *Service) killIfPresent(j *store.Job) error {
 	return nil
 }
 
+const archiveAfter = 24 * 60 * 60
+
+func (s *Service) ArchiveStale(jobs []*store.Job, now int64) ([]string, error) {
+	var archived []string
+	for _, j := range jobs {
+		if j.State != "done" || j.Archived() || now-j.UpdatedAt < archiveAfter {
+			continue
+		}
+		if err := s.Archive(j); err != nil {
+			if IsRefusal(err) {
+				continue
+			}
+			return archived, fmt.Errorf("%s: archive: %w", j.Slug, err)
+		}
+		archived = append(archived, j.Slug)
+	}
+	return archived, nil
+}
+
 // Archive moves a done job into the drawer (its slug is freed).
 func (s *Service) Archive(j *store.Job) error {
 	if j.Archived() {
