@@ -9,18 +9,12 @@ import { useColumnDrop } from "./DragProvider.tsx";
 export interface ArchiveDrawerProps {
   archived: WebJob[];
   actions: BoardActions;
-  /** unfiltered count while a search is active */
-  total?: number;
-  /** a search that matched archived jobs holds the drawer open */
-  forceOpen?: boolean;
 }
 
 /** Collapsible, under DONE; also the done → archived drop target. */
-export function ArchiveDrawer({ archived, actions, total, forceOpen }: ArchiveDrawerProps) {
-  const [stored, setStored] = useLocalStorageFlag("driver-archive-open", false);
-  const open = stored || !!forceOpen;
+export function ArchiveDrawer({ archived, actions }: ArchiveDrawerProps) {
+  const [open, setStored] = useLocalStorageFlag("driver-archive-open", false);
   const shown = archived.length;
-  const hasArchived = (total ?? shown) > 0;
   const drop = useColumnDrop(ARCHIVED);
 
   return (
@@ -32,11 +26,10 @@ export function ArchiveDrawer({ archived, actions, total, forceOpen }: ArchiveDr
       <button
         className="archive-head"
         id="archive-toggle"
-        disabled={shown === 0 || !!forceOpen}
-        onClick={() => setStored(!stored)}
+        disabled={shown === 0}
+        onClick={() => setStored(!open)}
       >
-        <span className="tri">{hasArchived ? (open ? "▾" : "▸") : "·"}</span> ARCHIVED{" "}
-        <span className="n">{total === undefined ? shown : `${shown}/${total}`}</span>
+        <span className="tri">{shown > 0 ? (open ? "▾" : "▸") : "·"}</span> ARCHIVED <span className="n">{shown}</span>
       </button>
       {shown > 0 ? (
         <div className="archive-cards" hidden={!open}>

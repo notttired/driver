@@ -4,26 +4,27 @@ import type { JobSearchModel } from "../../hooks/useJobSearch.ts";
 
 export interface BoardBarProps {
   search: JobSearchModel;
-  /** ⌘K is the overlay's while one is open */
+  /** while one is open, ctrl-K belongs to the pane: only ⌘K takes the search */
   overlayOpen?: boolean;
+  onShortcut?: () => void;
 }
 
-export function BoardBar({ search, overlayOpen }: BoardBarProps) {
+export function BoardBar({ search, overlayOpen, onShortcut }: BoardBarProps) {
   const { query, setQuery, matched, total, active } = search;
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "k" && e.key !== "K") return;
-      if (!e.metaKey && !e.ctrlKey) return;
-      if (overlayOpen) return;
+      if (!e.metaKey && !(e.ctrlKey && !overlayOpen)) return;
       e.preventDefault();
+      onShortcut?.();
       inputRef.current?.focus();
       inputRef.current?.select();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [overlayOpen]);
+  }, [overlayOpen, onShortcut]);
 
   return (
     <div className="boardbar" id="boardbar">

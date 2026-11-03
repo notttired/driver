@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { deleteJob, openJobDir, pinJobLink, retryJob, unarchiveJob } from "./api/client.ts";
 import { BoardView, type BoardActions } from "./components/board/BoardView.tsx";
@@ -54,6 +54,22 @@ export function App() {
   const closeOverlay = useCallback(() => setOpenKey(null), []);
   const openJob = useCallback((slug: string) => setOpenKey(slug), []);
   const overlayOpen = openKey !== null || newJob;
+  const closeOverlays = useCallback(() => {
+    setOpenKey(null);
+    setNewJob(false);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "n" && e.key !== "N") return;
+      if (e.altKey || e.shiftKey || (!e.metaKey && !(e.ctrlKey && !overlayOpen))) return;
+      e.preventDefault();
+      setOpenKey(null);
+      setNewJob(true);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [overlayOpen]);
 
   return (
     <>
@@ -65,7 +81,7 @@ export function App() {
         visibleKeys={search.active ? search.visibleKeys : undefined}
         renderOverlay={(job) => (job ? <GhostJobCard job={job} /> : null)}
       >
-        <BoardView board={board} search={search} actions={actions} overlayOpen={overlayOpen} />
+        <BoardView board={board} search={search} actions={actions} overlayOpen={overlayOpen} onSearchShortcut={closeOverlays} />
       </DragProvider>
       <JobOverlay
         openKey={openKey}

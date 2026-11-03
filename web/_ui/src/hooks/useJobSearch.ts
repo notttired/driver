@@ -29,7 +29,7 @@ export function useJobSearch(board: BoardModel): JobSearchModel {
   const terms = useMemo(() => parseTerms(query), [query]);
 
   return useMemo(() => {
-    let total = archived.length;
+    let total = 0;
     for (const col of COLUMNS) total += byColumn[col].length;
 
     if (terms.length === 0) {
@@ -59,15 +59,13 @@ export function useJobSearch(board: BoardModel): JobSearchModel {
       cols[col] = byColumn[col].filter(keep);
       matched += cols[col].length;
     }
-    const arch = archived.filter(keep);
-    matched += arch.length;
 
     return {
       query,
       setQuery,
       terms,
       byColumn: cols,
-      archived: arch,
+      archived,
       visibleKeys,
       matched,
       total,

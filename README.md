@@ -138,8 +138,9 @@ Rename (the name on the card; the slug follows), recolour and **fork** cards
 from the overlay: a fork is a copy — conversation, notes, links, directory,
 model — under the name you give it, placed beside the original in its column;
 an open job's fork gets its own pi, resumed on the copied conversation, and a
-done job's fork is done until you reactivate it. ⌘K searches names, slugs and
-directories. A
+done job's fork is done until you reactivate it. ⌘K, from anywhere (a job's
+overlay too), takes you to the search over names, slugs and directories of the
+jobs on the board — archived ones are left out — and ⌘N opens NEW JOB. A
 notification arrives when a job turns blocked or its pi exits, and the card
 wears a ring until you open it; WORKING and BLOCKED keep their cards in the
 order they arrived. The `⊞ tabs`

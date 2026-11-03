@@ -142,7 +142,7 @@ describe("BoardView (DOM smoke test)", () => {
     // chrome: the daemon line and the Mac-shell hook element
     expect(document.querySelector("header.chrome")).not.toBeNull();
     expect(screen.getByText(/daemon pid 4242/)).toBeInTheDocument();
-    expect(screen.getByText("7 jobs")).toBeInTheDocument();
+    expect(screen.getByText("6 jobs")).toBeInTheDocument();
   });
 
   it("filters cards by search and shows the matched read-out", async () => {
@@ -152,13 +152,60 @@ describe("BoardView (DOM smoke test)", () => {
     fireEvent.change(input, { target: { value: "reindex" } });
     expect(screen.getByText("search-reindex")).toBeInTheDocument();
     expect(screen.queryByText("flaky-ci")).not.toBeInTheDocument();
-    expect(screen.getByText("of 7 jobs", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("of 6 jobs", { exact: false })).toBeInTheDocument();
     // the typed name is searched too
     fireEvent.change(input, { target: { value: "retry" } });
     expect(screen.getByText("Stripe webhooks retry")).toBeInTheDocument();
     expect(screen.queryByText("search-reindex")).not.toBeInTheDocument();
     fireEvent.keyDown(input, { key: "Escape" });
     expect(await screen.findByText("flaky-ci")).toBeInTheDocument();
+  });
+
+  it("⌘K searches the jobs that are not archived, from the board or from an open job", async () => {
+    render(<App />);
+    const card = (await screen.findByText("flaky-ci")).closest(".card")!;
+    const input = screen.getByLabelText("search jobs");
+    const overlay = document.getElementById("job-overlay")!;
+
+    fireEvent.keyDown(document, { key: "k", metaKey: true });
+    expect(document.activeElement).toBe(input);
+
+    fireEvent.click(card);
+    await waitFor(() => expect(overlay).not.toHaveAttribute("hidden"));
+    fireEvent.keyDown(document, { key: "k", ctrlKey: true });
+    expect(overlay).not.toHaveAttribute("hidden");
+    fireEvent.keyDown(document, { key: "k", metaKey: true });
+    expect(overlay).toHaveAttribute("hidden");
+    expect(document.activeElement).toBe(input);
+
+    fireEvent.change(input, { target: { value: "graphql" } });
+    expect(screen.getByText("of 6 jobs", { exact: false })).toHaveTextContent("0 of 6 jobs");
+    expect(document.querySelector(".archive-cards")).toHaveAttribute("hidden");
+    fireEvent.change(input, { target: { value: "legacy" } });
+    expect(screen.getByText("of 6 jobs", { exact: false })).toHaveTextContent("1 of 6 jobs");
+  });
+
+  it("⌘N opens the new job dialog, from the board or from an open job", async () => {
+    render(<App />);
+    const card = (await screen.findByText("flaky-ci")).closest(".card")!;
+    const dialog = document.getElementById("new-job-overlay")!;
+    const overlay = document.getElementById("job-overlay")!;
+    expect(dialog).toHaveAttribute("hidden");
+
+    fireEvent.keyDown(document, { key: "n", metaKey: true });
+    expect(dialog).not.toHaveAttribute("hidden");
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+    expect(dialog).toHaveAttribute("hidden");
+
+    fireEvent.click(card);
+    await waitFor(() => expect(overlay).not.toHaveAttribute("hidden"));
+    fireEvent.keyDown(document, { key: "n", ctrlKey: true });
+    expect(dialog).toHaveAttribute("hidden");
+    fireEvent.keyDown(document, { key: "n", metaKey: true });
+    expect(overlay).toHaveAttribute("hidden");
+    expect(dialog).not.toHaveAttribute("hidden");
   });
 
   it("opens the job overlay on a card click with the launch form, and Escape closes it", async () => {

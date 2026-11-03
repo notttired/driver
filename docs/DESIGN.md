@@ -422,6 +422,9 @@ START), sidebar = notes (autosaved) and the conversation record side by side,
 links (list, add, remove, PR status) beneath.
 The NEW JOB dialog takes a name, dir and model and starts the job itself
 (`/api/job/create`, then `/api/queue`), so the overlay it opens is already on
-the pane. Escape closes; ⌘K focuses search. ⌘-click on a card skips the overlay
+the pane. Escape closes; ⌘K focuses search from anywhere, closing whatever
+overlay is open (ctrl-K too while none is, since in the pane it is pi's); the
+search covers the jobs on the board, never the archive. ⌘N opens NEW JOB the
+same way. ⌘-click on a card skips the overlay
 and posts `/api/job/open` (the directory in the editor); the overlay's dir label
 answers the same gesture.

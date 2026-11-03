@@ -28,13 +28,14 @@ export interface BoardViewProps {
   search: JobSearchModel;
   actions: BoardActions;
   overlayOpen: boolean;
+  onSearchShortcut: () => void;
 }
 
-export function BoardView({ board, search, actions, overlayOpen }: BoardViewProps) {
+export function BoardView({ board, search, actions, overlayOpen, onSearchShortcut }: BoardViewProps) {
   const { byColumn, archived, active } = search;
   return (
     <>
-      <BoardBar search={search} overlayOpen={overlayOpen} />
+      <BoardBar search={search} overlayOpen={overlayOpen} onShortcut={onSearchShortcut} />
       <main className="board" id="board">
         {COLUMNS.map((col) => (
           <BoardColumn
@@ -44,16 +45,7 @@ export function BoardView({ board, search, actions, overlayOpen }: BoardViewProp
             total={active ? board.byColumn[col].length : undefined}
             onNewJob={actions.onNewJob}
             head={col === "blocked" ? <RetryAll jobs={byColumn.blocked} onRetry={actions.onRetry} /> : undefined}
-            footer={
-              col === "done" ? (
-                <ArchiveDrawer
-                  archived={archived}
-                  actions={actions}
-                  total={active ? board.archived.length : undefined}
-                  forceOpen={active && archived.length > 0}
-                />
-              ) : undefined
-            }
+            footer={col === "done" ? <ArchiveDrawer archived={archived} actions={actions} /> : undefined}
             renderCard={(j) => <JobCard key={jobKey(j)} job={j} actions={actions} />}
           />
         ))}
