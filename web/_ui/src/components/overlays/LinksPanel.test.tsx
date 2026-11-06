@@ -40,8 +40,7 @@ describe("LinksPanel", () => {
       "pi.io/often",
       "pi.io/once",
     ]);
-    expect(within(rows[0]!).getByTitle("pinned: you mentioned it")).toBeInTheDocument();
-    expect(within(rows[0]!).queryByRole("button", { name: /pin/ })).toBeNull();
+    expect(within(rows[0]!).getByRole("button", { name: "pin you.io" })).toBeInTheDocument();
     expect(within(rows[1]!).getByRole("button", { name: "unpin #7" })).toBeInTheDocument();
     expect(within(rows[2]!).getByRole("button", { name: "pin pi.io" })).toBeInTheDocument();
     expect(within(rows[3]!).getByRole("button", { name: "pin pi.io" })).toBeInTheDocument();

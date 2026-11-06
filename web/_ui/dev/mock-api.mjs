@@ -106,9 +106,9 @@ const server = http.createServer(async (req, res) => {
     case "/api/job/notes": { const f = forms.get(j.slug); if (f) f.notes = b.text ?? ""; touch(j, { has_notes: !!(b.text ?? "").trim() }); break; }
     case "/api/job/links": {
       j.links = j.links ?? [];
-      const rank = (l) => [l.yours ? 0 : 1, l.pinned_at ? 0 : 1, -l.mentions, l.id];
+      const rank = (l) => [-(l.pinned_at ?? 0), -l.id];
       const order = () => j.links.sort((x, y) => rank(x).reduce((d, v, i) => d || v - rank(y)[i], 0));
-      if (b.op === "add") { if (!/^https?:\/\//.test(b.url || "")) return err(res, 409, "bad URL"); const pr = /github\.com\/[^/]+\/[^/]+\/pull\/\d+/.test(b.url); const link = { id: nextLinkId++, kind: pr ? "github_pr" : /github\.com/.test(b.url) ? "github" : /slack\.com/.test(b.url) ? "slack" : /linear\.app/.test(b.url) ? "linear" : "url", url: b.url, mentions: 1, yours: true, ...(pr ? { status: "open", status_at: now() } : {}) }; j.links.push(link); order(); touch(j, {}); syncForm(j); return send(res, 200, { ok: true, link }); }
+      if (b.op === "add") { if (!/^https?:\/\//.test(b.url || "")) return err(res, 409, "bad URL"); const pr = /github\.com\/[^/]+\/[^/]+\/pull\/\d+/.test(b.url); const link = { id: nextLinkId++, kind: pr ? "github_pr" : /github\.com/.test(b.url) ? "github" : /slack\.com/.test(b.url) ? "slack" : /linear\.app/.test(b.url) ? "linear" : "url", url: b.url, mentions: 1, yours: true, pinned_at: now(), ...(pr ? { status: "open", status_at: now() } : {}) }; j.links.push(link); order(); touch(j, {}); syncForm(j); return send(res, 200, { ok: true, link }); }
       if (b.op === "remove") { j.links = j.links.filter((l) => l.id !== b.id); touch(j, {}); break; }
       if (b.op === "pin") { const l = j.links.find((x) => x.url === b.url); if (l) { l.pinned_at = now(); order(); syncForm(j); } return send(res, 200, { ok: true, pinned: !!l }); }
       if (b.op === "unpin") { const l = j.links.find((x) => x.id === b.id); if (!l) return err(res, 404, "no such link"); delete l.pinned_at; order(); break; }

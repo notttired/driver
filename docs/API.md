@@ -64,13 +64,12 @@ type WebLink = {
   status_at?: number;
   mentions: number;            // messages that carry the URL, yours and pi's (a link added by hand counts one)
   yours?: boolean;             // you mentioned it in a message or added it by hand
-  pinned_at?: number;          // you opened it (unix seconds); `unpin` clears it
+  pinned_at?: number;          // you opened it, pinned it or added it by hand (unix seconds); `unpin` clears it
 };
 ```
 
-A job's links come in display order: yours first, then the ones you opened
-(`pinned_at`), then the rest; within each group the most mentioned first,
-ties in arrival order.
+A job's links come in display order: the pinned ones (`pinned_at`), the last
+pinned first, then the rest, newest first.
 
 Within one display state the array order IS the column order (see `/api/reorder`).
 WORKING and BLOCKED read in arrival order: a job the daemon moves there (pi
@@ -102,7 +101,7 @@ blocked drag — interrupts you sent yourself); it goes off when the job leaves
 | `POST /api/job/rename` | `{"slug", "to", "name"?}` → `{"ok": true, "slug": "<to>"}`: `to` is the new slug (rules below), `name` the new display name (whitespace-collapsed, ≤ 200 characters; `""` or absent = the job goes by its slug). Either may stay as it is. Allowed in every state; when the slug changes on a live job its tmux session is renamed too | taken · invalid · name too long (400) |
 | `POST /api/job/fork` | `{"slug", "to", "name"?}` → the fork's `JobForm`: a copy of the job — dir, model, colour, notes, links, and its conversation (the session file copied under a fresh session id, `parentSession` naming the original's) — as slug `to`, named `name` (same rules as rename), placed in the original's column right after it. A not-started draft's fork is a draft; a done job's fork is done (reactivate it to carry on from where the original stood); an open job's fork (ready, working, blocked) gets its own tmux session and pi resumed on the copied conversation, keeps the original's column until its own pi reports, and answers after that session is up (the start timeout applies). Archived jobs cannot be forked — unarchive first | archived · slug taken · invalid slug · the original's own slug · name too long (400) · for an open job: dir gone · pi or tmux not found · tmux failure (text) |
 | `POST /api/job/notes` | `{"slug", "text"}`; full replace, allowed in every state | > 64000 runes |
-| `POST /api/job/links` | `{"slug", "op": "add", "url"}` → `{"ok": true, "link": WebLink}` (yours); `{"slug", "op": "remove", "id"}` → `{"ok": true}`; `{"slug", "op": "pin", "url"}` → `{"ok": true, "pinned": boolean}` — the job's link for that URL is pinned (`false` when the job has no such link; the board posts it for every link you open, wherever you click it, and for the links panel's 📌); `{"slug", "op": "unpin", "id"}` → `{"ok": true}`. The daemon adds links on its own too: every URL in your messages and in pi's replies, and the PR a `gh pr create` prints (docs/DESIGN.md "Link detection") | bad URL (must be http/https) · duplicate url |
+| `POST /api/job/links` | `{"slug", "op": "add", "url"}` → `{"ok": true, "link": WebLink}` (yours, pinned); `{"slug", "op": "remove", "id"}` → `{"ok": true}`; `{"slug", "op": "pin", "url"}` → `{"ok": true, "pinned": boolean}` — the job's link for that URL is pinned (`false` when the job has no such link; the board posts it for every link you open, wherever you click it, and for the links panel's 📌); `{"slug", "op": "unpin", "id"}` → `{"ok": true}`. The daemon adds links on its own too: every URL in your messages and in pi's replies, and the PR a `gh pr create` prints (docs/DESIGN.md "Link detection") | bad URL (must be http/https) · duplicate url |
 | `POST /api/job/seen` | you opened the job: clears `attention` (the overlay posts it on open; no rev bump, nothing else changes) | — |
 | `POST /api/job/open` | open the job's directory in the editor: `DRIVER_EDITOR` with the dir appended, else `code <dir>`, else `open -b com.microsoft.VSCode <dir>` (⌘-click on a card); allowed in every state, no state write | dir missing/not a directory · the editor command failed (its first output line) · it did not return within 15s |
 | `POST /api/pr-attach` | `{"slug", "url"}` — idempotent add of a `github_pr` link, counted as added by hand (used by the daemon's own scanner; kept public for scripts) → `{"ok": true, "attached": boolean}` | not a GitHub PR URL |

@@ -454,11 +454,11 @@ func TestConversationLinkScanner(t *testing.T) {
 		return got
 	}
 	want := []string{
-		"linear https://linear.app/t/issue/X-1 2 yours=true",
-		"github_pr https://github.com/o/r/pull/5 1 yours=true",
-		"url https://example.com/doc 1 yours=true",
 		"url http://host.local:8080/x 1 yours=true",
 		"url https://example.com/pi-said-this 1 yours=false",
+		"url https://example.com/doc 1 yours=true",
+		"github_pr https://github.com/o/r/pull/5 1 yours=true",
+		"linear https://linear.app/t/issue/X-1 2 yours=true",
 	}
 	if got := read(); strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("\n got %q\nwant %q", got, want)
@@ -511,7 +511,7 @@ func TestMentionBackfill(t *testing.T) {
 	if err := sc.scan(j); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"https://x.io/kept 2 yours=true", "https://github.com/o/r/pull/3 1 yours=false"}
+	want := []string{"https://github.com/o/r/pull/3 1 yours=false", "https://x.io/kept 2 yours=true"}
 	if got := read(); strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("\n got %q\nwant %q", got, want)
 	}
@@ -531,7 +531,7 @@ func TestMentionBackfill(t *testing.T) {
 	if err := sc.scan(j); err != nil {
 		t.Fatal(err)
 	}
-	want = []string{"https://x.io/kept 3 yours=true", "https://github.com/o/r/pull/3 1 yours=false", "https://x.io/removed 1 yours=false"}
+	want = []string{"https://x.io/removed 1 yours=false", "https://github.com/o/r/pull/3 1 yours=false", "https://x.io/kept 3 yours=true"}
 	if got := read(); strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("after pi mentioned it again\n got %q\nwant %q", got, want)
 	}
@@ -675,7 +675,7 @@ func TestFork(t *testing.T) {
 		t.Fatalf("draft fork: %+v", fork)
 	}
 	ls, _ := st.ListLinks(fork.ID)
-	if len(ls) != 2 || ls[0].URL != "https://github.com/o/r/pull/9" || ls[0].Kind != "github_pr" || ls[1].URL != "https://example.com/doc" ||
+	if len(ls) != 2 || ls[0].URL != "https://example.com/doc" || ls[1].URL != "https://github.com/o/r/pull/9" || ls[1].Kind != "github_pr" ||
 		!ls[0].Yours || ls[0].Mentions != 1 || !ls[1].Yours || ls[1].Mentions != 1 {
 		t.Fatalf("fork links: %+v %+v", ls[0], ls[1])
 	}

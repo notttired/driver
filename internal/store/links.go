@@ -26,7 +26,7 @@ const linkSelect = `SELECT l.id, l.job_id, l.kind, l.url, l.status, l.status_at,
 	COUNT(m.link_id) AS mentions, COALESCE(MAX(m.role = 'user'), 0) AS yours
 	FROM links l LEFT JOIN link_mentions m ON m.link_id = l.id`
 
-const linkOrder = ` GROUP BY l.id ORDER BY yours DESC, l.pinned_at > 0 DESC, mentions DESC, l.created_at, l.id`
+const linkOrder = ` GROUP BY l.id ORDER BY l.pinned_at DESC, l.created_at DESC, l.id DESC`
 
 func scanLink(row interface{ Scan(...any) error }) (*Link, error) {
 	var l Link
@@ -118,9 +118,8 @@ func (s *Store) GetLink(jobID, id int64) (*Link, error) {
 	return l, nil
 }
 
-// ListLinks returns a job's links in display order: the ones you mentioned
-// or added, then the ones you opened, then the rest; each group by mentions,
-// then in created order.
+// ListLinks returns a job's links in display order: the pinned ones, the
+// last pinned first, then the rest, newest first.
 func (s *Store) ListLinks(jobID int64) ([]*Link, error) {
 	return s.queryLinks(linkSelect+` WHERE l.job_id = ?`+linkOrder, jobID)
 }

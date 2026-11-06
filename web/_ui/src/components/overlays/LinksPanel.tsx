@@ -127,22 +127,16 @@ export function LinksPanel({ slug, links, onChanged }: LinksPanelProps) {
                 </span>
               ) : null}
               {l.kind === "github_pr" && l.status ? <span className={`pr-status pr-${l.status}`}>{l.status}</span> : null}
-              {l.yours ? (
-                <span className="link-pin on" title="pinned: you mentioned it">
-                  📌
-                </span>
-              ) : (
-                <button
-                  className={"btn ghost link-pin" + (l.pinned_at ? " on" : "")}
-                  title={l.pinned_at ? "pinned — click to unpin" : "pin to the top"}
-                  aria-label={`${l.pinned_at ? "unpin" : "pin"} ${linkLabel(l)}`}
-                  aria-pressed={Boolean(l.pinned_at)}
-                  disabled={busy}
-                  onClick={() => void write(() => (l.pinned_at ? unpinJobLink(slug, l.id) : pinJobLink(slug, l.url)))}
-                >
-                  📌
-                </button>
-              )}
+              <button
+                className={"btn ghost link-pin" + (l.pinned_at ? " on" : "")}
+                title={l.pinned_at ? "pinned — click to unpin" : "pin to the top"}
+                aria-label={`${l.pinned_at ? "unpin" : "pin"} ${linkLabel(l)}`}
+                aria-pressed={Boolean(l.pinned_at)}
+                disabled={busy}
+                onClick={() => void write(() => (l.pinned_at ? unpinJobLink(slug, l.id) : pinJobLink(slug, l.url)))}
+              >
+                📌
+              </button>
               <button
                 className="btn ghost link-remove"
                 title="remove this link"

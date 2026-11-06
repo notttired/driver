@@ -43,15 +43,17 @@ usage, accounts, self-update) is left out on purpose.
   hands back is what the job is about, so it belongs on the card. Chips, the
   URLs in the links panel and the URLs in the pane open in the browser (click
   or ⌘-click; the pane wants ⌘, as any terminal does).
-- Link order (2026-11-02): the links you mentioned in a message or added by
-  hand come first, then the ones you opened (anywhere — chip, links panel,
-  record, pane), then the rest; within each group the most mentioned first,
-  ties in arrival order. A mention is a message that carries the URL (yours
-  or pi's, or the result of the `gh pr create` that printed it); a link added
-  by hand counts one. A link is pinned when you open it or press its 📌 in
-  the links panel, and stays pinned until you press 📌 again; a link you
-  mentioned cannot be unpinned. The panel's list shows five rows and scrolls
-  for the rest.
+- Link order (2026-11-06): the pinned links first, the last pinned on top,
+  then the rest, newest first (by when the link first arrived). A link is
+  pinned when you open it (anywhere — chip, links panel, record, pane), press
+  its 📌 in the links panel or add it by hand, and stays pinned until you
+  press 📌 again; opening a pinned link puts it back on top. Until 2026-11-06
+  the links you mentioned in a message came first, then the pinned ones, each
+  group most mentioned first: a first message carrying nine links held all
+  five visible rows, and a fresh 📌 landed out of sight. Mentions are still
+  counted, shown as ×N: a mention is a message that carries the URL (yours or
+  pi's, or the result of the `gh pr create` that printed it); a link added by
+  hand counts one. The panel's list shows five rows and scrolls for the rest.
 - macOS notifications when a job turns blocked (needs you) or its pi exits.
 - Retry (2026-11-02): network drops leave pi up but stuck on a failed turn
   ("Connection error.", "Request timed out.", "terminated" — after its own
@@ -158,7 +160,7 @@ destination, so they count as arrivals too.
 derived from the URL on insert (`github.com/<o>/<r>/pull/<n>` → github_pr;
 `github.com` → github; host ends `slack.com` → slack; `linear.app` → linear).
 `status` for github_pr ∈ `'' | open | draft | merged | closed`. `pinned_at`:
-when you last opened it, 0 when not pinned.
+when you last opened or pinned it, or added it by hand; 0 when not pinned.
 
 `link_mentions(link_id, entry_id, role)`, keyed on `(link_id, entry_id)` and
 cascading with its link: one row per session entry that mentions the link,

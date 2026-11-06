@@ -716,7 +716,8 @@ func (s *Service) SetNotes(j *store.Job, text string) error {
 	return mapStoreErr(err)
 }
 
-// AddLink attaches a URL with its detected kind; a duplicate is a refusal.
+// AddLink attaches a URL with its detected kind, pinned; a duplicate is a
+// refusal.
 func (s *Service) AddLink(j *store.Job, rawURL string) (*store.Link, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if !ValidLinkURL(rawURL) {
@@ -732,6 +733,9 @@ func (s *Service) AddLink(j *store.Job, rawURL string) (*store.Link, error) {
 	if err := s.Store.AddMention(l.ID, "", "user"); err != nil {
 		return nil, err
 	}
+	if _, err := s.Store.PinLink(j.ID, rawURL, time.Now().Unix()); err != nil {
+		return nil, err
+	}
 	return s.Store.GetLink(j.ID, l.ID)
 }
 
@@ -745,6 +749,11 @@ func (s *Service) AttachPR(j *store.Job, rawURL string) (attached bool, err erro
 	l, created, err := s.Store.AddLink(j.ID, "github_pr", rawURL)
 	if err != nil {
 		return false, err
+	}
+	if created {
+		if _, err := s.Store.PinLink(j.ID, rawURL, time.Now().Unix()); err != nil {
+			return false, err
+		}
 	}
 	return created, s.Store.AddMention(l.ID, "", "user")
 }

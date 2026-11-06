@@ -156,7 +156,7 @@ func TestLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	ls, _ := s.ListLinks(id)
-	if len(ls) != 2 || ls[0].Status != "open" || ls[0].StatusAt != 100 || ls[1].Kind != "url" || ls[1].URL != "https://example.com" {
+	if len(ls) != 2 || ls[0].Kind != "url" || ls[0].URL != "https://example.com" || ls[1].Status != "open" || ls[1].StatusAt != 100 {
 		t.Fatalf("list: %+v %+v", ls[0], ls[1])
 	}
 	stale, _ := s.StalePRLinks(50, 3)
@@ -207,14 +207,17 @@ func TestLinkOrderAndPins(t *testing.T) {
 		}
 		return l
 	}
-	add("https://pi.io/once", [2]string{"e1", "assistant"})
+	add("https://pi.io/oldest", [2]string{"e1", "assistant"})
 	add("https://pi.io/thrice", [2]string{"e1", "assistant"}, [2]string{"e2", "assistant"}, [2]string{"e2", "assistant"}, [2]string{"e3", "assistant"})
 	add("https://you.io/said", [2]string{"e4", "user"})
-	add("https://you.io/by-hand", [2]string{"", "user"}, [2]string{"e5", "assistant"})
-	opened := add("https://pi.io/opened", [2]string{"e6", "assistant"})
-	add("https://pi.io/pr-output", [2]string{"e7", "toolResult"})
+	opened := add("https://pi.io/opened", [2]string{"e5", "assistant"})
+	add("https://pi.io/pinned", [2]string{"e6", "assistant"})
+	add("https://pi.io/newest", [2]string{"e7", "toolResult"})
 
 	if ok, err := s.PinLink(id, "https://pi.io/opened", 500); err != nil || !ok {
+		t.Fatalf("pin: %v %v", ok, err)
+	}
+	if ok, err := s.PinLink(id, "https://pi.io/pinned", 600); err != nil || !ok {
 		t.Fatalf("pin: %v %v", ok, err)
 	}
 	if ok, err := s.PinLink(id, "https://not.linked/x", 500); err != nil || ok {
@@ -232,12 +235,12 @@ func TestLinkOrderAndPins(t *testing.T) {
 		return strings.Join(out, "\n")
 	}
 	want := strings.Join([]string{
-		"https://you.io/by-hand 2 yours=true pinned=0",
-		"https://you.io/said 1 yours=true pinned=0",
+		"https://pi.io/pinned 1 yours=false pinned=600",
 		"https://pi.io/opened 1 yours=false pinned=500",
+		"https://pi.io/newest 1 yours=false pinned=0",
+		"https://you.io/said 1 yours=true pinned=0",
 		"https://pi.io/thrice 3 yours=false pinned=0",
-		"https://pi.io/once 1 yours=false pinned=0",
-		"https://pi.io/pr-output 1 yours=false pinned=0",
+		"https://pi.io/oldest 1 yours=false pinned=0",
 	}, "\n")
 	ls, _ := s.ListLinks(id)
 	if got := read(ls); got != want {
@@ -250,6 +253,12 @@ func TestLinkOrderAndPins(t *testing.T) {
 	if l, err := s.GetLink(id, opened.ID); err != nil || l.PinnedAt != 500 || l.Mentions != 1 {
 		t.Fatalf("get: %+v %v", l, err)
 	}
+	if _, err := s.PinLink(id, "https://pi.io/opened", 700); err != nil {
+		t.Fatal(err)
+	}
+	if ls, _ := s.ListLinks(id); ls[0].URL != "https://pi.io/opened" || ls[1].URL != "https://pi.io/pinned" {
+		t.Fatalf("a link pinned again goes back on top:\n%s", read(ls))
+	}
 
 	if err := s.UnpinLink(id, opened.ID); err != nil {
 		t.Fatal(err)
@@ -258,7 +267,7 @@ func TestLinkOrderAndPins(t *testing.T) {
 		t.Fatalf("unpin under another job: %v", err)
 	}
 	ls, _ = s.ListLinks(id)
-	if ls[2].URL != "https://pi.io/thrice" || ls[4].URL != "https://pi.io/opened" || ls[4].PinnedAt != 0 {
+	if ls[0].URL != "https://pi.io/pinned" || ls[1].URL != "https://pi.io/newest" || ls[2].URL != "https://pi.io/opened" || ls[2].PinnedAt != 0 {
 		t.Fatalf("after unpin:\n%s", read(ls))
 	}
 

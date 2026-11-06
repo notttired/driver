@@ -48,8 +48,8 @@ func TestJobLinksPins(t *testing.T) {
 
 	code, out := post(`{"slug":"pins","op":"add","url":"https://you.io/x"}`)
 	added, _ := out["link"].(map[string]any)
-	if code != http.StatusOK || added["mentions"] != float64(1) || added["yours"] != true {
-		t.Fatalf("a link added by hand is yours: %d %v", code, out)
+	if code != http.StatusOK || added["mentions"] != float64(1) || added["yours"] != true || added["pinned_at"] == nil {
+		t.Fatalf("a link added by hand is yours and pinned: %d %v", code, out)
 	}
 
 	l, _, _ := st.AddLink(j.ID, "url", "https://pi.io/y")
@@ -65,8 +65,8 @@ func TestJobLinksPins(t *testing.T) {
 		t.Fatalf("pin of a URL the job does not have: %d %v", code, out)
 	}
 	links := form()
-	if len(links) != 3 || links[0].URL != "https://you.io/x" || !links[0].Yours ||
-		links[1].URL != "https://pi.io/y" || links[1].PinnedAt == 0 || links[1].Mentions != 1 ||
+	if len(links) != 3 || links[0].URL != "https://pi.io/y" || links[0].PinnedAt == 0 || links[0].Mentions != 1 ||
+		links[1].URL != "https://you.io/x" || links[1].PinnedAt == 0 || !links[1].Yours ||
 		links[2].URL != "https://pi.io/z" || links[2].Mentions != 2 || links[2].PinnedAt != 0 || links[2].Yours {
 		t.Fatalf("form links: %+v", links)
 	}
@@ -82,5 +82,11 @@ func TestJobLinksPins(t *testing.T) {
 	}
 	if code, _ := post(`{"slug":"pins","op":"bogus"}`); code != http.StatusBadRequest {
 		t.Fatalf("bogus op: %d", code)
+	}
+
+	rec := httptest.NewRecorder()
+	a.prAttach(rec, httptest.NewRequest(http.MethodPost, "/api/pr-attach", strings.NewReader(`{"slug":"pins","url":"https://github.com/o/r/pull/4"}`)))
+	if links := form(); rec.Code != http.StatusOK || links[0].URL != "https://github.com/o/r/pull/4" || links[0].PinnedAt == 0 {
+		t.Fatalf("a PR attached through pr-attach is pinned like one added by hand: %d %+v", rec.Code, links)
 	}
 }
