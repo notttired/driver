@@ -719,7 +719,7 @@ func (s *Service) SetNotes(j *store.Job, text string) error {
 // AddLink attaches a URL with its detected kind, pinned; a duplicate is a
 // refusal.
 func (s *Service) AddLink(j *store.Job, rawURL string) (*store.Link, error) {
-	rawURL = strings.TrimSpace(rawURL)
+	rawURL = LinkURL(rawURL)
 	if !ValidLinkURL(rawURL) {
 		return nil, Refuse("bad URL (must be http or https)")
 	}
@@ -742,7 +742,7 @@ func (s *Service) AddLink(j *store.Job, rawURL string) (*store.Link, error) {
 // AttachPR idempotently adds a github_pr link; attached is false when the
 // URL was already there.
 func (s *Service) AttachPR(j *store.Job, rawURL string) (attached bool, err error) {
-	rawURL = strings.TrimSpace(rawURL)
+	rawURL = LinkURL(rawURL)
 	if LinkKind(rawURL) != "github_pr" {
 		return false, Refuse("not a GitHub pull request URL")
 	}
@@ -762,10 +762,29 @@ func (s *Service) AttachPR(j *store.Job, rawURL string) (attached bool, err erro
 func (s *Service) RemoveLink(j *store.Job, id int64) error { return s.Store.RemoveLink(j.ID, id) }
 
 func (s *Service) PinLink(j *store.Job, rawURL string) (bool, error) {
-	return s.Store.PinLink(j.ID, strings.TrimSpace(rawURL), time.Now().Unix())
+	return s.Store.PinLink(j.ID, LinkURL(rawURL), time.Now().Unix())
 }
 
 func (s *Service) UnpinLink(j *store.Job, id int64) error { return s.Store.UnpinLink(j.ID, id) }
+
+func (s *Service) FoldDuplicateLinks() (int, error) {
+	all, err := s.Store.ListAllLinks()
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for jobID, ls := range all {
+		for _, l := range ls {
+			if u := LinkURL(l.URL); u != l.URL {
+				if err := s.Store.MoveLink(jobID, l.ID, u, LinkKind(u)); err != nil {
+					return n, err
+				}
+				n++
+			}
+		}
+	}
+	return n, nil
+}
 
 // Reorder saves a column's full intended order; slugs whose display state no
 // longer matches the column are dropped silently.

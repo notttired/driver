@@ -337,6 +337,54 @@ func TestCopyLinks(t *testing.T) {
 	}
 }
 
+func TestMoveLink(t *testing.T) {
+	s := open(t)
+	id, _ := s.CreateJob(&Job{Slug: "move"})
+	other, _ := s.CreateJob(&Job{Slug: "other"})
+	pr, _, _ := s.AddLink(id, "github_pr", "https://github.com/o/r/pull/7")
+	frag, _, _ := s.AddLink(id, "github_pr", "https://github.com/o/r/pull/7#discussion_r1")
+	files, _, _ := s.AddLink(id, "github", "https://github.com/o/r/pull/8/files")
+	for _, m := range []struct {
+		link        int64
+		entry, role string
+	}{{pr.ID, "a1", "assistant"}, {frag.ID, "a1", "assistant"}, {frag.ID, "u1", "user"}} {
+		if err := s.AddMention(m.link, m.entry, m.role); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.SetLinkStatus(pr.ID, "open", 100); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PinLink(id, frag.URL, 300); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE links SET created_at = 10 WHERE id = ?`, frag.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.MoveLink(id, files.ID, "https://github.com/o/r/pull/8", "github_pr"); err != nil {
+		t.Fatal(err)
+	}
+	if l, err := s.GetLink(id, files.ID); err != nil || l.URL != "https://github.com/o/r/pull/8" || l.Kind != "github_pr" {
+		t.Fatalf("moved to a URL the job has no link at: %+v %v", l, err)
+	}
+	if err := s.MoveLink(id, frag.ID, pr.URL, "github_pr"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetLink(id, frag.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("moved onto a link the job has: the moved one must go: %v", err)
+	}
+	if l, _ := s.GetLink(id, pr.ID); l.Mentions != 2 || !l.Yours || l.PinnedAt != 300 || l.CreatedAt != 10 || l.Status != "open" || l.StatusAt != 100 {
+		t.Fatalf("the link moved onto keeps every mention, the earlier arrival and the later pin: %+v", l)
+	}
+	if ls, _ := s.ListLinks(id); len(ls) != 2 {
+		t.Fatalf("links after the moves: %d", len(ls))
+	}
+	if err := s.MoveLink(other, pr.ID, "https://example.com", "url"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("move under another job: %v", err)
+	}
+}
+
 func TestMigrateV3(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v2.db")
 	db, err := sql.Open("sqlite", "file:"+path)

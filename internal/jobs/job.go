@@ -139,6 +139,25 @@ func LinkKind(raw string) string {
 	return "url"
 }
 
+var prPageRe = regexp.MustCompile(`(?i)^(https?://(?:github\.com|delta\.shopify\.io)/[^/?#]+/[^/?#]+/pull/\d+)(?:[/?#]|$)`)
+
+func LinkURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if m := prPageRe.FindStringSubmatch(raw); m != nil {
+		return m[1]
+	}
+	page, fragment, _ := strings.Cut(raw, "#")
+	if strings.HasPrefix(fragment, "/") || strings.HasPrefix(fragment, "!") {
+		return raw
+	}
+	path, query, hasQuery := strings.Cut(page, "?")
+	path = strings.TrimRight(path, "/")
+	if hasQuery {
+		return path + "?" + query
+	}
+	return path
+}
+
 // ValidLinkURL reports whether raw is an absolute http(s) URL with a host.
 func ValidLinkURL(raw string) bool {
 	u, err := url.Parse(strings.TrimSpace(raw))

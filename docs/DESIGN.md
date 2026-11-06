@@ -54,6 +54,17 @@ usage, accounts, self-update) is left out on purpose.
   counted, shown as ×N: a mention is a message that carries the URL (yours or
   pi's, or the result of the `gh pr create` that printed it); a link added by
   hand counts one. The panel's list shows five rows and scrolls for the rest.
+- One link per page (2026-11-06): a link is stored under its page's URL — no
+  `#…` fragment (a `#/…` or `#!…` route stays: single-page apps route on
+  it), no trailing `/`, and every page of a GitHub or Delta pull request
+  (`/files`, `/changes`, `/commits/<sha>`, …) as the pull request itself. The
+  same page arriving under another URL is a mention of the link already
+  there, adding it by hand is refused as a duplicate, and opening or pinning
+  it under any form pins that link. Until then `…/pull/7454` and two
+  `…/pull/7454#discussion_r…` were three links; `driver serve` folds such
+  links into one when it starts (every mention, the earliest arrival and the
+  latest pin kept). The cost: a link to one commit or line opens the pull
+  request or the file; the exact URL stays clickable in the record.
 - macOS notifications when a job turns blocked (needs you) or its pi exits.
 - Retry (2026-11-02): network drops leave pi up but stuck on a failed turn
   ("Connection error.", "Request timed out.", "terminated" — after its own
@@ -156,7 +167,8 @@ every other column and onto the end). Cross-column drags do not reorder the
 destination, so they count as arrivals too.
 
 `links(id, job_id, kind, url, status, status_at, created_at, pinned_at)` with
-`UNIQUE(job_id, url)`; no label column — a link is its URL. `kind` ∈ `github_pr | github | slack | linear | url`,
+`UNIQUE(job_id, url)`; no label column — a link is its URL, in its page's
+form (`LinkURL`; "One link per page" above). `kind` ∈ `github_pr | github | slack | linear | url`,
 derived from the URL on insert (`github.com/<o>/<r>/pull/<n>` → github_pr;
 `github.com` → github; host ends `slack.com` → slack; `linear.app` → linear).
 `status` for github_pr ∈ `'' | open | draft | merged | closed`. `pinned_at`:
@@ -312,7 +324,7 @@ Each tick, for every job with a `pi_session` file, the daemon reads the bytes
 appended since the offset saved in `kv` (`scan:<job id>`) — from the start again
 once pi moved to another file ("State derivation") — and parses complete JSONL
 lines. Two kinds of `message` entry yield links, both attached idempotently
-on `(job_id, url)` with the kind derived from the URL:
+on `(job_id, url)`, the URL in its page's form and the kind derived from it:
 
 - role `user` and role `assistant` — the conversation: every `http(s)://` URL
   in their `text` blocks (string content too; `thinking` and tool-call

@@ -99,6 +99,11 @@ func serve(args []string) error {
 	if !svc.Tmux.Available() {
 		log.Printf("warning: tmux not found on PATH — jobs cannot start (set PATH in %s)", util.EnvFilePath())
 	}
+	if n, err := svc.FoldDuplicateLinks(); err != nil {
+		log.Printf("links: %v", err)
+	} else if n > 0 {
+		log.Printf("links: %d moved to their page's URL, duplicates folded into one", n)
+	}
 	daemon := jobs.NewDaemon(svc)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

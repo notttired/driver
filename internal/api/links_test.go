@@ -90,3 +90,48 @@ func TestJobLinksPins(t *testing.T) {
 		t.Fatalf("a PR attached through pr-attach is pinned like one added by hand: %d %+v", rec.Code, links)
 	}
 }
+
+func TestJobLinksOnePerPage(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	svc := &jobs.Service{Store: st, Cfg: jobs.Config{Home: t.TempDir()}, Tmux: jobs.NewTmux()}
+	a := New(svc, jobs.NewDaemon(svc), "test")
+	j, err := svc.Create("pages", "", t.TempDir(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(handler http.HandlerFunc, body string) (int, map[string]any) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		handler(rec, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body)))
+		var out map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatalf("%s: %v", rec.Body.String(), err)
+		}
+		return rec.Code, out
+	}
+
+	code, out := post(a.jobLinks, `{"slug":"pages","op":"add","url":"https://github.com/o/r/pull/7/files#diff-1"}`)
+	if added, _ := out["link"].(map[string]any); code != http.StatusOK || added["url"] != "https://github.com/o/r/pull/7" || added["kind"] != "github_pr" {
+		t.Fatalf("a PR's page is added as the PR: %d %v", code, out)
+	}
+	if code, out := post(a.jobLinks, `{"slug":"pages","op":"add","url":"https://github.com/o/r/pull/7#discussion_r9"}`); code != http.StatusConflict || out["error"] != "that URL is already linked" {
+		t.Fatalf("the same page again: %d %v", code, out)
+	}
+	if code, out := post(a.prAttach, `{"slug":"pages","url":"https://github.com/o/r/pull/7#issuecomment-1"}`); code != http.StatusOK || out["attached"] != false {
+		t.Fatalf("pr-attach of the same PR: %d %v", code, out)
+	}
+	doc, _, _ := st.AddLink(j.ID, "url", "https://example.com/doc")
+	if code, out := post(a.jobLinks, `{"slug":"pages","op":"pin","url":"https://example.com/doc/#usage"}`); code != http.StatusOK || out["pinned"] != true {
+		t.Fatalf("pin under another form of the URL: %d %v", code, out)
+	}
+	if l, _ := st.GetLink(j.ID, doc.ID); l.PinnedAt == 0 {
+		t.Fatalf("the job's link for that page must be pinned: %+v", l)
+	}
+	if ls, _ := st.ListLinks(j.ID); len(ls) != 2 {
+		t.Fatalf("links: %d", len(ls))
+	}
+}

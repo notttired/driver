@@ -133,6 +133,9 @@ add others by hand, or remove any with ✕. Click or ⌘-click a link to open it
 your browser. The links you have opened, added by hand or pinned with 📌 (📌
 again unpins) sit on top, the last pinned first; the rest follow, newest first.
 The list shows five at a time and scrolls for the rest.
+A page is linked once: the same URL with another `#…` or a trailing `/` is the
+same link, and every page of a GitHub or Delta pull request (its files,
+changes, a commit) is the pull request.
 Rename (the name on the card; the slug follows), recolour and **fork** cards
 from the overlay: a fork is a copy — conversation, notes, links, directory,
 model — under the name you give it, placed beside the original in its column;

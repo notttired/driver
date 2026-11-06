@@ -95,6 +95,50 @@ func (s *Store) CopyLinks(from, to int64) (int, error) {
 	return int(n), nil
 }
 
+func (s *Store) MoveLink(jobID, id int64, url, kind string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("move link %d: %w", id, err)
+	}
+	defer tx.Rollback()
+	var onto int64
+	err = tx.QueryRow(`SELECT id FROM links WHERE job_id = ? AND url = ? AND id != ?`, jobID, url, id).Scan(&onto)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		res, err := tx.Exec(`UPDATE links SET url = ?, kind = ? WHERE id = ? AND job_id = ?`, url, kind, id, jobID)
+		if err != nil {
+			return fmt.Errorf("move link %d: %w", id, err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return fmt.Errorf("move link %d: %w", id, ErrNotFound)
+		}
+	case err != nil:
+		return fmt.Errorf("move link %d: %w", id, err)
+	default:
+		res, err := tx.Exec(`UPDATE links SET
+			created_at = MIN(created_at, (SELECT created_at FROM links WHERE id = ?1)),
+			pinned_at = MAX(pinned_at, (SELECT pinned_at FROM links WHERE id = ?1))
+			WHERE id = ?2 AND EXISTS (SELECT 1 FROM links WHERE id = ?1 AND job_id = ?3)`, id, onto, jobID)
+		if err != nil {
+			return fmt.Errorf("move link %d: %w", id, err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return fmt.Errorf("move link %d: %w", id, ErrNotFound)
+		}
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO link_mentions (link_id, entry_id, role)
+			SELECT ?, entry_id, role FROM link_mentions WHERE link_id = ?`, onto, id); err != nil {
+			return fmt.Errorf("move link %d: %w", id, err)
+		}
+		if _, err := tx.Exec(`DELETE FROM links WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("move link %d: %w", id, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("move link %d: %w", id, err)
+	}
+	return nil
+}
+
 func (s *Store) LinkByURL(jobID int64, url string) (*Link, error) {
 	l, err := scanLink(s.db.QueryRow(linkSelect+` WHERE l.job_id = ? AND l.url = ? GROUP BY l.id`, jobID, url))
 	if errors.Is(err, sql.ErrNoRows) {

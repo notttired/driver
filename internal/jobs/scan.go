@@ -167,6 +167,7 @@ func sightingsIn(line []byte, pending map[string]bool) []sighting {
 	case "user", "assistant":
 		for _, u := range pi.DetectURLs(e.Text) {
 			if ValidLinkURL(u) {
+				u = LinkURL(u)
 				out = append(out, sighting{LinkKind(u), u, e.ID, e.Role, "link"})
 			}
 		}

@@ -367,6 +367,35 @@ func TestSlugColorKind(t *testing.T) {
 	}
 }
 
+func TestLinkURL(t *testing.T) {
+	for raw, want := range map[string]string{
+		"https://github.com/o/r/pull/12":                                             "https://github.com/o/r/pull/12",
+		"https://github.com/o/r/pull/12/":                                            "https://github.com/o/r/pull/12",
+		"https://github.com/o/r/pull/12#discussion_r4459890850":                      "https://github.com/o/r/pull/12",
+		"https://github.com/o/r/pull/12#issuecomment-6614840101":                     "https://github.com/o/r/pull/12",
+		"https://github.com/o/r/pull/12/files?w=1":                                   "https://github.com/o/r/pull/12",
+		"https://github.com/o/r/pull/12/changes":                                     "https://github.com/o/r/pull/12",
+		"https://github.com/o/r/pull/12/changes/c3710a3#diff-e999":                   "https://github.com/o/r/pull/12",
+		"https://github.com/o/r/pull/12/commits/fdfd888":                             "https://github.com/o/r/pull/12",
+		"https://delta.shopify.io/shop/world/pull/2345778#discussion_r2459726512142": "https://delta.shopify.io/shop/world/pull/2345778",
+		"https://delta.shopify.io/shop/world/pull/2345551/files":                     "https://delta.shopify.io/shop/world/pull/2345551",
+		"https://github.com/o/r/pulls?q=is%3Apr":                                     "https://github.com/o/r/pulls?q=is%3Apr",
+		"https://github.com/o/r/blob/main/x.go#L10-L20":                              "https://github.com/o/r/blob/main/x.go",
+		"https://buildkite.com/o/p/builds/25352#01a18d86":                            "https://buildkite.com/o/p/builds/25352",
+		"https://pkgs.shopify.io/basic/gems/ruby/":                                   "https://pkgs.shopify.io/basic/gems/ruby",
+		"https://example.com/":                                                       "https://example.com",
+		"https://example.com/a/?q=1#top":                                             "https://example.com/a?q=1",
+		"https://drawr.quick.shopify.io/b/O8V6?page=p1":                              "https://drawr.quick.shopify.io/b/O8V6?page=p1",
+		"https://app.example.com/#/settings":                                         "https://app.example.com/#/settings",
+		"https://app.example.com/#!/users":                                           "https://app.example.com/#!/users",
+		" https://example.com/doc ":                                                  "https://example.com/doc",
+	} {
+		if got := LinkURL(raw); got != want {
+			t.Errorf("LinkURL(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
 func TestPRScanner(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
 	if err != nil {
@@ -470,6 +499,34 @@ func TestConversationLinkScanner(t *testing.T) {
 	}
 	if got := read(); strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("after a rescan\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestLinkScannerOnePerPage(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	j := &store.Job{Slug: "pages", State: "working"}
+	st.CreateJob(j)
+	j.PiSession = filepath.Join(t.TempDir(), "session.jsonl")
+	lines := []string{
+		`{"type":"session","version":3}`,
+		`{"type":"message","id":"u1","message":{"role":"user","content":"review https://github.com/o/r/pull/5/files and https://example.com/doc/"}}`,
+		`{"type":"message","id":"a1","message":{"role":"assistant","content":[{"type":"text","text":"Replied on https://github.com/o/r/pull/5#discussion_r1 and https://github.com/o/r/pull/5#discussion_r2; https://example.com/doc#usage has it."}]}}`,
+	}
+	os.WriteFile(j.PiSession, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+	if err := newSessionScanner(st).scan(j); err != nil {
+		t.Fatal(err)
+	}
+	ls, _ := st.ListLinks(j.ID)
+	var got []string
+	for _, l := range ls {
+		got = append(got, fmt.Sprintf("%s %s %d", l.Kind, l.URL, l.Mentions))
+	}
+	if want := []string{"url https://example.com/doc 2", "github_pr https://github.com/o/r/pull/5 2"}; strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("\n got %q\nwant %q", got, want)
 	}
 }
 
@@ -580,6 +637,65 @@ func TestScanGeneration(t *testing.T) {
 	}
 	if v, _ := st.GetKV(scanGenerationKey); v != scanGeneration {
 		t.Fatalf("generation %q after reread", v)
+	}
+}
+
+func TestFoldDuplicateLinks(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	svc := &Service{Store: st, Cfg: Config{Home: t.TempDir()}, Tmux: NewTmux()}
+	j, other := &store.Job{Slug: "dups"}, &store.Job{Slug: "other"}
+	st.CreateJob(j)
+	st.CreateJob(other)
+	add := func(job *store.Job, kind, url string, mentions ...[2]string) {
+		t.Helper()
+		l, _, err := st.AddLink(job.ID, kind, url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range mentions {
+			if err := st.AddMention(l.ID, m[0], m[1]); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	add(j, "github_pr", "https://github.com/o/r/pull/7", [2]string{"a1", "assistant"})
+	add(j, "github_pr", "https://github.com/o/r/pull/7#discussion_r1", [2]string{"a1", "assistant"}, [2]string{"a2", "assistant"})
+	add(j, "github", "https://github.com/o/r/pull/8/changes/abc", [2]string{"u1", "user"})
+	add(j, "github", "https://github.com/o/r/pull/8/files", [2]string{"a3", "assistant"})
+	add(j, "url", "https://example.com/doc", [2]string{"a3", "assistant"})
+	add(other, "url", "https://example.com/doc/", [2]string{"b1", "assistant"})
+	if _, err := st.PinLink(j.ID, "https://github.com/o/r/pull/7#discussion_r1", 300); err != nil {
+		t.Fatal(err)
+	}
+
+	if n, err := svc.FoldDuplicateLinks(); err != nil || n != 4 {
+		t.Fatalf("folded %d, %v", n, err)
+	}
+	read := func(job *store.Job) string {
+		ls, _ := st.ListLinks(job.ID)
+		var out []string
+		for _, l := range ls {
+			out = append(out, fmt.Sprintf("%s %s %d yours=%v pinned=%d", l.Kind, l.URL, l.Mentions, l.Yours, l.PinnedAt))
+		}
+		return strings.Join(out, "\n")
+	}
+	want := strings.Join([]string{
+		"github_pr https://github.com/o/r/pull/7 2 yours=false pinned=300",
+		"url https://example.com/doc 1 yours=false pinned=0",
+		"github_pr https://github.com/o/r/pull/8 2 yours=true pinned=0",
+	}, "\n")
+	if got := read(j); got != want {
+		t.Fatalf("links:\n%s\nwant:\n%s", got, want)
+	}
+	if got := read(other); got != "url https://example.com/doc 1 yours=false pinned=0" {
+		t.Fatalf("the other job's link: %s", got)
+	}
+	if n, err := svc.FoldDuplicateLinks(); err != nil || n != 0 {
+		t.Fatalf("a second pass folded %d, %v", n, err)
 	}
 }
 
