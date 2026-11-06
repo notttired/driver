@@ -385,6 +385,20 @@ func TestMoveLink(t *testing.T) {
 	}
 }
 
+func TestLinkSeenAt(t *testing.T) {
+	s := open(t)
+	id, _ := s.CreateJob(&Job{Slug: "seen"})
+	l, _, _ := s.AddLink(id, "url", "https://e.com/x")
+	for _, at := range []int64{500, 900, 0} {
+		if err := s.LinkSeenAt(l.ID, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, _ := s.GetLink(id, l.ID); got.CreatedAt != 500 {
+		t.Fatalf("a link arrives with its earliest sighting: %d", got.CreatedAt)
+	}
+}
+
 func TestMigrateV3(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v2.db")
 	db, err := sql.Open("sqlite", "file:"+path)
@@ -607,6 +621,40 @@ func TestMigrateV6(t *testing.T) {
 	}
 	if _, err := s.GetKV("scan-mentions:4"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("a job never scanned has nothing to count again: %v", err)
+	}
+}
+
+func TestMigrateV7(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v6.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, `PRAGMA user_version = 6`,
+		`INSERT INTO jobs (id, slug) VALUES (3, 'scanned'), (4, 'counting'), (5, 'never-scanned')`,
+		`INSERT INTO kv VALUES ('scan:3', '4096'), ('scan:4', '100'), ('scan-mentions:4', '40'), ('scanner-generation', '2')`} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	db.Close()
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var version int
+	s.db.QueryRow(`PRAGMA user_version`).Scan(&version)
+	if version != len(migrations) {
+		t.Fatalf("user_version %d", version)
+	}
+	for k, want := range map[string]string{"scan:3": "4096", "scan:4": "100", "scan-mentions:3": "0", "scan-mentions:4": "0", "scanner-generation": "2"} {
+		if v, err := s.GetKV(k); err != nil || v != want {
+			t.Errorf("%s = %q %v, want %q", k, v, err, want)
+		}
+	}
+	if _, err := s.GetKV("scan-mentions:5"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("a job never scanned has nothing to read again: %v", err)
 	}
 }
 

@@ -232,6 +232,13 @@ func (s *Store) AddMention(linkID int64, entryID, role string) error {
 	return nil
 }
 
+func (s *Store) LinkSeenAt(linkID, at int64) error {
+	if _, err := s.db.Exec(`UPDATE links SET created_at = ?1 WHERE id = ?2 AND ?1 > 0 AND created_at > ?1`, at, linkID); err != nil {
+		return fmt.Errorf("link %d seen at %d: %w", linkID, at, err)
+	}
+	return nil
+}
+
 func (s *Store) PinLink(jobID int64, url string, at int64) (bool, error) {
 	res, err := s.db.Exec(`UPDATE links SET pinned_at = ? WHERE job_id = ? AND url = ?`, at, jobID, url)
 	if err != nil {

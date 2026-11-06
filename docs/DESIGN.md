@@ -173,6 +173,8 @@ derived from the URL on insert (`github.com/<o>/<r>/pull/<n>` → github_pr;
 `github.com` → github; host ends `slack.com` → slack; `linear.app` → linear).
 `status` for github_pr ∈ `'' | open | draft | merged | closed`. `pinned_at`:
 when you last opened or pinned it, or added it by hand; 0 when not pinned.
+`created_at`: when the link arrived — the time of the first message that
+carries it ("Link detection"), else when it was added.
 
 `link_mentions(link_id, entry_id, role)`, keyed on `(link_id, entry_id)` and
 cascading with its link: one row per session entry that mentions the link,
@@ -343,6 +345,15 @@ before v6 carries a `scan-mentions:<job id>` mark: its session is read once
 more from that mark up to the scan offset, counting mentions of the links it
 still has and attaching nothing — the links you removed stay removed — then
 the mark goes.
+
+A link arrives with the message that first carries it (the entry's
+`timestamp`), however late the scanner reads that message: a session read
+again from its start — after pi moved to another file, as a fork's pi does
+when it starts, or after a generation bump — leaves each link at the time it
+was said. Until 2026-11-06 a link arrived when the scanner first read it,
+so a fork's links that had been removed from the original came back as the
+newest; v7 sets the `scan-mentions` mark on every scanned job once more, and
+that reading moves the links already stored back to the time they were said.
 
 `kv.scanner-generation` names what the scanner looks for (`2`); a daemon that
 finds an older value, or none, forgets every `scan:*` offset once and reads each

@@ -530,6 +530,54 @@ func TestLinkScannerOnePerPage(t *testing.T) {
 	}
 }
 
+func TestLinkArrival(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	sess := filepath.Join(t.TempDir(), "session.jsonl")
+	lines := []string{
+		`{"type":"session","version":3}`,
+		`{"type":"message","id":"u1","timestamp":"2026-10-28T13:00:00.000Z","message":{"role":"user","content":"see https://x.io/old"}}`,
+		`{"type":"message","id":"a1","timestamp":"2026-11-02T09:00:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"https://x.io/old again, and https://x.io/new"}]}}`,
+	}
+	body := strings.Join(lines, "\n") + "\n"
+	os.WriteFile(sess, []byte(body), 0o644)
+	read := func(j *store.Job) string {
+		ls, _ := st.ListLinks(j.ID)
+		var out []string
+		for _, l := range ls {
+			out = append(out, l.URL+" "+time.Unix(l.CreatedAt, 0).UTC().Format(time.RFC3339))
+		}
+		return strings.Join(out, "|")
+	}
+	want := "https://x.io/new 2026-11-02T09:00:00Z|https://x.io/old 2026-10-28T13:00:00Z"
+
+	scanned := &store.Job{Slug: "scanned", State: "working", PiSession: sess}
+	st.CreateJob(scanned)
+	if err := newSessionScanner(st).scan(scanned); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(scanned); got != want {
+		t.Fatalf("\n got %s\nwant %s", got, want)
+	}
+
+	before := &store.Job{Slug: "before", State: "working", PiSession: sess}
+	st.CreateJob(before)
+	st.AddLink(before.ID, "url", "https://x.io/new")
+	st.AddLink(before.ID, "url", "https://x.io/old")
+	st.SetKV(scanGenerationKey, scanGeneration)
+	st.SetKV(scanOffsetKey(before.ID), strconv.Itoa(len(body)))
+	st.SetKV(scanMentionsKey(before.ID), "0")
+	if err := newSessionScanner(st).scan(before); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(before); got != want {
+		t.Fatalf("a job scanned before arrivals were read\n got %s\nwant %s", got, want)
+	}
+}
+
 // TestMentionBackfill: a session scanned before mentions were counted is
 // read once more from its start to count them; the links you removed stay
 // removed, and what pi writes next is scanned as usual.

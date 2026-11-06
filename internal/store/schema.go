@@ -8,7 +8,7 @@ import (
 
 // migrations is the append-only list of schema steps; migrations[i] brings a
 // database at user_version i to i+1. Never edit a shipped step — append.
-var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6}
+var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7}
 
 // schemaV1 creates the four tables the design calls for. Every column a Go
 // scan reads into a plain string/int64 is NOT NULL with a same-typed default;
@@ -217,4 +217,8 @@ CREATE TABLE link_mentions (
 	PRIMARY KEY (link_id, entry_id)
 );
 INSERT INTO kv (key, value) SELECT 'scan-mentions:' || substr(key, 6), '0' FROM kv WHERE substr(key, 1, 5) = 'scan:';
+`
+
+const schemaV7 = `
+INSERT OR REPLACE INTO kv (key, value) SELECT 'scan-mentions:' || substr(key, 6), '0' FROM kv WHERE substr(key, 1, 5) = 'scan:';
 `

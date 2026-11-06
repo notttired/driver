@@ -34,6 +34,7 @@ type scanStore interface {
 	AddLink(jobID int64, kind, url string) (*store.Link, bool, error)
 	LinkByURL(jobID int64, url string) (*store.Link, error)
 	AddMention(linkID int64, entryID, role string) error
+	LinkSeenAt(linkID, at int64) error
 }
 
 // sessionScanner tails each job's session JSONL and attaches links from the
@@ -155,7 +156,10 @@ func (p *sessionScanner) scan(j *store.Job) error {
 	return p.st.SetKV(scanOffsetKey(j.ID), strconv.FormatInt(next, 10))
 }
 
-type sighting struct{ kind, url, entry, role, what string }
+type sighting struct {
+	kind, url, entry, role, what string
+	at                           int64
+}
 
 func sightingsIn(line []byte, pending map[string]bool) []sighting {
 	e, ok := pi.ParseEntry(line)
@@ -168,7 +172,7 @@ func sightingsIn(line []byte, pending map[string]bool) []sighting {
 		for _, u := range pi.DetectURLs(e.Text) {
 			if ValidLinkURL(u) {
 				u = LinkURL(u)
-				out = append(out, sighting{LinkKind(u), u, e.ID, e.Role, "link"})
+				out = append(out, sighting{LinkKind(u), u, e.ID, e.Role, "link", e.Time})
 			}
 		}
 		for _, tc := range e.ToolCalls {
@@ -182,7 +186,7 @@ func sightingsIn(line []byte, pending map[string]bool) []sighting {
 		}
 		delete(pending, e.Result.ToolCallID)
 		for _, u := range pi.DetectPRURLs(e.Result.Text) {
-			out = append(out, sighting{"github_pr", u, e.ID, e.Role, "PR"})
+			out = append(out, sighting{"github_pr", u, e.ID, e.Role, "PR", e.Time})
 		}
 	}
 	return out
@@ -216,6 +220,9 @@ func (p *sessionScanner) countMentions(j *store.Job) error {
 				if err := p.st.AddMention(l.ID, s.entry, s.role); err != nil {
 					return err
 				}
+				if err := p.st.LinkSeenAt(l.ID, s.at); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -238,8 +245,9 @@ func (p *sessionScanner) forget(jobID int64) error {
 }
 
 // attach adds the sighted URL to j's links — a URL already there is left
-// alone — and counts the sighting as a mention of it. what names the find in
-// the log ("link", "PR").
+// alone — and counts the sighting as a mention of it, the link arriving no
+// later than the message that carries it. what names the find in the log
+// ("link", "PR").
 func (p *sessionScanner) attach(j *store.Job, s sighting) error {
 	l, created, err := p.st.AddLink(j.ID, s.kind, s.url)
 	if err != nil {
@@ -251,5 +259,8 @@ func (p *sessionScanner) attach(j *store.Job, s sighting) error {
 	if created {
 		log.Printf("%s: attached %s %s", j.Slug, s.what, s.url)
 	}
-	return p.st.AddMention(l.ID, s.entry, s.role)
+	if err := p.st.AddMention(l.ID, s.entry, s.role); err != nil {
+		return err
+	}
+	return p.st.LinkSeenAt(l.ID, s.at)
 }
