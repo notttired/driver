@@ -297,7 +297,7 @@ function JobPanel({
       ? []
       : [
           b("watch", "👁 WATCH", () => watchJob(slug), {
-            title: "tell pi to watch over the shipped work (the WATCHING column's prompt); the job moves to DONE when it is over",
+            title: "tell pi to watch over the shipped work (the WATCHING column's prompt); the card sits in WATCHING until you mark it DONE",
             flush: true,
           }),
         ];

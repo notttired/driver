@@ -387,7 +387,7 @@ func TestWatch(t *testing.T) {
 		t.Fatalf("watching twice: %v", err)
 	}
 
-	// the watch is over: pi goes idle and the daemon moves the job to DONE
+	// pi reports and goes idle: the card stays in WATCHING, blocked, ringed
 	if _, err := st.UpdateJobFields(got.ID, got.Rev, map[string]any{"state": "working"}); err != nil {
 		t.Fatal(err)
 	}
@@ -399,12 +399,24 @@ func TestWatch(t *testing.T) {
 		}
 	}
 	got, _ = st.GetJobBySlug("ship")
-	if got.State != "done" || got.WatchingAt != 0 || got.Outcome != "accepted" {
+	if got.State != "blocked" || got.WatchingAt == 0 || got.AttentionAt == 0 || BoardColumn(got) != Watching || svc.Tmux.PaneDead(sess) {
 		t.Fatalf("after the watch: %+v", got)
+	}
+	if order, _ := st.GetBoardOrder(); !equalIDs(order[Watching], []int64{j.ID}) || len(order["blocked"]) != 0 {
+		t.Fatalf("a finished watch stays put: %v", order)
+	}
+
+	// DONE takes it out
+	if err := svc.Done(got); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = st.GetJobBySlug("ship")
+	if got.State != "done" || got.WatchingAt != 0 {
+		t.Fatalf("after DONE: %+v", got)
 	}
 	waitFor("the session to be gone", func() bool { svc.Tmux.Invalidate(); return !svc.Tmux.HasSession(sess) })
 	if order, _ := st.GetBoardOrder(); !equalIDs(order["done"], []int64{j.ID}) || len(order[Watching]) != 0 {
-		t.Fatalf("a finished watch lands last in DONE: %v", order)
+		t.Fatalf("DONE lands last in DONE: %v", order)
 	}
 
 	// a done job: pi comes back on its conversation with the prompt as its first message
@@ -421,7 +433,7 @@ func TestWatch(t *testing.T) {
 		t.Fatalf("after watch on a done job: %+v", got)
 	}
 
-	// a problem stops the watch: pi asks, the job stays in WATCHING for you
+	// pi asks: the job stays in WATCHING for you
 	os.WriteFile(filepath.Join(jobDir, "status.json"), []byte(`{"state":"dialog"}`), 0o644)
 	svc.Tmux.Invalidate()
 	for i := 0; i < 2; i++ {

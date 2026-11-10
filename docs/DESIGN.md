@@ -93,12 +93,12 @@ usage, accounts, self-update) is left out on purpose.
   message — or, when pi is gone (a done job, a dead pane), relaunches pi on
   the conversation with the prompt as its first message; the job parks in
   WATCHING. The prompt is one text for the board (kv `watch-prompt`,
-  `DefaultWatchPrompt` until edited; ✎ in the head edits it). When the
-  watching pi next goes idle the tick calls Done: session killed, last in
-  DONE, a "watch over" notification. A dialog, an interrupt or an exit is not
-  "over": the card stays in WATCHING, blocked, with its ring. Nothing is
-  dropped into WATCHING; a card dragged out goes home or into a lane like any
-  parked card, and pi carries on.
+  `DefaultWatchPrompt` until edited; ✎ in the head edits it). The card stays
+  in WATCHING whatever pi does next — when pi reports and goes idle it reads
+  blocked there, ringed and notified like any other — until DONE (which
+  takes it out, last in DONE) or a drag. Nothing is dropped into WATCHING; a
+  card dragged out goes home or into a lane like any parked card, and pi
+  carries on.
 - Every column, state columns, WATCHING and lanes alike, is dragged by its head into
   any order; the order is saved in the daemon (kv `board-columns`). `«` in a
   head folds the column to a strip (name, count; still a drop target) and the

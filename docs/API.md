@@ -94,11 +94,11 @@ lane (last in DONE). A lane reads in arrival order like WORKING and BLOCKED;
 `/api/reorder` with `"lane:<id>"` sets it.
 
 **WATCHING** is a built-in column that works like a lane: `/api/watch` parks
-a job there and tells its pi to watch over the shipped work (`watch_prompt`);
-when that pi next goes idle the daemon marks the job done (session killed,
-last in DONE). Any other stop (a question, an interrupt, an exit) leaves it in
-WATCHING, blocked, for you. Nothing is dropped into WATCHING by a drag; out of
-it, a card goes to its state column or a lane as a parked card does.
+a job there and tells its pi to watch over the shipped work (`watch_prompt`).
+The job stays there, its `state` following pi as usual (blocked when pi
+reports and goes idle), until `/api/done` or `/api/job/lane` takes it out.
+Nothing is dropped into WATCHING by a drag; out of it, a card goes to its
+state column or a lane as a parked card does.
 
 `columns` is the order the board lays every column out in, state columns,
 WATCHING and lanes alike; `/api/columns` sets it. A new lane goes last.

@@ -259,8 +259,8 @@ func (s *Service) relaunch(j *store.Job, prompt ...string) (map[string]any, erro
 
 // Watch tells pi to watch over the shipped work (the watch prompt) and parks
 // the job in WATCHING: pasted into its pane when pi is up, else pi comes back
-// on the conversation with the prompt as its first message. The tick moves
-// the job to DONE when pi goes idle.
+// on the conversation with the prompt as its first message. The job stays in
+// WATCHING, whatever pi does next, until DONE or a drag takes it out.
 func (s *Service) Watch(j *store.Job) error {
 	if j.Archived() {
 		return Refuse("job %s is archived", j.ArchivedName)

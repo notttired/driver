@@ -124,12 +124,12 @@ it), and clicking the strip unfolds it.
 **Watching.** When the work is shipped, press **👁 WATCH** (beside DONE, for
 any job that has a pi). pi gets the watch prompt — wait for CI and the merge,
 follow the deploy, then watch the health for 30 minutes — and the card moves to
-the **WATCHING** column. When pi finishes the watch and goes idle, the card
-moves to DONE by itself (you get a notification); if pi stops to ask or report
-a problem, it stays in WATCHING, blocked, for you. A done job's pi is relaunched
-on its conversation with the prompt. The prompt is yours to edit: `✎` in the
-WATCHING head opens it (RESET brings the default back). Cards cannot be dragged
-into WATCHING; dragging one out just moves it, pi carries on.
+the **WATCHING** column. It stays there: when pi reports and stops, the card
+reads blocked in WATCHING with its ring and notification, and DONE moves it on.
+A done job's pi is relaunched on its conversation with the prompt. The prompt
+is yours to edit: `✎` in the WATCHING head opens it (RESET brings the default
+back). Cards cannot be dragged into WATCHING; dragging one out just moves it,
+pi carries on.
 **Retry** is for blocked jobs that did not stop for you: a dropped network
 leaves pi up on a failed turn (the card reads `✗ Connection error` and the
 like), a logout kills pi (`✕ exited`). `↻ retry N` in the BLOCKED head (or
