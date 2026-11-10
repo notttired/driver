@@ -5,14 +5,16 @@
 import {
   archiveJob,
   doneJob,
+  LANE_ENDPOINT,
   queueJob,
   reactivateJob,
+  setJobLane,
   stopJob,
   SUBMIT_ENDPOINT,
 } from "../api/client.ts";
-import type { Column } from "./columns.ts";
+import { WATCHING, isParking, laneId, type Column, type StateColumn } from "./columns.ts";
 
-export { SUBMIT_ENDPOINT };
+export { LANE_ENDPOINT, SUBMIT_ENDPOINT };
 
 export const ARCHIVED = "archived" as const;
 export type DropColumn = Column | typeof ARCHIVED;
@@ -33,6 +35,8 @@ export interface OpenMove {
 export interface MoveContext {
   /** the dragged job has a pi session (lib/status isOpened) */
   opened?: boolean;
+  /** the column the dragged job's state names — the one place a parked job can go back to */
+  state?: StateColumn;
 }
 
 export interface ReorderMove {
@@ -48,7 +52,7 @@ const post = (endpoint: string, run: (slug: string) => Promise<unknown>): PostMo
 });
 
 export const TRANSITIONS: Readonly<
-  Record<Column, Readonly<Partial<Record<DropColumn, Move>>>>
+  Record<StateColumn, Readonly<Partial<Record<DropColumn, Move>>>>
 > = {
   draft: {
     working: post(SUBMIT_ENDPOINT, (slug) => queueJob(slug)),
@@ -68,20 +72,30 @@ export const TRANSITIONS: Readonly<
 };
 
 /** Adjacency derived from the table: which targets light up for a source. */
-export const MOVES: Readonly<Record<Column, readonly DropColumn[]>> = Object.freeze(
+export const MOVES: Readonly<Record<StateColumn, readonly DropColumn[]>> = Object.freeze(
   Object.fromEntries(
-    (Object.keys(TRANSITIONS) as Column[]).map((from) => [
+    (Object.keys(TRANSITIONS) as StateColumn[]).map((from) => [
       from,
       Object.freeze(Object.keys(TRANSITIONS[from]) as DropColumn[]),
     ]),
-  ) as Record<Column, readonly DropColumn[]>,
+  ) as Record<StateColumn, readonly DropColumn[]>,
 );
 
 export function resolveMove(from: Column, to: DropColumn, ctx: MoveContext = {}): Move | null {
   if (from === to) return { kind: "reorder" };
+  // WATCHING is the WATCH button's to fill, never a drop's
+  if (to === WATCHING) return null;
+  // into a lane: park it, whatever it is doing
+  const toLane = laneId(to);
+  if (toLane !== null) return post(LANE_ENDPOINT, (slug) => setJobLane(slug, toLane));
+  // out of a lane or WATCHING: only back to the column its state names, no state change
+  if (isParking(from)) {
+    if (to === ARCHIVED || (ctx.state !== undefined && to !== ctx.state)) return null;
+    return post(LANE_ENDPOINT, (slug) => setJobLane(slug, 0));
+  }
   // an opened draft has nothing to submit: to WORKING means go talk to it
   if (from === "draft" && to === "working" && ctx.opened) return { kind: "open" };
-  const row = TRANSITIONS[from] as Record<string, Move> | undefined;
+  const row = (TRANSITIONS as Record<string, Record<string, Move> | undefined>)[from];
   if (row === undefined) return null;
   // own-property check: "constructor"/"toString" as a target must not resolve
   if (!Object.prototype.hasOwnProperty.call(row, to)) return null;

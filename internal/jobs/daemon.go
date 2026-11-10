@@ -145,6 +145,15 @@ func (d *Daemon) tick() (live int, firstErr error) {
 			reason = obs.Pi.Reason
 		}
 		if state != j.State {
+			if j.WatchingAt != 0 && state == "blocked" && reason == "idle" {
+				if err := d.svc.Done(j); err != nil {
+					note(fmt.Errorf("%s: watch over: %w", j.Slug, err))
+					continue
+				}
+				log.Printf("%s: %s → done (watch over)", j.Slug, j.State)
+				d.notify(fmt.Sprintf("driver ✓ %s — watch over", j.DisplayName()))
+				continue
+			}
 			tr := classify(j.State, state, reason)
 			fields := map[string]any{"state": state}
 			if tr.attention > 0 {

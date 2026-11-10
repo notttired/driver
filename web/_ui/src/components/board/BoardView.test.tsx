@@ -82,6 +82,13 @@ function installFetch(board: WebBoard) {
   return fetchMock;
 }
 
+const findColumn = (col: string) =>
+  waitFor(() => {
+    const el = document.querySelector<HTMLElement>(`.col[data-col="${col}"]`);
+    if (!el) throw new Error(`no column ${col}`);
+    return el;
+  });
+
 describe("BoardView (DOM smoke test)", () => {
   beforeEach(() => {
     requests.length = 0;
@@ -91,6 +98,7 @@ describe("BoardView (DOM smoke test)", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    localStorage.clear();
   });
 
   it("renders the four columns, their counts, every card, status tokens and the archive drawer", async () => {
@@ -330,6 +338,159 @@ describe("BoardView (DOM smoke test)", () => {
     // the board is refetched after the write; one acknowledgement per ring
     await waitFor(() => expect(requests.filter((r) => r === "GET /api/board").length).toBeGreaterThan(1));
     expect(requests.filter((r) => r === "POST /api/job/seen")).toHaveLength(1);
+  });
+
+  it("shows a custom column after DONE with the cards parked in it, in their own state", async () => {
+    const board = fixtureBoard();
+    board.lanes = [{ id: 3, name: "later" }, { id: 5, name: "review" }];
+    board.jobs.push(makeJob({ slug: "parked-fix", dir: "/Users/me/src/web", state: "working", lane: 3, live: true, pi: { state: "working", ts: NOW - 5 } }));
+    installFetch(board);
+    render(<App />);
+
+    const lane = await findColumn("lane:3");
+    const cols = [...document.querySelectorAll<HTMLElement>(".col[data-col]")].map((c) => c.dataset.col);
+    expect(cols).toEqual(["draft", "working", "blocked", "done", "watching", "lane:3", "lane:5", "add"]);
+    expect(within(lane).getByRole("button", { name: "later" })).toBeInTheDocument();
+    expect(within(lane).getByText("1")).toBeInTheDocument();
+    expect(within(lane).getByText("parked-fix")).toBeInTheDocument();
+    expect(within(lane).getByText(/● working/)).toBeInTheDocument();
+    const working = document.querySelector<HTMLElement>('.col[data-col="working"]')!;
+    expect(within(working).queryByText("parked-fix")).toBeNull();
+    expect(within(working).getByText("1")).toBeInTheDocument();
+    expect(within(document.querySelector<HTMLElement>('.col[data-col="lane:5"]')!).getByText("0")).toBeInTheDocument();
+    expect(screen.getByText("7 jobs")).toBeInTheDocument();
+  });
+
+  it("adds a column from the + at the end of the board", async () => {
+    render(<App />);
+    await screen.findByText("flaky-ci");
+    expect(screen.queryByLabelText("new column name")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "add a column" }));
+    const input = screen.getByLabelText("new column name");
+    expect(document.activeElement).toBe(input);
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByLabelText("new column name")).toBeNull();
+    expect(bodies.filter((b) => b.path === "/api/lanes")).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "add a column" }));
+    const again = screen.getByLabelText("new column name");
+    fireEvent.change(again, { target: { value: "  later  " } });
+    fireEvent.keyDown(again, { key: "Enter" });
+    await waitFor(() => expect(bodies).toContainEqual({ path: "/api/lanes", op: "add", name: "later" }));
+    await waitFor(() => expect(screen.queryByLabelText("new column name")).toBeNull());
+  });
+
+  it("renames a column in place and removes it from its head", async () => {
+    const board = fixtureBoard();
+    board.lanes = [{ id: 3, name: "later" }];
+    board.jobs.push(makeJob({ slug: "parked-fix", state: "done", lane: 3 }));
+    installFetch(board);
+    const confirm = vi.fn((_message?: string) => true);
+    vi.stubGlobal("confirm", confirm);
+    render(<App />);
+
+    const lane = await findColumn("lane:3");
+    fireEvent.click(within(lane).getByRole("button", { name: "later" }));
+    const input = within(lane).getByLabelText("column name") as HTMLInputElement;
+    expect(input.value).toBe("later");
+    fireEvent.change(input, { target: { value: "in review" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(bodies).toContainEqual({ path: "/api/lanes", op: "rename", id: 3, name: "in review" }));
+
+    fireEvent.click(within(lane).getByRole("button", { name: "remove column later" }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(String(confirm.mock.calls[0]?.[0])).toMatch(/1 card/);
+    await waitFor(() => expect(bodies).toContainEqual({ path: "/api/lanes", op: "remove", id: 3 }));
+  });
+
+  it("lays the columns out in the board's order, lanes among the state columns, any it leaves out last", async () => {
+    const board = fixtureBoard();
+    board.lanes = [{ id: 3, name: "later" }, { id: 5, name: "review" }];
+    board.columns = ["lane:3", "draft", "done", "lane:99", "working"];
+    installFetch(board);
+    render(<App />);
+    await findColumn("lane:3");
+    const cols = [...document.querySelectorAll<HTMLElement>(".col[data-col]")].map((c) => c.dataset.col);
+    expect(cols).toEqual(["lane:3", "draft", "done", "working", "blocked", "watching", "lane:5", "add"]);
+  });
+
+  it("collapses a column to a strip that still shows its count, and remembers it", async () => {
+    render(<App />);
+    const working = await findColumn("working");
+    await within(working).findByText("search-reindex");
+    fireEvent.click(within(working).getByRole("button", { name: "collapse WORKING" }));
+    expect(working).toHaveClass("collapsed");
+    expect(within(working).queryByText("search-reindex")).toBeNull();
+    const strip = within(working).getByRole("button", { name: "expand WORKING" });
+    expect(strip).toHaveTextContent("WORKING");
+    expect(strip).toHaveTextContent("1");
+    expect(JSON.parse(localStorage.getItem("driver-collapsed-columns") ?? "[]")).toEqual(["working"]);
+
+    cleanup();
+    render(<App />);
+    const again = await findColumn("working");
+    expect(again).toHaveClass("collapsed");
+    fireEvent.click(within(again).getByRole("button", { name: "expand WORKING" }));
+    expect(again).not.toHaveClass("collapsed");
+    expect(await within(again).findByText("search-reindex")).toBeInTheDocument();
+    expect(localStorage.getItem("driver-collapsed-columns")).toBe("[]");
+  });
+
+  it("has WATCH beside DONE for a job with a pi, and for a done one; a watched job has none", async () => {
+    const board = fixtureBoard();
+    board.jobs.push(makeJob({ slug: "on-watch", state: "working", watching: true, live: true, pi: { state: "working", ts: NOW - 5 } }));
+    installFetch(board);
+    render(<App />);
+    const overlay = document.getElementById("job-overlay")!;
+
+    fireEvent.click((await screen.findByText("onboarding-copy")).closest(".card")!);
+    const watch = await within(overlay).findByRole("button", { name: /WATCH/ });
+    const buttons = within(overlay).getAllByRole("button").map((b) => b.textContent ?? "");
+    expect(buttons.indexOf(buttons.find((t) => /WATCH/.test(t))!)).toBe(buttons.indexOf(buttons.find((t) => /DONE/.test(t))!) - 1);
+    fireEvent.click(watch);
+    await waitFor(() => expect(bodies).toContainEqual({ path: "/api/watch", slug: "onboarding-copy" }));
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+
+    fireEvent.click((await screen.findByText("rate-limits")).closest(".card")!);
+    expect(await within(overlay).findByRole("button", { name: /WATCH/ })).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+
+    fireEvent.click((await screen.findByText("flaky-ci")).closest(".card")!);
+    await within(overlay).findByRole("button", { name: /START/ });
+    expect(within(overlay).queryByRole("button", { name: /WATCH/ })).toBeNull();
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+
+    const watching = await findColumn("watching");
+    expect(within(watching).getByText("on-watch")).toBeInTheDocument();
+    fireEvent.click(within(watching).getByText("on-watch").closest(".card")!);
+    await within(overlay).findByRole("button", { name: /DONE/ });
+    expect(within(overlay).queryByRole("button", { name: /WATCH/ })).toBeNull();
+  });
+
+  it("edits the watch prompt from the WATCHING head, and resets it to the default", async () => {
+    render(<App />);
+    const watching = await findColumn("watching");
+    expect(within(watching).getByText("WATCHING")).toBeInTheDocument();
+    expect(within(watching).queryByRole("button", { name: /remove column/ })).toBeNull();
+    fireEvent.click(within(watching).getByRole("button", { name: "edit the watch prompt" }));
+    const dialog = document.getElementById("watch-prompt-overlay")!;
+    expect(dialog).not.toHaveAttribute("hidden");
+    const text = within(dialog).getByLabelText("watch prompt") as HTMLTextAreaElement;
+    expect(text.value).toBe("Watch over it until it is live.");
+    fireEvent.change(text, { target: { value: "Watch it for an hour." } });
+    fireEvent.click(within(dialog).getByRole("button", { name: /SAVE/ }));
+    await waitFor(() => expect(bodies).toContainEqual({ path: "/api/watch-prompt", text: "Watch it for an hour." }));
+    await waitFor(() => expect(dialog).toHaveAttribute("hidden"));
+
+    fireEvent.click(within(watching).getByRole("button", { name: "edit the watch prompt" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /RESET/ }));
+    await waitFor(() => expect(bodies).toContainEqual({ path: "/api/watch-prompt", text: "" }));
   });
 
   it("shows the session-ended banner for a finished job's terminal", async () => {

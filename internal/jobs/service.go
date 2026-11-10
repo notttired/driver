@@ -1,9 +1,11 @@
 package jobs
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -209,40 +211,110 @@ func (s *Service) Reactivate(j *store.Job) error {
 	if j.State != "done" {
 		return Refuse("job %s is not done (%s)", j.Slug, stage(j))
 	}
-	if j.Dir == "" || !util.IsDir(j.Dir) {
-		return Refuse("dir %q is gone", j.Dir)
-	}
-	piBin, err := s.resolveTools()
+	fields, err := s.relaunch(j)
 	if err != nil {
 		return err
 	}
-	sess := FreshSessionName(j)
-	if err := s.clearStaleSession(sess); err != nil {
-		return Refuse("%v", err)
-	}
-	jobDir := s.Cfg.JobDir(j)
-	if err := os.MkdirAll(jobDir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", jobDir, err)
-	}
-	_ = os.Remove(filepath.Join(jobDir, "status.json"))
-	sessionFile := resumeFile(j, jobDir)
-	cmd := s.Cfg.LaunchCommand(j, piBin, jobDir, sessionFile)
-	if err := s.Tmux.NewSession(sess, j.Dir, j.Slug, j.Slug, cmd); err != nil {
-		_ = s.Tmux.KillSession(sess) // a half-made session must not linger
-		return Refuse("%v", err)
-	}
-	_, err = s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{
-		"tmux": sess, "pi_session": sessionFile, "started_at": time.Now().Unix(),
-		"state": "working", "outcome": "", "finished_at": int64(0),
-	})
-	if err != nil {
-		return fmt.Errorf("session %s is up but the state write failed: %w", sess, mapStoreErr(err))
+	if _, err := s.Store.UpdateJobFields(j.ID, j.Rev, fields); err != nil {
+		return fmt.Errorf("session %s is up but the state write failed: %w", fields["tmux"], mapStoreErr(err))
 	}
 	// WORKING reads in arrival order; a reactivated job arrives last
 	if _, err := s.Store.AppendToColumn("working", j.ID); err != nil {
 		log.Printf("reactivate %s: board order: %v", j.Slug, err)
 	}
 	return nil
+}
+
+// relaunch opens a fresh tmux session with pi resumed on the job's session
+// file, prompt (if any) as its first message, and hands back the fields the
+// state write needs: the job is working in that session from now.
+func (s *Service) relaunch(j *store.Job, prompt ...string) (map[string]any, error) {
+	if j.Dir == "" || !util.IsDir(j.Dir) {
+		return nil, Refuse("dir %q is gone", j.Dir)
+	}
+	piBin, err := s.resolveTools()
+	if err != nil {
+		return nil, err
+	}
+	sess := FreshSessionName(j)
+	if err := s.clearStaleSession(sess); err != nil {
+		return nil, Refuse("%v", err)
+	}
+	jobDir := s.Cfg.JobDir(j)
+	if err := os.MkdirAll(jobDir, 0o755); err != nil {
+		return nil, fmt.Errorf("mkdir %s: %w", jobDir, err)
+	}
+	_ = os.Remove(filepath.Join(jobDir, "status.json"))
+	sessionFile := resumeFile(j, jobDir)
+	cmd := s.Cfg.LaunchCommand(j, piBin, jobDir, sessionFile, prompt...)
+	if err := s.Tmux.NewSession(sess, j.Dir, j.Slug, j.Slug, cmd); err != nil {
+		_ = s.Tmux.KillSession(sess) // a half-made session must not linger
+		return nil, Refuse("%v", err)
+	}
+	return map[string]any{
+		"tmux": sess, "pi_session": sessionFile, "started_at": time.Now().Unix(),
+		"state": "working", "outcome": "", "finished_at": int64(0),
+	}, nil
+}
+
+// Watch tells pi to watch over the shipped work (the watch prompt) and parks
+// the job in WATCHING: pasted into its pane when pi is up, else pi comes back
+// on the conversation with the prompt as its first message. The tick moves
+// the job to DONE when pi goes idle.
+func (s *Service) Watch(j *store.Job) error {
+	if j.Archived() {
+		return Refuse("job %s is archived", j.ArchivedName)
+	}
+	if j.State == "" {
+		return Refuse("job %s is not started — there is no pi to watch with", j.Slug)
+	}
+	if j.WatchingAt != 0 {
+		return Refuse("job %s is already watching", j.Slug)
+	}
+	prompt := s.WatchPrompt()
+	fields := map[string]any{"watching_at": time.Now().Unix(), "lane_id": int64(0), "attention_at": int64(0)}
+	sess := SessionName(j)
+	if s.Tmux.HasSession(sess) && !s.Tmux.PaneDead(sess) {
+		if err := s.Tmux.Paste(sess, prompt); err != nil {
+			return Refuse("%v", err)
+		}
+	} else {
+		launched, err := s.relaunch(j, prompt)
+		if err != nil {
+			return err
+		}
+		maps.Copy(fields, launched)
+	}
+	if _, err := s.Store.UpdateJobFields(j.ID, j.Rev, fields); err != nil {
+		return fmt.Errorf("watch %s: pi has the prompt but the state write failed: %w", j.Slug, mapStoreErr(err))
+	}
+	if _, err := s.Store.AppendToColumn(Watching, j.ID); err != nil {
+		log.Printf("watch %s: board order: %v", j.Slug, err)
+	}
+	return nil
+}
+
+const watchPromptKey = "watch-prompt"
+
+// WatchPrompt is what WATCH says to pi: the operator's text, or the default.
+func (s *Service) WatchPrompt() string {
+	text, err := s.Store.GetKV(watchPromptKey)
+	if err != nil || text == "" {
+		return DefaultWatchPrompt
+	}
+	return text
+}
+
+// SetWatchPrompt replaces the watch prompt; "" goes back to the default.
+func (s *Service) SetWatchPrompt(text string) error {
+	text = strings.TrimSpace(text)
+	if utf8.RuneCountInString(text) > MaxWatchPromptLen {
+		return fmt.Errorf("watch prompt is too long (max %d characters): %w", MaxWatchPromptLen, ErrBadInput)
+	}
+	if text == "" {
+		return s.Store.DeleteKV(watchPromptKey)
+	}
+	return s.Store.SetKV(watchPromptKey, text)
 }
 
 // resumeFile is the session file pi resumes: the one it was last writing —
@@ -354,8 +426,17 @@ func (s *Service) Done(j *store.Job) error {
 	}
 	_, err := s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{
 		"state": "done", "attention_at": int64(0), "outcome": "accepted", "finished_at": time.Now().Unix(),
+		"lane_id": int64(0), "watching_at": int64(0),
 	})
-	return mapStoreErr(err)
+	if err != nil {
+		return mapStoreErr(err)
+	}
+	if store.ParkedColumn(j) != "" {
+		if _, err := s.Store.AppendToColumn("done", j.ID); err != nil {
+			log.Printf("done %s: board order: %v", j.Slug, err)
+		}
+	}
+	return nil
 }
 
 // Kill cancels an opened job back to not started; the session file stays on
@@ -402,7 +483,7 @@ const archiveAfter = 24 * 60 * 60
 func (s *Service) ArchiveStale(jobs []*store.Job, now int64) ([]string, error) {
 	var archived []string
 	for _, j := range jobs {
-		if j.State != "done" || j.Archived() || now-j.UpdatedAt < archiveAfter {
+		if j.State != "done" || j.Archived() || store.ParkedColumn(j) != "" || now-j.UpdatedAt < archiveAfter {
 			continue
 		}
 		if err := s.Archive(j); err != nil {
@@ -561,7 +642,7 @@ func (s *Service) Fork(j *store.Job, to, name string) (*store.Job, error) {
 			return nil, err
 		}
 	}
-	fork := &store.Job{Slug: to, Name: name, Dir: j.Dir, Model: j.Model, Color: j.Color, Spec: j.Spec, Notes: j.Notes}
+	fork := &store.Job{Slug: to, Name: name, Dir: j.Dir, Model: j.Model, Color: j.Color, Spec: j.Spec, Notes: j.Notes, LaneID: j.LaneID}
 	if _, err := s.Store.CreateJob(fork); err != nil {
 		if errors.Is(err, store.ErrSlugTaken) {
 			return nil, Refuse("slug %q is taken", to)
@@ -641,7 +722,7 @@ func (s *Service) Fork(j *store.Job, to, name string) (*store.Job, error) {
 			return undo(mapStoreErr(err))
 		}
 	}
-	if err := s.placeAfter(DisplayState(j), j.ID, fork.ID); err != nil {
+	if err := s.placeAfter(BoardColumn(j), j.ID, fork.ID); err != nil {
 		// the fork exists and is in the right column; only its place in it is lost
 		log.Printf("fork %s → %s: board order: %v", j.Slug, to, err)
 	}
@@ -661,7 +742,7 @@ func (s *Service) placeAfter(column string, srcID, newID int64) error {
 	}
 	var members []int64
 	for _, j := range all {
-		if j.ID != newID && DisplayState(j) == column {
+		if j.ID != newID && BoardColumn(j) == column {
 			members = append(members, j.ID)
 		}
 	}
@@ -786,11 +867,20 @@ func (s *Service) FoldDuplicateLinks() (int, error) {
 	return n, nil
 }
 
-// Reorder saves a column's full intended order; slugs whose display state no
-// longer matches the column are dropped silently.
+// Reorder saves a column's full intended order; slugs the board no longer
+// shows in the column are dropped silently.
 func (s *Service) Reorder(column string, slugs []string) error {
-	if !IsColumn(column) {
-		return Refuse("unknown column %q", util.OneLine(column, 24))
+	if !IsBoardColumn(column) {
+		laneID, ok := store.ParseLaneColumn(column)
+		if !ok {
+			return Refuse("unknown column %q", util.OneLine(column, 24))
+		}
+		if _, err := s.Store.GetLane(laneID); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return Refuse("unknown column %q", column)
+			}
+			return err
+		}
 	}
 	jobs, err := s.Store.ListJobs()
 	if err != nil {
@@ -802,9 +892,144 @@ func (s *Service) Reorder(column string, slugs []string) error {
 	}
 	ids := make([]int64, 0, len(slugs))
 	for _, slug := range slugs {
-		if j := bySlug[slug]; j != nil && DisplayState(j) == column {
+		if j := bySlug[slug]; j != nil && BoardColumn(j) == column {
 			ids = append(ids, j.ID)
 		}
 	}
 	return s.Store.SetBoardColumn(column, ids)
+}
+
+const columnsKey = "board-columns"
+
+// Columns is the board's column order: the saved order less what is gone,
+// then every column it does not list — the state columns in their own order,
+// lanes by position.
+func (s *Service) Columns() ([]string, error) {
+	lanes, err := s.Store.ListLanes()
+	if err != nil {
+		return nil, err
+	}
+	var saved []string
+	raw, err := s.Store.GetKV(columnsKey)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+	if err == nil {
+		if err := json.Unmarshal([]byte(raw), &saved); err != nil {
+			log.Printf("columns: ignoring unreadable saved order: %v", err)
+		}
+	}
+	return orderColumns(saved, lanes), nil
+}
+
+// SetColumns saves the board's column order: unknown keys are dropped and
+// columns left out go last.
+func (s *Service) SetColumns(keys []string) error {
+	lanes, err := s.Store.ListLanes()
+	if err != nil {
+		return err
+	}
+	return s.saveColumns(orderColumns(keys, lanes))
+}
+
+func (s *Service) saveColumns(keys []string) error {
+	raw, err := json.Marshal(keys)
+	if err != nil {
+		return err
+	}
+	return s.Store.SetKV(columnsKey, string(raw))
+}
+
+func orderColumns(keys []string, lanes []*store.Lane) []string {
+	builtin := append(append([]string{}, Columns...), Watching)
+	known := make(map[string]bool, len(builtin)+len(lanes))
+	for _, c := range builtin {
+		known[c] = true
+	}
+	for _, l := range lanes {
+		known[store.LaneColumn(l.ID)] = true
+	}
+	out := make([]string, 0, len(known))
+	seen := make(map[string]bool, len(known))
+	for _, k := range keys {
+		if known[k] && !seen[k] {
+			seen[k] = true
+			out = append(out, k)
+		}
+	}
+	for _, c := range builtin {
+		if !seen[c] {
+			out = append(out, c)
+		}
+	}
+	for _, l := range lanes {
+		if k := store.LaneColumn(l.ID); !seen[k] {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+func (s *Service) AddLane(name string) (*store.Lane, error) {
+	name, err := CleanLaneName(name)
+	if err != nil {
+		return nil, err
+	}
+	return s.Store.AddLane(name)
+}
+
+func (s *Service) RenameLane(id int64, name string) error {
+	name, err := CleanLaneName(name)
+	if err != nil {
+		return err
+	}
+	return s.Store.RenameLane(id, name)
+}
+
+// DeleteLane removes the lane; the jobs it held go back to the end of the
+// columns their states name.
+func (s *Service) DeleteLane(id int64) error {
+	held, err := s.Store.DeleteLane(id)
+	if err != nil {
+		return err
+	}
+	for _, jobID := range held {
+		j, err := s.Store.GetJobByID(jobID)
+		if err != nil {
+			return err
+		}
+		if _, err := s.Store.AppendToColumn(DisplayState(j), j.ID); err != nil {
+			return err
+		}
+	}
+	columns, err := s.Columns()
+	if err != nil {
+		return err
+	}
+	return s.saveColumns(columns)
+}
+
+// SetLane parks j in a lane, at its end, or with 0 returns it to the end of
+// the column its state names; either way it is no longer in WATCHING.
+func (s *Service) SetLane(j *store.Job, laneID int64) error {
+	if j.Archived() {
+		return Refuse("job %s is archived", j.ArchivedName)
+	}
+	if laneID != 0 {
+		if _, err := s.Store.GetLane(laneID); err != nil {
+			return err
+		}
+	}
+	if j.LaneID == laneID && j.WatchingAt == 0 {
+		return nil
+	}
+	if _, err := s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{"lane_id": laneID, "watching_at": int64(0)}); err != nil {
+		return mapStoreErr(err)
+	}
+	moved, err := s.Store.GetJobByID(j.ID)
+	if err != nil {
+		return err
+	}
+	_, err = s.Store.AppendToColumn(BoardColumn(moved), moved.ID)
+	return err
 }

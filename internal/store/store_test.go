@@ -703,3 +703,114 @@ func TestMigrateV4(t *testing.T) {
 		t.Fatalf("cleared name: %+v", got)
 	}
 }
+
+func TestLanes(t *testing.T) {
+	s := open(t)
+	later, err := s.AddLane("later")
+	if err != nil || later.ID == 0 || later.Name != "later" {
+		t.Fatalf("add: %+v %v", later, err)
+	}
+	review, _ := s.AddLane("review")
+	lanes, err := s.ListLanes()
+	if err != nil || len(lanes) != 2 || lanes[0].ID != later.ID || lanes[1].ID != review.ID {
+		t.Fatalf("list: %v %v", lanes, err)
+	}
+	if err := s.RenameLane(review.ID, "in review"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RenameLane(99, "x"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("rename missing: %v", err)
+	}
+	lanes, _ = s.ListLanes()
+	if lanes[1].Name != "in review" {
+		t.Fatalf("renamed: %+v", lanes[1])
+	}
+
+	a, _ := s.CreateJob(&Job{Slug: "a", State: "working"})
+	b, _ := s.CreateJob(&Job{Slug: "b", State: "working", LaneID: later.ID})
+	ja, _ := s.GetJobByID(a)
+	if _, err := s.UpdateJobFields(a, ja.Rev, map[string]any{"lane_id": later.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetJobByID(a); got.LaneID != later.ID {
+		t.Fatalf("lane_id: %+v", got)
+	}
+	for _, id := range []int64{b, a} {
+		if ok, err := s.AppendToColumn(LaneColumn(later.ID), id); err != nil || !ok {
+			t.Fatalf("append to lane: %v %v", ok, err)
+		}
+	}
+	// a state change does not pull a parked job into a state column
+	if ok, err := s.AppendToColumn("blocked", a); err != nil || ok {
+		t.Fatalf("append parked job to a state column: %v %v", ok, err)
+	}
+	order, _ := s.GetBoardOrder()
+	if got := order[LaneColumn(later.ID)]; len(got) != 2 || got[0] != b || got[1] != a {
+		t.Fatalf("lane order %v", got)
+	}
+	if len(order["blocked"]) != 0 {
+		t.Fatalf("blocked order %v", order["blocked"])
+	}
+
+	freed, err := s.DeleteLane(later.ID)
+	if err != nil || len(freed) != 2 {
+		t.Fatalf("delete: %v %v", freed, err)
+	}
+	if _, err := s.DeleteLane(later.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("delete twice: %v", err)
+	}
+	for _, id := range []int64{a, b} {
+		if got, _ := s.GetJobByID(id); got.LaneID != 0 {
+			t.Fatalf("job %d still in the deleted lane: %+v", id, got)
+		}
+	}
+	order, _ = s.GetBoardOrder()
+	if len(order[LaneColumn(later.ID)]) != 0 {
+		t.Fatalf("deleted lane still ordered: %v", order)
+	}
+	lanes, _ = s.ListLanes()
+	if len(lanes) != 1 || lanes[0].ID != review.ID {
+		t.Fatalf("lanes after delete: %v", lanes)
+	}
+	if id, ok := ParseLaneColumn(LaneColumn(7)); !ok || id != 7 {
+		t.Fatalf("ParseLaneColumn: %d %v", id, ok)
+	}
+	for _, c := range []string{"draft", "lane:", "lane:x", "lane:0", "lane:-1"} {
+		if _, ok := ParseLaneColumn(c); ok {
+			t.Fatalf("ParseLaneColumn(%q) parsed", c)
+		}
+	}
+}
+
+func TestMigrateV8(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v7.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, `PRAGMA user_version = 7`,
+		`INSERT INTO jobs (id, slug) VALUES (4, 'old-job')`} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	db.Close()
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var version int
+	s.db.QueryRow(`PRAGMA user_version`).Scan(&version)
+	if version != len(migrations) {
+		t.Fatalf("user_version %d", version)
+	}
+	old, err := s.GetJobByID(4)
+	if err != nil || old.LaneID != 0 {
+		t.Fatalf("old job after migration: %v %+v", err, old)
+	}
+	lanes, err := s.ListLanes()
+	if err != nil || len(lanes) != 0 {
+		t.Fatalf("lanes: %v %v", lanes, err)
+	}
+}

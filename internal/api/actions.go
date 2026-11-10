@@ -63,6 +63,98 @@ func (a *API) reorder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+func (a *API) watchPrompt(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Text string `json:"text"`
+	}
+	if !decodePost(w, r, &req) {
+		return
+	}
+	if err := a.Svc.SetWatchPrompt(req.Text); err != nil {
+		writeFailure(w, "watch-prompt", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (a *API) columns(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Columns []string `json:"columns"`
+	}
+	if !decodePost(w, r, &req) {
+		return
+	}
+	if err := a.Svc.SetColumns(req.Columns); err != nil {
+		writeFailure(w, "columns", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (a *API) lanes(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Op   string `json:"op"`
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	}
+	if !decodePost(w, r, &req) {
+		return
+	}
+	switch req.Op {
+	case "add":
+		l, err := a.Svc.AddLane(req.Name)
+		if err != nil {
+			writeFailure(w, "lanes", err)
+			return
+		}
+		log.Printf("lane %d: added as %q", l.ID, l.Name)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "lane": webLane{ID: l.ID, Name: l.Name}})
+	case "rename":
+		if err := a.Svc.RenameLane(req.ID, req.Name); err != nil {
+			writeLaneFailure(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	case "remove":
+		if err := a.Svc.DeleteLane(req.ID); err != nil {
+			writeLaneFailure(w, err)
+			return
+		}
+		log.Printf("lane %d: removed", req.ID)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	default:
+		writeError(w, http.StatusBadRequest, "op must be add, rename or remove")
+	}
+}
+
+func writeLaneFailure(w http.ResponseWriter, err error) {
+	if isNotFound(err) {
+		writeError(w, http.StatusNotFound, "no such column")
+		return
+	}
+	writeFailure(w, "lanes", err)
+}
+
+func (a *API) jobLane(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Slug string `json:"slug"`
+		Lane int64  `json:"lane"`
+	}
+	if !decodePost(w, r, &req) {
+		return
+	}
+	j, err := a.Svc.Lookup(req.Slug)
+	if err != nil {
+		writeFailure(w, "lane", err)
+		return
+	}
+	if err := a.Svc.SetLane(j, req.Lane); err != nil {
+		writeLaneFailure(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 func (a *API) jobColor(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Slug  string `json:"slug"`

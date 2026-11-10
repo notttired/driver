@@ -1,11 +1,16 @@
 import { createContext, useContext, useMemo } from "react";
 import type { ReactNode } from "react";
 import { DndContext, DragOverlay, useDroppable } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
 import type { BoardModel } from "../../hooks/useBoard.ts";
-import { columnDropId, shouldStartDrag, useDragReorder } from "../../hooks/useDragReorder.ts";
+import { columnDropId, columnSortId, shouldStartDrag, useDragReorder } from "../../hooks/useDragReorder.ts";
 import type { Column } from "../../lib/columns.ts";
 import { jobKey } from "../../lib/jobKey.ts";
 import type { DropColumn } from "../../lib/moves.ts";
@@ -13,6 +18,8 @@ import type { WebJob } from "../../lib/types.ts";
 
 interface DragContextValue {
   activeKey: string | null;
+  /** every column in display order, an in-flight column move applied */
+  columns: Column[];
   orderJobs: (column: Column, jobs: WebJob[]) => WebJob[];
   isTarget: (to: DropColumn) => boolean;
   submittingKeys: ReadonlySet<string>;
@@ -20,6 +27,7 @@ interface DragContextValue {
 
 const IDENTITY: DragContextValue = {
   activeKey: null,
+  columns: [],
   orderJobs: (_column, jobs) => jobs,
   isTarget: () => false,
   submittingKeys: new Set<string>(),
@@ -50,11 +58,12 @@ export function DragProvider({
   const value = useMemo<DragContextValue>(
     () => ({
       activeKey: drag.activeKey,
+      columns: drag.columns,
       orderJobs: drag.orderJobs,
       isTarget: drag.isTarget,
       submittingKeys: drag.submittingKeys,
     }),
-    [drag.activeKey, drag.orderJobs, drag.isTarget, drag.submittingKeys],
+    [drag.activeKey, drag.columns, drag.orderJobs, drag.isTarget, drag.submittingKeys],
   );
 
   return (
@@ -88,6 +97,59 @@ export function useDragState(): DragContextValue {
 
 export function useColumnJobs(column: Column, jobs: WebJob[]): WebJob[] {
   return useContext(DragCtx).orderJobs(column, jobs);
+}
+
+/** every column in display order, an in-flight column move applied */
+export function useColumns(): Column[] {
+  return useContext(DragCtx).columns;
+}
+
+/** The columns' own sortable row: drag a head sideways to move its column. */
+export function SortableColumns({ columns, children }: { columns: Column[]; children: ReactNode }) {
+  const items = useMemo(() => columns.map(columnSortId), [columns]);
+  return (
+    <SortableContext items={items} strategy={horizontalListSortingStrategy}>
+      {children}
+    </SortableContext>
+  );
+}
+
+export interface SortableColumn {
+  setNodeRef: (element: HTMLElement | null) => void;
+  /** for the head: presses on its buttons and inputs never start a drag */
+  handle: Record<string, (event: never) => void>;
+  /** for a collapsed column's strip, which is the whole handle */
+  stripHandle: Record<string, (event: never) => void>;
+  style: { transform?: string; transition?: string };
+  isDragging: boolean;
+}
+
+export function useSortableColumn(column: Column): SortableColumn {
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: columnSortId(column) });
+  const stripHandle = (listeners ?? {}) as Record<string, (event: never) => void>;
+  const handle = useMemo(() => guardListeners(listeners ?? {}), [listeners]);
+  return {
+    setNodeRef,
+    handle,
+    stripHandle,
+    style: {
+      transform: CSS.Translate.toString(transform) ?? undefined,
+      transition: transition ?? undefined,
+    },
+    isDragging,
+  };
+}
+
+function guardListeners(listeners: Record<string, unknown>): Record<string, (event: never) => void> {
+  const out: Record<string, (event: never) => void> = {};
+  for (const [name, fn] of Object.entries(listeners)) {
+    out[name] = (event: never) => {
+      const e = event as unknown as { target?: EventTarget | null };
+      if (!shouldStartDrag(e?.target ?? null)) return;
+      (fn as (ev: unknown) => void)(event);
+    };
+  }
+  return out;
 }
 
 export function useCardSubmitting(key: string): boolean {
@@ -146,18 +208,7 @@ export function useSortableCard(key: string): SortableCard {
     disabled: submitting,
   });
 
-  const guarded = useMemo(() => {
-    const out: Record<string, (event: never) => void> = {};
-    if (submitting) return out;
-    for (const [name, fn] of Object.entries(listeners ?? {})) {
-      out[name] = (event: never) => {
-        const e = event as unknown as { target?: EventTarget | null };
-        if (!shouldStartDrag(e?.target ?? null)) return;
-        (fn as (ev: unknown) => void)(event);
-      };
-    }
-    return out;
-  }, [listeners, submitting]);
+  const guarded = useMemo(() => (submitting ? {} : guardListeners(listeners ?? {})), [listeners, submitting]);
 
   return {
     setNodeRef,

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { deleteJob, openJobDir, pinJobLink, retryJob, unarchiveJob } from "./api/client.ts";
+import { addLane, deleteJob, openJobDir, pinJobLink, removeLane, renameLane, retryJob, unarchiveJob } from "./api/client.ts";
 import { BoardView, type BoardActions } from "./components/board/BoardView.tsx";
 import { DragProvider } from "./components/board/DragProvider.tsx";
 import { GhostJobCard } from "./components/board/JobCard.tsx";
 import { Chrome } from "./components/chrome/Chrome.tsx";
 import { JobOverlay } from "./components/overlays/JobOverlay.tsx";
 import { NewJobOverlay } from "./components/overlays/NewJobOverlay.tsx";
+import { WatchPromptOverlay } from "./components/overlays/WatchPromptOverlay.tsx";
 import { Toast, showToast } from "./components/overlays/Toast.tsx";
 import { useBoard } from "./hooks/useBoard.ts";
 import { useJobSearch } from "./hooks/useJobSearch.ts";
@@ -16,6 +17,7 @@ export function App() {
   const search = useJobSearch(board);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [newJob, setNewJob] = useState(false);
+  const [watchPrompt, setWatchPrompt] = useState(false);
   const { mutate } = board;
 
   const actions = useMemo<BoardActions>(
@@ -47,16 +49,33 @@ export function App() {
           if (err) showToast(`${slug}: ${err.message}`);
         });
       },
+      onAddLane: (name) => {
+        void mutate(() => addLane(name)).then((err) => {
+          if (err) showToast(`${name}: ${err.message}`);
+        });
+      },
+      onRenameLane: (id, name) => {
+        void mutate(() => renameLane(id, name)).then((err) => {
+          if (err) showToast(`${name}: ${err.message}`);
+        });
+      },
+      onRemoveLane: (id) => {
+        void mutate(() => removeLane(id)).then((err) => {
+          if (err) showToast(err.message);
+        });
+      },
+      onEditWatchPrompt: () => setWatchPrompt(true),
     }),
     [mutate],
   );
 
   const closeOverlay = useCallback(() => setOpenKey(null), []);
   const openJob = useCallback((slug: string) => setOpenKey(slug), []);
-  const overlayOpen = openKey !== null || newJob;
+  const overlayOpen = openKey !== null || newJob || watchPrompt;
   const closeOverlays = useCallback(() => {
     setOpenKey(null);
     setNewJob(false);
+    setWatchPrompt(false);
   }, []);
 
   useEffect(() => {
@@ -101,6 +120,13 @@ export function App() {
           setNewJob(false);
           setOpenKey(slug);
         }}
+      />
+      <WatchPromptOverlay
+        open={watchPrompt}
+        onClose={() => setWatchPrompt(false)}
+        prompt={board.board?.watch_prompt ?? ""}
+        mutate={mutate}
+        onToast={showToast}
       />
       <Toast />
     </>

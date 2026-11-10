@@ -1,10 +1,10 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import { fetchBoard } from "../api/client.ts";
-import type { Column } from "../lib/columns.ts";
+import { columnOrder, type Column } from "../lib/columns.ts";
 import { bucketJobs } from "../lib/format.ts";
 import { jobKey } from "../lib/jobKey.ts";
-import type { WebBoard, WebJob } from "../lib/types.ts";
+import type { WebBoard, WebJob, WebLane } from "../lib/types.ts";
 import { usePoll } from "./usePoll.ts";
 
 export const BOARD_POLL_MS = 3000;
@@ -17,6 +17,10 @@ export interface BoardModel {
   byKey: Map<string, WebJob>;
   byColumn: Record<Column, WebJob[]>;
   archived: WebJob[];
+  /** your own columns */
+  lanes: WebLane[];
+  /** every column, in display order */
+  columns: Column[];
   refetch: () => Promise<void>;
   /** the poll pauses while a card is in the air */
   setDragging: (dragging: boolean) => void;
@@ -65,11 +69,13 @@ export function useBoard(): BoardModel {
     await refetch();
   }, [refetch]);
 
-  const { byKey, byColumn, archived } = useMemo(() => {
+  const { byKey, byColumn, archived, lanes, columns } = useMemo(() => {
     const key = new Map<string, WebJob>();
     for (const j of data?.jobs ?? []) key.set(jobKey(j), j);
-    const { byColumn: cols, archived: arch } = bucketJobs(data?.jobs ?? []);
-    return { byKey: key, byColumn: cols, archived: arch };
+    const ls = data?.lanes ?? [];
+    const { byColumn: cols, archived: arch } = bucketJobs(data?.jobs ?? [], ls);
+    const order = columnOrder(data?.columns ?? [], ls.map((l) => l.id));
+    return { byKey: key, byColumn: cols, archived: arch, lanes: ls, columns: order };
   }, [data]);
 
   return {
@@ -78,6 +84,8 @@ export function useBoard(): BoardModel {
     byKey,
     byColumn,
     archived,
+    lanes,
+    columns,
     refetch: refetchBoard,
     setDragging,
     mutate,

@@ -79,6 +79,31 @@ usage, accounts, self-update) is left out on purpose.
 - Kept from kraken: four columns (draft · working · blocked · done), drag to
   reorder and to transition, archive drawer under DONE, 8-colour job stripe,
   rename, board search (⌘K), theme + accent, daemon health in the chrome.
+- Lanes: columns of your own (`+` at the end of the board; rename by
+  clicking the name, ✕ to remove). A lane is a parking place, not a state: a
+  card dragged into one keeps its state and stays put while the state changes;
+  dragged back out it can only land in the column its state names, so a drag
+  out of a lane is never a way to start, stop or finish anything. DONE (the
+  overlay button) finishes the job and takes it out of the lane. Removing a
+  lane returns its cards to their state columns too. The day-old-done sweep
+  leaves parked cards alone.
+- WATCHING: a built-in parking column for the last mile. 👁 WATCH in the
+  overlay (beside DONE, for any job with a pi) pastes the watch prompt into
+  pi's pane — one bracketed paste, so a multi-line prompt arrives as one
+  message — or, when pi is gone (a done job, a dead pane), relaunches pi on
+  the conversation with the prompt as its first message; the job parks in
+  WATCHING. The prompt is one text for the board (kv `watch-prompt`,
+  `DefaultWatchPrompt` until edited; ✎ in the head edits it). When the
+  watching pi next goes idle the tick calls Done: session killed, last in
+  DONE, a "watch over" notification. A dialog, an interrupt or an exit is not
+  "over": the card stays in WATCHING, blocked, with its ring. Nothing is
+  dropped into WATCHING; a card dragged out goes home or into a lane like any
+  parked card, and pi carries on.
+- Every column, state columns, WATCHING and lanes alike, is dragged by its head into
+  any order; the order is saved in the daemon (kv `board-columns`). `«` in a
+  head folds the column to a strip (name, count; still a drop target) and the
+  strip expands it; which columns are folded is this browser's to remember
+  (localStorage), like the archive drawer.
 
 ## Layout
 
@@ -155,7 +180,9 @@ v3 dropped `links.label` and forgot the session scan offsets, so the scanner,
 which from then on also attaches the URLs in your own messages, reads every
 existing session once more (attaching is idempotent). v4 added `jobs.name`. v5
 added `jobs.attention_at`: when the daemon moved the job into blocked on its own
-and it has not been opened since (0 otherwise).
+and it has not been opened since (0 otherwise). v8 added `lanes(id, name,
+position, created_at)` and `jobs.lane_id` (0 = none). v9 added
+`jobs.watching_at` (when WATCH was pressed; 0 = not watching).
 
 `board_order("column", position, job_id)` holds the manual order per column
 exactly as kraken's does; the board emits each column's jobs in that order,
@@ -164,7 +191,10 @@ whenever the tick's state write moves a job into one of them (and when
 reactivate does), the daemon appends it to that column's order
 (`AppendToColumn`: a no-op when a drag already listed it there, otherwise out of
 every other column and onto the end). Cross-column drags do not reorder the
-destination, so they count as arrivals too.
+destination, so they count as arrivals too. A lane's order is keyed
+`lane:<id>`, WATCHING's `watching`, and both read in arrival order;
+`AppendToColumn` leaves a parked job alone unless the column is the one it is
+parked in (`ParkedColumn`), so the tick's state writes never pull it out.
 
 `links(id, job_id, kind, url, status, status_at, created_at, pinned_at)` with
 `UNIQUE(job_id, url)`; no label column — a link is its URL, in its page's
@@ -424,10 +454,11 @@ The shell also ignores anything but an http(s) URL in `createWebViewWith`.
 
 ## Board rules (kraken's, trimmed)
 
-Bucketing: archived → drawer; else `state` names the column (`''`/`ready`/unknown
-→ draft). Same-column drop → `POST /api/reorder {column, slugs}` (full column,
-optimistic). WORKING and BLOCKED are in arrival order (above); a card that turned
-blocked on its own wears a ring until it is opened. Cross-column moves:
+Bucketing: archived → drawer; else `lane` names the column when set, else
+`state` does (`''`/`ready`/unknown → draft). Same-column drop → `POST
+/api/reorder {column, slugs}` (full column, optimistic). WORKING and BLOCKED are
+in arrival order (above); a card that turned blocked on its own wears a ring
+until it is opened. Cross-column moves:
 
 | from → to | action |
 |---|---|
@@ -437,6 +468,9 @@ blocked on its own wears a ring until it is opened. Cross-column moves:
 | blocked → working | open the card (go talk to it in the pane); no write |
 | done → working, done → blocked | `/api/reactivate` |
 | done → archive drawer | `/api/archive` |
+| anything → a lane | `/api/job/lane {lane: id}`; no state change |
+| a lane or WATCHING → the column the card's state names | `/api/job/lane {lane: 0}`; only that column lights up |
+| anything → WATCHING | no-op (the WATCH button fills it) |
 | anything else | no-op |
 
 Card click → the job overlay: head (name + rename, with `as <slug>` beside a name that differs from the slug, dir, colour swatch, actions:

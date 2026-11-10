@@ -11,16 +11,18 @@ vi.mock("../api/client.ts", () => {
     });
   return {
     SUBMIT_ENDPOINT: "/api/queue",
+    LANE_ENDPOINT: "/api/job/lane",
     queueJob: mk("/api/queue"),
     stopJob: mk("/api/stop"),
     doneJob: mk("/api/done"),
     reactivateJob: mk("/api/reactivate"),
     archiveJob: mk("/api/archive"),
+    setJobLane: mk("/api/job/lane"),
   };
 });
 
-import { COLUMNS, type Column } from "./columns.ts";
-import { ARCHIVED, isLegalTarget, MOVES, resolveMove, SUBMIT_ENDPOINT, type DropColumn } from "./moves.ts";
+import { COLUMNS, WATCHING, type Column } from "./columns.ts";
+import { ARCHIVED, isLegalTarget, LANE_ENDPOINT, MOVES, resolveMove, SUBMIT_ENDPOINT, type DropColumn } from "./moves.ts";
 
 const TARGETS: readonly DropColumn[] = [...COLUMNS, ARCHIVED];
 
@@ -97,6 +99,49 @@ describe("resolveMove — the drag table", () => {
       expect(last?.[1]).toEqual(["job-x"]);
     }
     expect(calls.list).toHaveLength(6);
+  });
+});
+
+describe("resolveMove — lanes", () => {
+  it("any card can be dropped into a lane", async () => {
+    calls.list.length = 0;
+    for (const from of COLUMNS) {
+      const move = resolveMove(from, "lane:3");
+      expect(move?.kind, from).toBe("post");
+      if (move?.kind !== "post") continue;
+      expect(move.endpoint).toBe(LANE_ENDPOINT);
+      await move.run("job-x");
+      expect(calls.list.at(-1)).toEqual(["/api/job/lane", ["job-x", 3]]);
+    }
+    expect(resolveMove("lane:3", "lane:4")).toMatchObject({ kind: "post", endpoint: LANE_ENDPOINT });
+  });
+
+  it("a parked card goes back to its own state column and nowhere else", async () => {
+    calls.list.length = 0;
+    const home = resolveMove("lane:3", "blocked", { state: "blocked" });
+    expect(home).toMatchObject({ kind: "post", endpoint: LANE_ENDPOINT });
+    if (home?.kind === "post") await home.run("job-x");
+    expect(calls.list.at(-1)).toEqual(["/api/job/lane", ["job-x", 0]]);
+    expect(resolveMove("lane:3", "done", { state: "blocked" })).toBeNull();
+    expect(resolveMove("lane:3", "working", { state: "blocked", opened: true })).toBeNull();
+    expect(resolveMove("lane:3", ARCHIVED, { state: "done" })).toBeNull();
+    expect(resolveMove("lane:3", "lane:3")).toEqual({ kind: "reorder" });
+    expect(isLegalTarget("lane:3", "draft")).toBe(true);
+    expect(isLegalTarget("lane:3", ARCHIVED)).toBe(false);
+  });
+});
+
+describe("resolveMove — WATCHING", () => {
+  it("is not a drop target; a watched card goes back to its state column or into a lane", () => {
+    for (const from of [...COLUMNS, "lane:3" as const]) {
+      expect(resolveMove(from, WATCHING, { opened: true, state: "blocked" }), from).toBeNull();
+    }
+    expect(resolveMove(WATCHING, WATCHING)).toEqual({ kind: "reorder" });
+    expect(resolveMove(WATCHING, "working", { state: "working" })).toMatchObject({ kind: "post", endpoint: LANE_ENDPOINT });
+    expect(resolveMove(WATCHING, "done", { state: "working" })).toBeNull();
+    expect(resolveMove(WATCHING, ARCHIVED, { state: "done" })).toBeNull();
+    expect(resolveMove(WATCHING, "lane:3")).toMatchObject({ kind: "post", endpoint: LANE_ENDPOINT });
+    expect(isLegalTarget("draft", WATCHING)).toBe(false);
   });
 });
 

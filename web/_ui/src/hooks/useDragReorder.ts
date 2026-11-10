@@ -15,6 +15,7 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import type {
+  Collision,
   CollisionDetection,
   DragEndEvent,
   DragOverEvent,
@@ -23,10 +24,11 @@ import type {
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 
-import { reorderColumn } from "../api/client.ts";
-import { COLUMNS, type Column } from "../lib/columns.ts";
+import { reorderColumn, reorderColumns } from "../api/client.ts";
+import type { Column } from "../lib/columns.ts";
+import { columnFor } from "../lib/format.ts";
 import { jobKey } from "../lib/jobKey.ts";
-import { ARCHIVED, SUBMIT_ENDPOINT, resolveMove, type DropColumn } from "../lib/moves.ts";
+import { ARCHIVED, SUBMIT_ENDPOINT, resolveMove, type DropColumn, type MoveContext } from "../lib/moves.ts";
 import { columnSlugs, predictReorderedJobs } from "../lib/predictReorder.ts";
 import { isOpened } from "../lib/status.ts";
 import type { WebBoard, WebJob } from "../lib/types.ts";
@@ -43,6 +45,18 @@ export function parseColumnDropId(id: UniqueIdentifier | undefined): DropColumn 
   return s.slice(COLUMN_DROP_PREFIX.length) as DropColumn;
 }
 
+/** A column's own sortable id: dragging the head moves the column. */
+export const COLUMN_SORT_PREFIX = "colsort:";
+
+export const columnSortId = (column: Column): string => COLUMN_SORT_PREFIX + column;
+
+export function parseColumnSortId(id: UniqueIdentifier | undefined): Column | null {
+  if (id === undefined) return null;
+  const s = String(id);
+  if (!s.startsWith(COLUMN_SORT_PREFIX)) return null;
+  return s.slice(COLUMN_SORT_PREFIX.length) as Column;
+}
+
 export const MOUSE_ACTIVATION = { distance: 4 } as const;
 export const TOUCH_ACTIVATION = { delay: 250, tolerance: 8 } as const;
 
@@ -57,9 +71,18 @@ export const NO_DRAG_SELECTOR = [
   "[contenteditable]:not([contenteditable='false'])",
 ].join(",");
 
+/** …unless the control says it is a handle too (a plain click still reaches it). */
+export const DRAG_HANDLE_ATTR = "data-drag";
+
 export function shouldStartDrag(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return true;
-  return target.closest(NO_DRAG_SELECTOR) === null;
+  const control = target.closest(NO_DRAG_SELECTOR);
+  return control === null || control.hasAttribute(DRAG_HANDLE_ATTR);
+}
+
+/** what the drag table needs to know about the card in the air */
+export function moveContext(job: WebJob | undefined): MoveContext {
+  return job === undefined ? {} : { opened: isOpened(job), state: columnFor(job.state) };
 }
 
 export function useBoardSensors() {
@@ -70,11 +93,32 @@ export function useBoardSensors() {
   );
 }
 
-/** Pointer-within first (the column under the cursor), rect overlap as the
- *  fallback for keyboard drags, which have no pointer. */
+/** A column in the air only meets other columns' sort slots, by horizontal
+ *  distance alone — columns differ wildly in height, so their centres say
+ *  nothing about where the pointer is. A card never meets those slots: for
+ *  cards, pointer-within first (the column under the cursor), rect overlap
+ *  as the fallback for keyboard drags, which have no pointer. */
 export const boardCollisionDetection: CollisionDetection = (args) => {
-  const within = pointerWithin(args);
-  return within.length > 0 ? within : rectIntersection(args);
+  const columnDrag = parseColumnSortId(args.active.id) !== null;
+  const droppableContainers = args.droppableContainers.filter(
+    (c) => (parseColumnSortId(c.id) !== null) === columnDrag,
+  );
+  const scoped = { ...args, droppableContainers };
+  if (columnDrag) return closestColumnByX(scoped);
+  const within = pointerWithin(scoped);
+  return within.length > 0 ? within : rectIntersection(scoped);
+};
+
+const closestColumnByX: CollisionDetection = ({ collisionRect, droppableContainers, droppableRects, pointerCoordinates }) => {
+  const x = pointerCoordinates?.x ?? collisionRect.left + collisionRect.width / 2;
+  const collisions: Collision[] = [];
+  for (const container of droppableContainers) {
+    const rect = droppableRects.get(container.id);
+    if (!rect) continue;
+    const distance = Math.abs(rect.left + rect.width / 2 - x);
+    collisions.push({ id: container.id, data: { droppableContainer: container, value: distance } });
+  }
+  return collisions.sort((a, b) => (a.data?.value ?? 0) - (b.data?.value ?? 0));
 };
 
 interface Override {
@@ -107,6 +151,10 @@ export interface DragReorderOptions {
 export interface DragReorderModel {
   activeKey: string | null;
   activeJob: WebJob | null;
+  /** the column in the air, when the drag is a column's */
+  activeColumn: Column | null;
+  /** every column in display order, an in-flight column move applied */
+  columns: Column[];
   from: Column | null;
   over: DropColumn | null;
   sensors: ReturnType<typeof useBoardSensors>;
@@ -128,6 +176,8 @@ export function useDragReorder({
   visibleKeys,
 }: DragReorderOptions): DragReorderModel {
   const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [activeColumn, setActiveColumn] = useState<Column | null>(null);
+  const [columnOverride, setColumnOverride] = useState<Column[] | null>(null);
   const [from, setFrom] = useState<Column | null>(null);
   const [over, setOver] = useState<DropColumn | null>(null);
   const [override, setOverride] = useState<Override | null>(null);
@@ -140,9 +190,22 @@ export function useDragReorder({
 
   const { byKey, byColumn, archived, setDragging, refetch, mutate } = board;
 
+  const columns = columnOverride ?? board.columns;
+  const columnsRef = useRef(columns);
+  columnsRef.current = columns;
+  useEffect(() => {
+    if (columnOverride === null) return;
+    const incoming = board.columns;
+    if (incoming.length === columnOverride.length && incoming.every((c, i) => c === columnOverride[i])) {
+      setColumnOverride(null);
+    }
+  }, [board.columns, columnOverride]);
+
   const columnOf = useMemo(() => {
     const m = new Map<string, DropColumn>();
-    for (const c of COLUMNS) for (const j of byColumn[c]) m.set(jobKey(j), c);
+    for (const [c, jobs] of Object.entries(byColumn) as [Column, WebJob[]][]) {
+      for (const j of jobs) m.set(jobKey(j), c);
+    }
     for (const j of archived) m.set(jobKey(j), ARCHIVED);
     return m;
   }, [byColumn, archived]);
@@ -211,13 +274,38 @@ export function useDragReorder({
   const finishDrag = useCallback(() => {
     activeRef.current = null;
     setActiveKey(null);
+    setActiveColumn(null);
     setFrom(null);
     setOver(null);
     setDragging(false);
   }, [setDragging]);
 
+  const commitColumnMove = useCallback(
+    async (column: Column, overId: UniqueIdentifier | undefined) => {
+      const target = parseColumnSortId(overId);
+      const current = columnsRef.current;
+      const oldIdx = current.indexOf(column);
+      const newIdx = target === null ? -1 : current.indexOf(target);
+      if (oldIdx < 0 || newIdx < 0 || oldIdx === newIdx) return;
+      const next = arrayMove(current, oldIdx, newIdx);
+      setColumnOverride(next);
+      const err = await mutate(() => reorderColumns(next));
+      if (err) {
+        setColumnOverride(null);
+        onToast?.(`move column failed: ${err.message} — reverted`);
+      }
+    },
+    [mutate, onToast],
+  );
+
   const onDragStart = useCallback(
     (e: DragStartEvent) => {
+      const column = parseColumnSortId(e.active.id);
+      if (column !== null) {
+        setActiveColumn(column);
+        setDragging(true);
+        return;
+      }
       const key = String(e.active.id);
       const col = columnOf.get(key);
       if (col === undefined || col === ARCHIVED) return;
@@ -232,6 +320,7 @@ export function useDragReorder({
 
   const onDragOver = useCallback(
     (e: DragOverEvent) => {
+      if (parseColumnSortId(e.active.id) !== null) return;
       setOver(resolveOver(e.over?.id));
     },
     [resolveOver],
@@ -250,7 +339,7 @@ export function useDragReorder({
 
   const commitReorder = useCallback(
     async (column: Column, key: string, overId: UniqueIdentifier | undefined) => {
-      const ordered = orderJobs(column, byColumn[column]);
+      const ordered = orderJobs(column, byColumn[column] ?? []);
       const oldIdx = ordered.findIndex((j) => jobKey(j) === key);
       const newIdx =
         parseColumnDropId(overId) !== null
@@ -290,8 +379,13 @@ export function useDragReorder({
 
   const onDragEnd = useCallback(
     (e: DragEndEvent) => {
+      const column = parseColumnSortId(e.active.id);
       const active = activeRef.current;
       finishDrag();
+      if (column !== null) {
+        void commitColumnMove(column, e.over?.id);
+        return;
+      }
       if (active === null) return;
       const to = resolveOver(e.over?.id);
       const job = byKey.get(active.key);
@@ -299,7 +393,7 @@ export function useDragReorder({
         void refetch();
         return;
       }
-      const move = resolveMove(active.from, to, { opened: isOpened(job) });
+      const move = resolveMove(active.from, to, moveContext(job));
       if (move === null) {
         void refetch();
         return;
@@ -332,7 +426,7 @@ export function useDragReorder({
         if (err) onToast?.(`${job.slug}: ${err.message}`);
       });
     },
-    [byKey, commitReorder, finishDrag, mutate, onOpenJob, onToast, refetch, resolveOver, submittingKeys],
+    [byKey, commitColumnMove, commitReorder, finishDrag, mutate, onOpenJob, onToast, refetch, resolveOver, submittingKeys],
   );
 
   const onDragCancel = useCallback(() => {
@@ -343,9 +437,9 @@ export function useDragReorder({
   const isTarget = useCallback(
     (to: DropColumn): boolean => {
       if (from === null || from === to) return false;
-      return resolveMove(from, to) !== null;
+      return resolveMove(from, to, moveContext(activeKey === null ? undefined : byKey.get(activeKey))) !== null;
     },
-    [from],
+    [activeKey, byKey, from],
   );
 
   const sensors = useBoardSensors();
@@ -353,6 +447,8 @@ export function useDragReorder({
   return {
     activeKey,
     activeJob: activeKey === null ? null : (byKey.get(activeKey) ?? null),
+    activeColumn,
+    columns,
     from,
     over,
     sensors,

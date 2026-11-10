@@ -4,7 +4,7 @@ import type { WebJob } from "./types.ts";
 
 /** A column's member slugs in server order (archived entries never count). */
 export function columnSlugs(jobs: readonly WebJob[], column: Column): string[] {
-  return bucketJobs(jobs).byColumn[column].map((j) => j.slug);
+  return (bucketJobs(jobs).byColumn[column] ?? []).map((j) => j.slug);
 }
 
 /**
@@ -19,7 +19,7 @@ export function predictReorderedJobs(
   column: Column,
   slugs: readonly string[],
 ): WebJob[] | null {
-  const members = bucketJobs(jobs).byColumn[column];
+  const members = bucketJobs(jobs).byColumn[column] ?? [];
 
   const bySlug = new Map<string, WebJob>();
   for (const j of members) bySlug.set(j.slug, j);

@@ -1,6 +1,8 @@
 package store
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"sort"
 )
@@ -73,6 +75,13 @@ func (s *Store) AppendToColumn(column string, id int64) (bool, error) {
 		return false, fmt.Errorf("append to column %s: %w", column, err)
 	}
 	if listed > 0 {
+		return false, nil
+	}
+	var parked Job
+	if err := tx.QueryRow(`SELECT lane_id, watching_at FROM jobs WHERE id = ?`, id).Scan(&parked.LaneID, &parked.WatchingAt); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf("append to column %s: %w", column, err)
+	}
+	if p := ParkedColumn(&parked); p != "" && column != p {
 		return false, nil
 	}
 	if _, err := tx.Exec(`DELETE FROM board_order WHERE job_id = ?`, id); err != nil {

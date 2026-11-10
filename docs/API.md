@@ -23,6 +23,9 @@ type WebBoard = {
   daemon: { pid: number; started_at: number; last_tick: number; live: number; last_error?: string };
   daemon_ok: boolean;          // last_tick within 10s
   jobs: WebJob[];              // never null; archived jobs ride in the same array (archived: true)
+  lanes: WebLane[];            // never null; your own columns
+  columns: string[];           // never null; every column key — draft|working|blocked|done|watching|lane:<id> — in display order
+  watch_prompt: string;        // what WATCH says to pi (the operator's text, else the built-in default)
   contract: number;            // 1
   operator: string;            // DRIVER_OPERATOR / $USER
   default_dir: string;         // DRIVER_DEFAULT_DIR / $HOME — seed for a new job's dir
@@ -54,7 +57,11 @@ type WebJob = {
   reactivatable?: boolean;     // done and not archived
   attention?: boolean;         // turned blocked on its own and not opened since (the card's ring)
   retryable?: boolean;         // blocked, and its pi exited or its last turn failed: /api/retry
+  lane?: number;               // the lane the board shows it in (WebLane.id); absent = the column its state names
+  watching?: boolean;          // its pi is watching over the shipped work: shown in WATCHING, whatever its state
 };
+
+type WebLane = { id: number; name: string };
 
 type WebLink = {
   id: number;
@@ -79,6 +86,23 @@ drag and a reactivation each land at the end; a same-column drag sets the order
 explicitly and is kept. DRAFT and DONE list manually ordered jobs after the
 unlisted ones (alphabetical).
 
+A **lane** is a column of your own. A job with `lane` set is shown there
+instead of in its state's column, whatever its state is or becomes; it keeps
+its `state`, `pi`, `attention` and `retryable` as before, and the daemon
+leaves it there (the day-old-done sweep skips it). DONE takes it out of the
+lane (last in DONE). A lane reads in arrival order like WORKING and BLOCKED;
+`/api/reorder` with `"lane:<id>"` sets it.
+
+**WATCHING** is a built-in column that works like a lane: `/api/watch` parks
+a job there and tells its pi to watch over the shipped work (`watch_prompt`);
+when that pi next goes idle the daemon marks the job done (session killed,
+last in DONE). Any other stop (a question, an interrupt, an exit) leaves it in
+WATCHING, blocked, for you. Nothing is dropped into WATCHING by a drag; out of
+it, a card goes to its state column or a lane as a parked card does.
+
+`columns` is the order the board lays every column out in, state columns,
+WATCHING and lanes alike; `/api/columns` sets it. A new lane goes last.
+
 `attention` comes on when the daemon writes `blocked` for a job that was not
 blocked and the reason is not `aborted` (Escape in the pane, STOP, the working →
 blocked drag — interrupts you sent yourself); it goes off when the job leaves
@@ -90,14 +114,19 @@ blocked drag — interrupts you sent yourself); it goes off when the job leaves
 |---|---|---|
 | `POST /api/queue` | **start**: open the tmux session + pi at its prompt (stored `ready`, still `draft` on the board until pi runs on the first message); answers after the session is up | already open · not a draft · dir missing/not a directory · pi or tmux not found · tmux failure (text) |
 | `POST /api/stop` | send Escape to the pane; no state write | not working/blocked · no live session |
-| `POST /api/done` | kill session, state done (allowed for an open, unbriefed draft) | not started · done |
+| `POST /api/done` | kill session, state done (allowed for an open, unbriefed draft); a job parked in a lane leaves it, last in DONE | not started · done |
 | `POST /api/kill` | kill session, back to not started ("cancel") | not started |
 | `POST /api/reactivate` | relaunch pi on the same session file, state working, last in WORKING | not done · archived · dir gone |
 | `POST /api/retry` | a blocked job whose pi gave up or died: pi up and its last turn failed → `continue` + Enter typed into the pane (the tick moves the card when pi starts on it); pi exited (dead pane, or no session at all) → pi started again in a fresh tmux session on the job's current session file, with `continue` as its first prompt when the turn it died in was unfinished (failed, or cut off before pi answered) — state working, last in WORKING — and otherwise at its prompt, still blocked | not blocked · nothing to retry (pi is up and its last turn did not fail, or it is not at its prompt) · dir gone · pi or tmux not found · tmux failure (text) |
 | `POST /api/archive` | archive (slug freed); the daemon also archives every done job untouched for 24h by itself | not done · live session |
+| `POST /api/watch` | **watch**: the watch prompt goes to pi — pasted into its pane (one bracketed paste, then Enter) when the session is live, else pi is relaunched on the job's session file with the prompt as its first message (state working, as `/api/reactivate`) — and the job parks in WATCHING (out of any lane). Answers after the paste or once the session is up | not started · already watching · archived · dir gone · pi or tmux not found · tmux failure (text) |
+| `POST /api/watch-prompt` | `{"text"}` — replaces the watch prompt for every WATCH from now on (trimmed, ≤ 8000 characters); `""` goes back to the built-in default | too long (400) |
 | `POST /api/unarchive` | restore; refuses if an active job now holds the slug | — |
 | `POST /api/delete` | delete forever; removes the job dir | not archived |
-| `POST /api/reorder` | body `{"column": "draft\|working\|blocked\|done", "slugs": string[]}` — the column's full intended order; slugs whose display state no longer matches are dropped silently | unknown column |
+| `POST /api/reorder` | body `{"column": "draft\|working\|blocked\|done\|watching\|lane:<id>", "slugs": string[]}` — the column's full intended order; slugs the board no longer shows in that column are dropped silently | unknown column |
+| `POST /api/columns` | `{"columns": string[]}` — the board's full column order; unknown keys are dropped, columns left out go last | — |
+| `POST /api/lanes` | `{"op": "add", "name"}` → `{"ok": true, "lane": WebLane}`: a new lane after the last; `{"op": "rename", "id", "name"}` → `{"ok": true}`; `{"op": "remove", "id"}` → `{"ok": true}`: the lane goes, its jobs go back to the end of the columns their states name. Names are whitespace-collapsed, 1–40 characters | empty or long name (400) · unknown lane (404) |
+| `POST /api/job/lane` | `{"slug", "lane": number}` — park the job in that lane, last; `0` returns it to the end of the column its state names. Either way it leaves WATCHING (pi is not interrupted). No state change; allowed in every state | archived · unknown lane (404) |
 | `POST /api/job/color` | `{"slug", "color"}`; `""` clears; allowed in every state | unknown colour (400) |
 | `POST /api/job/rename` | `{"slug", "to", "name"?}` → `{"ok": true, "slug": "<to>"}`: `to` is the new slug (rules below), `name` the new display name (whitespace-collapsed, ≤ 200 characters; `""` or absent = the job goes by its slug). Either may stay as it is. Allowed in every state; when the slug changes on a live job its tmux session is renamed too | taken · invalid · name too long (400) |
 | `POST /api/job/fork` | `{"slug", "to", "name"?}` → the fork's `JobForm`: a copy of the job — dir, model, colour, notes, links, and its conversation (the session file copied under a fresh session id, `parentSession` naming the original's) — as slug `to`, named `name` (same rules as rename), placed in the original's column right after it. A not-started draft's fork is a draft; a done job's fork is done (reactivate it to carry on from where the original stood); an open job's fork (ready, working, blocked) gets its own tmux session and pi resumed on the copied conversation, keeps the original's column until its own pi reports, and answers after that session is up (the start timeout applies). Archived jobs cannot be forked — unarchive first | archived · slug taken · invalid slug · the original's own slug · name too long (400) · for an open job: dir gone · pi or tmux not found · tmux failure (text) |

@@ -17,6 +17,7 @@ import {
   setJobColor,
   stopJob,
   unarchiveJob,
+  watchJob,
 } from "../../api/client.ts";
 import type { BoardModel } from "../../hooks/useBoard.ts";
 import { ESC_PRIORITY } from "../../hooks/useEscapeStack.ts";
@@ -292,12 +293,21 @@ function JobPanel({
         {label}
       </button>
     );
+    const watch = job?.watching
+      ? []
+      : [
+          b("watch", "👁 WATCH", () => watchJob(slug), {
+            title: "tell pi to watch over the shipped work (the WATCHING column's prompt); the job moves to DONE when it is over",
+            flush: true,
+          }),
+        ];
     switch (effState) {
       case "draft":
         // two kinds of draft: not started (launch form, START) and opened
         // (pi at its prompt, nothing sent — the pane, DONE and CANCEL)
         return opened
           ? [
+              ...watch,
               b("done", "✓ DONE", () => doneJob(slug), { title: "close pi, mark done" }),
               b("cancel", "✕ CANCEL", () => killJob(slug), {
                 cls: "btn ghost danger",
@@ -330,6 +340,7 @@ function JobPanel({
             disabled: !live,
             title: "send Escape to the pane — interrupt what pi is doing",
           }),
+          ...watch,
           b("done", "✓ DONE", () => doneJob(slug), { title: "kill the session, mark done" }),
           b("cancel", "✕ CANCEL", () => killJob(slug), {
             cls: "btn ghost danger",
@@ -344,6 +355,7 @@ function JobPanel({
             disabled: job?.reactivatable === false,
             title: job?.reactivatable === false ? "its directory is gone" : "relaunch pi on the same session",
           }),
+          ...watch,
           b("archive", "▣ ARCHIVE", () => archiveJob(slug), {
             disabled: live,
             title: live ? "a live session cannot be archived" : "archive (frees the slug)",

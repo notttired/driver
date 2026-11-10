@@ -110,6 +110,26 @@ under DONE archives it. The overlay's buttons do the same: start · stop · done
 cancel (close pi; the job goes back to not started) · reactivate · archive. A
 done job left alone for a day moves to the archive by itself (unarchiving one
 gives it another day).
+**Your own columns.** The `+` at the end of the board adds a column — name
+it, press Enter. Drag any card into one to park it there: it keeps its state
+(and its ring, notifications and retry) and stays put while pi works on it.
+Dragging it out again only puts it back in the column its state names; nothing
+starts, stops or finishes — DONE in the overlay does finish it and moves it to
+DONE. Click a column's name to rename it, ✕ to remove it (its cards go back to
+their state columns). A done card parked in a column is not archived by itself.
+Drag any column by its head to rearrange the board, the built-in ones
+included; `«` folds a column to a narrow strip (cards can still be dropped on
+it), and clicking the strip unfolds it.
+
+**Watching.** When the work is shipped, press **👁 WATCH** (beside DONE, for
+any job that has a pi). pi gets the watch prompt — wait for CI and the merge,
+follow the deploy, then watch the health for 30 minutes — and the card moves to
+the **WATCHING** column. When pi finishes the watch and goes idle, the card
+moves to DONE by itself (you get a notification); if pi stops to ask or report
+a problem, it stays in WATCHING, blocked, for you. A done job's pi is relaunched
+on its conversation with the prompt. The prompt is yours to edit: `✎` in the
+WATCHING head opens it (RESET brings the default back). Cards cannot be dragged
+into WATCHING; dragging one out just moves it, pi carries on.
 **Retry** is for blocked jobs that did not stop for you: a dropped network
 leaves pi up on a failed turn (the card reads `✗ Connection error` and the
 like), a logout kills pi (`✕ exited`). `↻ retry N` in the BLOCKED head (or

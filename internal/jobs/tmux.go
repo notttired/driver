@@ -157,6 +157,17 @@ func (t *Tmux) SendLine(sess, text string) error {
 	return err
 }
 
+// Paste puts text into the pane as one bracketed paste — newlines and all,
+// nothing sent until the Enter that follows.
+func (t *Tmux) Paste(sess, text string) error {
+	target := "=" + sess + ":"
+	if _, err := t.run("set-buffer", "-b", "driver-paste", text); err != nil {
+		return err
+	}
+	_, err := t.run("paste-buffer", "-b", "driver-paste", "-d", "-p", "-t", target, ";", "send-keys", "-t", target, "Enter")
+	return err
+}
+
 // RenameSession renames a session and keeps its @driver-job marker current.
 func (t *Tmux) RenameSession(from, to, slug string) error {
 	if _, err := t.run("rename-session", "-t", "="+from, to); err != nil {

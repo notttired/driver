@@ -68,6 +68,15 @@ export interface WebJob {
   /** turned blocked on its own (pi idle, asking, exited, silent) and not opened since: the card wears a ring */
   attention?: boolean;
   retryable?: boolean;
+  /** the lane (a column of your own) the board shows it in; absent = the column its state names */
+  lane?: number;
+  /** its pi is watching over the shipped work: the board shows it in WATCHING */
+  watching?: boolean;
+}
+
+export interface WebLane {
+  id: number;
+  name: string;
 }
 
 export interface WebDaemon {
@@ -84,6 +93,12 @@ export interface WebBoard {
   daemon: WebDaemon;
   daemon_ok: boolean;
   jobs: WebJob[];
+  /** your own columns */
+  lanes: WebLane[];
+  /** every column's key — draft, working, blocked, done, watching and lane:<id> — in display order */
+  columns: string[];
+  /** what WATCH says to pi */
+  watch_prompt: string;
   contract: number;
   operator: string;
   default_dir: string;
@@ -174,6 +189,10 @@ export interface AddLinkResult extends OkResponse {
 
 export interface PinLinkResult extends OkResponse {
   pinned: boolean;
+}
+
+export interface AddLaneResult extends OkResponse {
+  lane: WebLane;
 }
 
 export interface DirsResponse {

@@ -1,5 +1,5 @@
-import { COLUMNS, type Column } from "./columns.ts";
-import type { WebJob } from "./types.ts";
+import { COLUMNS, WATCHING, laneColumn, type Column, type StateColumn } from "./columns.ts";
+import type { WebJob, WebLane } from "./types.ts";
 
 /** The eight job colours, at the names the server's colour route accepts. */
 export const JOB_COLORS = [
@@ -65,8 +65,14 @@ export function clockLabel(unixSeconds: number | undefined | null, now = Date.no
   return sameDay ? time : `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
 }
 
-export function columnFor(state: string): Column {
-  return (COLUMNS as readonly string[]).includes(state) ? (state as Column) : "draft";
+export function columnFor(state: string): StateColumn {
+  return (COLUMNS as readonly string[]).includes(state) ? (state as StateColumn) : "draft";
+}
+
+/** The column the board shows a job in: WATCHING or its lane when parked, else its state's. */
+export function columnOf(job: Pick<WebJob, "state" | "lane" | "watching">): Column {
+  if (job.watching) return WATCHING;
+  return job.lane ? laneColumn(job.lane) : columnFor(job.state);
 }
 
 export interface BoardBuckets {
@@ -74,20 +80,23 @@ export interface BoardBuckets {
   archived: WebJob[];
 }
 
-/** Archived jobs go to the drawer; everything else to the column its state
- *  names. Server order is preserved within each bucket. */
-export function bucketJobs(jobs: readonly WebJob[]): BoardBuckets {
-  const byColumn = Object.fromEntries(COLUMNS.map((c) => [c, [] as WebJob[]])) as Record<
-    Column,
-    WebJob[]
-  >;
+/** Archived jobs go to the drawer; everything else to the column the board
+ *  shows it in. Server order is preserved within each bucket; every lane
+ *  given gets a bucket, cards or not. */
+export function bucketJobs(jobs: readonly WebJob[], lanes: readonly WebLane[] = []): BoardBuckets {
+  const byColumn = Object.fromEntries([
+    ...COLUMNS.map((c) => [c, [] as WebJob[]]),
+    [WATCHING, [] as WebJob[]],
+    ...lanes.map((l) => [laneColumn(l.id), [] as WebJob[]]),
+  ]) as Record<Column, WebJob[]>;
   const archived: WebJob[] = [];
   for (const j of jobs) {
     if (j.archived) {
       archived.push(j);
       continue;
     }
-    byColumn[columnFor(j.state)].push(j);
+    const col = columnOf(j);
+    (byColumn[col] ??= []).push(j);
   }
   return { byColumn, archived };
 }

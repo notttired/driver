@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 
-import { COLUMNS, type Column } from "../lib/columns.ts";
+import type { Column } from "../lib/columns.ts";
 import { jobKey } from "../lib/jobKey.ts";
 import { matchJob, parseTerms } from "../lib/jobSearch.ts";
 import type { WebJob } from "../lib/types.ts";
@@ -29,8 +29,9 @@ export function useJobSearch(board: BoardModel): JobSearchModel {
   const terms = useMemo(() => parseTerms(query), [query]);
 
   return useMemo(() => {
+    const columns = Object.keys(byColumn) as Column[];
     let total = 0;
-    for (const col of COLUMNS) total += byColumn[col].length;
+    for (const col of columns) total += byColumn[col]?.length ?? 0;
 
     if (terms.length === 0) {
       return {
@@ -55,9 +56,10 @@ export function useJobSearch(board: BoardModel): JobSearchModel {
 
     const cols = {} as Record<Column, WebJob[]>;
     let matched = 0;
-    for (const col of COLUMNS) {
-      cols[col] = byColumn[col].filter(keep);
-      matched += cols[col].length;
+    for (const col of columns) {
+      const kept = (byColumn[col] ?? []).filter(keep);
+      cols[col] = kept;
+      matched += kept.length;
     }
 
     return {

@@ -3,6 +3,7 @@
 // so ApiError keeps it verbatim and the status beside it.
 
 import type {
+  AddLaneResult,
   AddLinkResult,
   CreateJobBody,
   DirsResponse,
@@ -142,6 +143,8 @@ export const killJob = slugAction("/api/kill");
 export const reactivateJob = slugAction("/api/reactivate", { timeoutMs: SUBMIT_TIMEOUT_MS });
 export const retryJob = slugAction("/api/retry", { timeoutMs: SUBMIT_TIMEOUT_MS });
 export const archiveJob = slugAction("/api/archive");
+/** WATCH: pi is told to watch over the shipped work (the watch prompt) and the job parks in WATCHING; relaunches pi when it is gone */
+export const watchJob = slugAction("/api/watch", { timeoutMs: SUBMIT_TIMEOUT_MS });
 export const unarchiveJob = slugAction("/api/unarchive");
 export const deleteJob = slugAction("/api/delete");
 /** ⌘-click on a card (or the overlay's dir): open the job's directory in the editor — VS Code unless DRIVER_EDITOR says otherwise. */
@@ -151,6 +154,28 @@ export const seenJob = slugAction("/api/job/seen");
 
 export const reorderColumn = (column: Column, slugs: readonly string[]) =>
   postJSON<OkResponse>("/api/reorder", { column, slugs });
+
+/** The board's full column order, state columns and lanes alike. */
+export const reorderColumns = (columns: readonly Column[]) =>
+  postJSON<OkResponse>("/api/columns", { columns });
+
+/** What WATCH says to pi; "" goes back to the default. */
+export const setWatchPrompt = (text: string) => postJSON<OkResponse>("/api/watch-prompt", { text });
+
+// ------------------------------------------------------------------ lanes
+
+export const addLane = (name: string) => postJSON<AddLaneResult>("/api/lanes", { op: "add", name });
+
+export const renameLane = (id: number, name: string) =>
+  postJSON<OkResponse>("/api/lanes", { op: "rename", id, name });
+
+export const removeLane = (id: number) => postJSON<OkResponse>("/api/lanes", { op: "remove", id });
+
+/** The lane endpoint; the drag table posts it for every drop into or out of a lane. */
+export const LANE_ENDPOINT = "/api/job/lane";
+
+/** Park a job in a lane; 0 returns it to the column its state names. */
+export const setJobLane = (slug: string, lane: number) => postJSON<OkResponse>(LANE_ENDPOINT, { slug, lane });
 
 // ------------------------------------------------------------ job fields
 

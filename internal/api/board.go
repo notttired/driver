@@ -12,12 +12,15 @@ import (
 
 // webBoard is GET /api/board (docs/API.md "Board").
 type webBoard struct {
-	Daemon     jobs.Status `json:"daemon"`
-	DaemonOK   bool        `json:"daemon_ok"`
-	Jobs       []webJob    `json:"jobs"`
-	Contract   int         `json:"contract"`
-	Operator   string      `json:"operator"`
-	DefaultDir string      `json:"default_dir"`
+	Daemon      jobs.Status `json:"daemon"`
+	DaemonOK    bool        `json:"daemon_ok"`
+	Jobs        []webJob    `json:"jobs"`
+	Lanes       []webLane   `json:"lanes"`
+	Columns     []string    `json:"columns"`
+	WatchPrompt string      `json:"watch_prompt"`
+	Contract    int         `json:"contract"`
+	Operator    string      `json:"operator"`
+	DefaultDir  string      `json:"default_dir"`
 }
 
 type webJob struct {
@@ -40,6 +43,13 @@ type webJob struct {
 	Reactivatable bool         `json:"reactivatable,omitempty"`
 	Attention     bool         `json:"attention,omitempty"` // turned blocked on its own, not opened since
 	Retryable     bool         `json:"retryable,omitempty"`
+	Lane          int64        `json:"lane,omitempty"`
+	Watching      bool         `json:"watching,omitempty"`
+}
+
+type webLane struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
 }
 
 type webLink struct {
@@ -100,6 +110,14 @@ func (a *API) buildBoard() (*webBoard, error) {
 	if err != nil {
 		return nil, err
 	}
+	lanes, err := st.ListLanes()
+	if err != nil {
+		return nil, err
+	}
+	columns, err := a.Svc.Columns()
+	if err != nil {
+		return nil, err
+	}
 	snap := a.Svc.Tmux.Snapshot()
 	now := time.Now().Unix()
 
@@ -109,19 +127,24 @@ func (a *API) buildBoard() (*webBoard, error) {
 	members := map[string][]int64{}
 	for _, j := range active {
 		byID[j.ID] = j
-		col := jobs.DisplayState(j)
+		col := jobs.BoardColumn(j)
 		members[col] = append(members[col], j.ID)
 	}
+	webLanes := make([]webLane, 0, len(lanes))
+	for _, l := range lanes {
+		webLanes = append(webLanes, webLane{ID: l.ID, Name: l.Name})
+	}
 	out := make([]webJob, 0, len(active)+len(archived))
-	for _, col := range jobs.Columns {
+	for _, col := range columns {
 		for _, id := range store.ApplyColumnOrder(members[col], order[col]) {
 			j := byID[id]
+			state := jobs.DisplayState(j)
 			sess := jobs.SessionName(j)
 			live := snap.Live(sess)
 			status := a.Svc.Cfg.ReadStatus(j)
 			obs := jobs.Observe(j, live, status, now)
 			retryable := false
-			if col == "blocked" && obs.Pi != nil {
+			if state == "blocked" && obs.Pi != nil {
 				if conv, err := a.conversations.record(j); err == nil {
 					retryable = jobs.PlanRetry(j, live, status, conv) != jobs.RetryNone
 					if msg, failed := conv.Failed(); failed {
@@ -131,10 +154,11 @@ func (a *API) buildBoard() (*webBoard, error) {
 			}
 			out = append(out, webJob{
 				Slug: j.Slug, Name: j.Name, Dir: j.Dir, Model: j.Model, Color: j.Color,
-				State: col, Outcome: j.Outcome, Live: live, Pi: obs.Pi,
+				State: state, Outcome: j.Outcome, Live: live, Pi: obs.Pi,
 				HasNotes: j.Notes != "", Links: webLinksFrom(links[j.ID]),
 				StartedAt: j.StartedAt, FinishedAt: j.FinishedAt, MTime: j.UpdatedAt,
 				Reactivatable: j.State == "done", Attention: j.AttentionAt != 0, Retryable: retryable,
+				Lane: j.LaneID, Watching: j.WatchingAt != 0,
 			})
 		}
 	}
@@ -149,11 +173,14 @@ func (a *API) buildBoard() (*webBoard, error) {
 	}
 	ds := a.Daemon.Status()
 	return &webBoard{
-		Daemon:     ds,
-		DaemonOK:   ds.LastTick != 0 && now-ds.LastTick <= daemonOKWindow,
-		Jobs:       out,
-		Contract:   Contract,
-		Operator:   a.Svc.Cfg.Operator,
-		DefaultDir: a.Svc.Cfg.DefaultDir,
+		Daemon:      ds,
+		DaemonOK:    ds.LastTick != 0 && now-ds.LastTick <= daemonOKWindow,
+		Jobs:        out,
+		Lanes:       webLanes,
+		Columns:     columns,
+		WatchPrompt: a.Svc.WatchPrompt(),
+		Contract:    Contract,
+		Operator:    a.Svc.Cfg.Operator,
+		DefaultDir:  a.Svc.Cfg.DefaultDir,
 	}, nil
 }

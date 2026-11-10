@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { age, bucketJobs, columnFor, dirBase, isJobColor, jobColorVar, JOB_COLORS, jobTitle, nameColorVar } from "./format.ts";
+import { age, bucketJobs, columnFor, columnOf, dirBase, isJobColor, jobColorVar, JOB_COLORS, jobTitle, nameColorVar } from "./format.ts";
 import { makeJob } from "../test/fixtures.ts";
 
 describe("jobTitle", () => {
@@ -47,6 +47,28 @@ describe("bucketJobs", () => {
     expect(b.byColumn.draft).toEqual([]);
     expect(b.byColumn.done).toEqual([]);
     expect(b.archived).toEqual([]);
+  });
+
+  it("puts a parked job in its lane, whatever its state, and seeds an empty bucket per lane", () => {
+    const jobs = [
+      makeJob({ slug: "a", state: "working", lane: 3 }),
+      makeJob({ slug: "b", state: "working" }),
+      makeJob({ slug: "c", state: "done", lane: 3 }),
+      makeJob({ slug: "d-1", display_slug: "d", state: "done", lane: 3, archived: true }),
+    ];
+    const b = bucketJobs(jobs, [{ id: 3, name: "later" }, { id: 5, name: "review" }]);
+    expect(b.byColumn["lane:3"]?.map((j) => j.slug)).toEqual(["a", "c"]);
+    expect(b.byColumn["lane:5"]).toEqual([]);
+    expect(b.byColumn.working.map((j) => j.slug)).toEqual(["b"]);
+    expect(b.byColumn.done).toEqual([]);
+    expect(b.archived.map((j) => j.slug)).toEqual(["d-1"]);
+    expect(bucketJobs(jobs).byColumn["lane:3"]?.map((j) => j.slug)).toEqual(["a", "c"]);
+    expect(columnOf(makeJob({ state: "blocked", lane: 7 }))).toBe("lane:7");
+    expect(columnOf(makeJob({ state: "blocked" }))).toBe("blocked");
+    expect(columnOf(makeJob({ state: "blocked", lane: 0 }))).toBe("blocked");
+    expect(columnOf(makeJob({ state: "working", watching: true }))).toBe("watching");
+    expect(columnOf(makeJob({ state: "working", watching: true, lane: 7 }))).toBe("watching");
+    expect(bucketJobs([]).byColumn.watching).toEqual([]);
   });
 });
 

@@ -311,6 +311,139 @@ func TestRetry(t *testing.T) {
 	}
 }
 
+func TestWatch(t *testing.T) {
+	if !NewTmux().Available() {
+		t.Skip("tmux not on PATH")
+	}
+	sock, err := os.MkdirTemp("", "drvtmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(sock) })
+	t.Setenv("TMUX_TMPDIR", sock)
+	t.Setenv("TMUX", "")
+	t.Cleanup(func() { NewTmux().run("kill-server") })
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	home, work := t.TempDir(), t.TempDir()
+	fakePi := filepath.Join(t.TempDir(), "pi")
+	os.WriteFile(fakePi, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$DRIVER_JOB_DIR/argv\"\ncat > \"$DRIVER_JOB_DIR/typed\"\n"), 0o755)
+	svc := &Service{Store: st, Cfg: Config{Home: home, Port: 7781, PiBin: fakePi}, Tmux: NewTmux()}
+	d := NewDaemon(svc)
+
+	draft, err := svc.Create("fresh", "", work, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Watch(draft); !IsRefusal(err) {
+		t.Fatalf("a not-started draft has no pi to watch with: %v", err)
+	}
+
+	j, err := svc.Create("ship", "", work, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Submit(j); err != nil {
+		t.Fatal(err)
+	}
+	j, _ = st.GetJobBySlug("ship")
+	sess, jobDir := SessionName(j), filepath.Dir(j.PiSession)
+	read := func(name string) string {
+		b, _ := os.ReadFile(filepath.Join(jobDir, name))
+		return string(b)
+	}
+	waitFor := func(what string, ok func() bool) {
+		t.Helper()
+		for deadline := time.Now().Add(5 * time.Second); !ok(); time.Sleep(20 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %s", what)
+			}
+		}
+	}
+	waitFor("pi to start", func() bool { return read("argv") != "" })
+
+	if err := svc.SetWatchPrompt("Watch it.\nAll of it."); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Watch(j); err != nil {
+		t.Fatal(err)
+	}
+	waitFor("the prompt pasted into the pane", func() bool { return strings.Contains(read("typed"), "All of it.") })
+	if !strings.Contains(read("typed"), "Watch it.") {
+		t.Fatalf("typed: %q", read("typed"))
+	}
+	got, _ := st.GetJobBySlug("ship")
+	if got.WatchingAt == 0 || got.State != "ready" || BoardColumn(got) != Watching {
+		t.Fatalf("after watch on a live pane: %+v", got)
+	}
+	if order, _ := st.GetBoardOrder(); !equalIDs(order[Watching], []int64{j.ID}) {
+		t.Fatalf("a watched job arrives in WATCHING: %v", order)
+	}
+	if err := svc.Watch(got); !IsRefusal(err) {
+		t.Fatalf("watching twice: %v", err)
+	}
+
+	// the watch is over: pi goes idle and the daemon moves the job to DONE
+	if _, err := st.UpdateJobFields(got.ID, got.Rev, map[string]any{"state": "working"}); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(jobDir, "status.json"), []byte(`{"state":"idle"}`), 0o644)
+	svc.Tmux.Invalidate()
+	for i := 0; i < 2; i++ {
+		if _, err := d.tick(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _ = st.GetJobBySlug("ship")
+	if got.State != "done" || got.WatchingAt != 0 || got.Outcome != "accepted" {
+		t.Fatalf("after the watch: %+v", got)
+	}
+	waitFor("the session to be gone", func() bool { svc.Tmux.Invalidate(); return !svc.Tmux.HasSession(sess) })
+	if order, _ := st.GetBoardOrder(); !equalIDs(order["done"], []int64{j.ID}) || len(order[Watching]) != 0 {
+		t.Fatalf("a finished watch lands last in DONE: %v", order)
+	}
+
+	// a done job: pi comes back on its conversation with the prompt as its first message
+	os.Remove(filepath.Join(jobDir, "argv"))
+	if err := svc.Watch(got); err != nil {
+		t.Fatal(err)
+	}
+	waitFor("pi to start again", func() bool { return read("argv") != "" })
+	if args := read("argv"); !strings.Contains(args, "--session\n"+j.PiSession+"\n") || !strings.HasSuffix(args, "--\nWatch it.\nAll of it.\n") {
+		t.Fatalf("a relaunch carries the prompt:\n%s", args)
+	}
+	got, _ = st.GetJobBySlug("ship")
+	if got.State != "working" || got.WatchingAt == 0 || svc.Tmux.PaneDead(SessionName(got)) {
+		t.Fatalf("after watch on a done job: %+v", got)
+	}
+
+	// a problem stops the watch: pi asks, the job stays in WATCHING for you
+	os.WriteFile(filepath.Join(jobDir, "status.json"), []byte(`{"state":"dialog"}`), 0o644)
+	svc.Tmux.Invalidate()
+	for i := 0; i < 2; i++ {
+		if _, err := d.tick(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _ = st.GetJobBySlug("ship")
+	if got.State != "blocked" || got.WatchingAt == 0 || got.AttentionAt == 0 {
+		t.Fatalf("a question during the watch: %+v", got)
+	}
+
+	// dragged home, or into a lane: no longer watching, pi left alone
+	if err := svc.SetLane(got, 0); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = st.GetJobBySlug("ship")
+	if got.WatchingAt != 0 || BoardColumn(got) != "blocked" || svc.Tmux.PaneDead(SessionName(got)) {
+		t.Fatalf("unwatched: %+v", got)
+	}
+}
+
 func TestEditorArgv(t *testing.T) {
 	cases := []struct{ editor, code, dir, want string }{
 		{"", "/usr/local/bin/code", "/w d", "/usr/local/bin/code|/w d"},
@@ -851,6 +984,30 @@ func TestFork(t *testing.T) {
 		t.Errorf("a draft without a transcript needs no job dir: %v", err)
 	}
 
+	// a parked job's fork is parked beside it
+	lane, err := svc.AddLane("later")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetLane(aaa, lane.ID); err != nil {
+		t.Fatal(err)
+	}
+	aaa, _ = st.GetJobBySlug("aaa")
+	laneFork, err := svc.Fork(aaa, "aaa-fork", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if laneFork.LaneID != lane.ID {
+		t.Fatalf("lane fork: %+v", laneFork)
+	}
+	order, _ = st.GetBoardOrder()
+	if want := []int64{aaa.ID, laneFork.ID}; !equalIDs(order[store.LaneColumn(lane.ID)], want) {
+		t.Fatalf("lane order %v want %v", order[store.LaneColumn(lane.ID)], want)
+	}
+	if want := []int64{zzz.ID, src.ID, fork.ID}; !equalIDs(order["draft"], want) {
+		t.Fatalf("draft order after parking %v want %v", order["draft"], want)
+	}
+
 	// refusals leave nothing behind
 	for _, c := range []struct{ to, name string }{{"orig", "x"}, {"orig-fork", "x"}, {"Bad Slug", "x"}} {
 		if _, err := svc.Fork(src, c.to, c.name); !IsRefusal(err) {
@@ -860,7 +1017,7 @@ func TestFork(t *testing.T) {
 	if _, err := svc.Fork(src, "long", strings.Repeat("x", MaxNameLen+1)); !errors.Is(err, ErrBadInput) {
 		t.Errorf("long name: %v", err)
 	}
-	if all, _ := st.ListJobs(); len(all) != 4 {
+	if all, _ := st.ListJobs(); len(all) != 5 {
 		t.Fatalf("jobs after refusals: %d", len(all))
 	}
 
@@ -986,6 +1143,15 @@ func TestArchiveStale(t *testing.T) {
 	put("done-a", "done")
 	put("done-b", "done")
 	put("busy", "working")
+	put("done-parked", "done")
+	parked, _ := st.GetJobBySlug("done-parked")
+	lane, err := svc.AddLane("later")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetLane(parked, lane.ID); err != nil {
+		t.Fatal(err)
+	}
 	live := put("done-live", "done")
 	if err := svc.Tmux.NewSession(FreshSessionName(live), work, "w", live.Slug, "sleep 60"); err != nil {
 		t.Fatal(err)
@@ -1014,8 +1180,8 @@ func TestArchiveStale(t *testing.T) {
 	if got := sweep(25 * time.Hour); strings.Join(got, " ") != "done-a done-b" {
 		t.Fatalf("done for a day: archived %v", got)
 	}
-	if got := strings.Join(active(), " "); got != "busy done-live" {
-		t.Fatalf("left on the board: %s (a live session stays, and so does a job that is not done)", got)
+	if got := strings.Join(active(), " "); got != "busy done-live done-parked" {
+		t.Fatalf("left on the board: %s (a live session stays, and so do a job that is not done and a parked one)", got)
 	}
 	arch, _ := st.ListArchivedJobs()
 	if len(arch) != 2 {
