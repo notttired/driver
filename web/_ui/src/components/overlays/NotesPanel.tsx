@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
-import { saveJobNotes } from "../../api/client.ts";
+import { fetchJobNotes, saveJobNotes } from "../../api/client.ts";
 import { useDebouncedDraft } from "../../hooks/useDebouncedDraft.ts";
+import { usePoll } from "../../hooks/usePoll.ts";
 
 export const NOTES_AUTOSAVE_MS = 600;
+export const NOTES_POLL_MS = 3000;
 
 export interface NotesPanelProps {
   slug: string;
@@ -21,19 +23,27 @@ type SaveState =
   | { kind: "error"; message: string };
 
 /** Free-form notes, autosaved 600ms after the last keystroke. Keyed by slug
- *  from the overlay, so a different job is a fresh mount. */
+ *  from the overlay, so a different job is a fresh mount. Polled, so what pi
+ *  writes to them (its driver_notes tool) shows up while you have nothing
+ *  unsaved; what you are typing wins over it. */
 export function NotesPanel({ slug, initial, onSaved, registerFlush }: NotesPanelProps) {
   const [text, setText] = useState(initial);
   const [save, setSave] = useState<SaveState>({ kind: "idle" });
   const inflight = useRef<Promise<void> | null>(null);
+  const typed = useRef(initial);
+  typed.current = text;
+  const held = useRef(initial);
+  const saves = useRef(0);
 
   const sync = useDebouncedDraft(
     slug,
     text,
     (s, t) => {
+      saves.current++;
       setSave({ kind: "saving" });
       const p = saveJobNotes(s, t)
         .then(() => {
+          if (inflight.current === p) held.current = t;
           setSave({ kind: "saved" });
           onSaved?.();
         })
@@ -47,6 +57,16 @@ export function NotesPanel({ slug, initial, onSaved, registerFlush }: NotesPanel
     },
     NOTES_AUTOSAVE_MS,
   );
+
+  usePoll(async (signal) => {
+    const before = saves.current;
+    const { text: t } = await fetchJobNotes(slug, signal);
+    if (saves.current !== before || inflight.current || t === held.current || typed.current !== held.current) return;
+    held.current = t;
+    sync.cancel();
+    sync.markSynced(t);
+    setText(t);
+  }, NOTES_POLL_MS);
 
   useEffect(() => {
     if (!registerFlush) return;
@@ -74,7 +94,7 @@ export function NotesPanel({ slug, initial, onSaved, registerFlush }: NotesPanel
       <textarea
         className="notes-text"
         id="job-notes"
-        placeholder="notes to self — context, what to check next (never shown to pi)"
+        placeholder="notes to self — context, what to check next (pi reads or changes them only when you ask)"
         spellCheck={false}
         value={text}
         onChange={(e) => setText(e.target.value)}

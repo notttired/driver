@@ -345,6 +345,7 @@ dev-web:
 test:
 	@test -d web/_ui/dist || $(MAKE) web-assets
 	go test ./...
+	node --test ext/driver.test.ts
 	cd web/_ui && npm test --if-present
 
 # node_modules is deliberately NOT removed: it is expensive to rebuild and

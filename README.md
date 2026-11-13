@@ -138,8 +138,12 @@ on its conversation for the second, continuing it when it died mid-turn. Jobs
 that finished and wait on you are left alone.
 Archived jobs free their slug and can be unarchived or deleted.
 
-**Notes, the record and links.** Notes are yours — autosaved, never shown to
-pi. The conversation record follows pi's session file as it grows (and follows
+**Notes, the record and links.** Notes are yours — autosaved, and pi reads
+or changes them only when you ask it to ("save that to my notes", "what's in
+my notes?", "tidy my notes"): its `driver_notes` tool reads them, adds to the
+end after a blank line, or rewrites them whole. What pi writes shows in the
+panel within a few seconds; while you have unsaved typing there, yours wins.
+The conversation record follows pi's session file as it grows (and follows
 pi to the new file a `/fork` or `/new` inside it starts): each of your
 messages, then the last thing pi said before it stopped (an interrupted or
 failed turn is marked as such). pi's answers render as markdown — headings,

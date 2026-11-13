@@ -230,23 +230,52 @@ func (a *API) jobFork(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) jobNotes(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		q := r.URL.Query()
+		j, err := a.notesJob(strings.TrimSpace(q.Get("slug")), q.Get("job_dir"))
+		if err != nil {
+			writeFailure(w, "notes", err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"text": j.Notes})
+		return
+	}
 	var req struct {
-		Slug string `json:"slug"`
-		Text string `json:"text"`
+		Slug   string `json:"slug"`
+		JobDir string `json:"job_dir"`
+		Op     string `json:"op"`
+		Text   string `json:"text"`
 	}
 	if !decodePost(w, r, &req) {
 		return
 	}
-	j, err := a.Svc.Lookup(req.Slug)
+	j, err := a.notesJob(req.Slug, req.JobDir)
 	if err != nil {
 		writeFailure(w, "notes", err)
 		return
 	}
-	if err := a.Svc.SetNotes(j, req.Text); err != nil {
+	switch req.Op {
+	case "", "replace":
+		err = a.Svc.SetNotes(j, req.Text)
+	case "append":
+		err = a.Svc.AppendNotes(j, req.Text)
+	default:
+		writeError(w, http.StatusBadRequest, "op must be replace or append")
+		return
+	}
+	if err != nil {
 		writeFailure(w, "notes", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// notesJob is the board's job by slug, or pi's by the job dir it runs in.
+func (a *API) notesJob(slug, jobDir string) (*store.Job, error) {
+	if jobDir != "" {
+		return a.Svc.LookupJobDir(jobDir)
+	}
+	return a.Svc.Lookup(slug)
 }
 
 func (a *API) jobLinks(w http.ResponseWriter, r *http.Request) {

@@ -33,7 +33,16 @@ usage, accounts, self-update) is left out on purpose.
   opens on its pane; the first message is typed to pi itself. A job whose pi is
   up but has not been briefed stays in DRAFT (stored `ready`) and moves to
   WORKING by itself when pi starts on that message.
-- Notes are private to the operator; they never enter pi's context.
+- Notes are the operator's; pi reads or changes them only when asked
+  (2026-11-13). The extension gives pi a `driver_notes` tool (read, append,
+  replace) whose guidelines tell it to use the tool only when the operator
+  asks — a prompt rule, not a lock. The tool finds its job by the job dir it
+  was started in (`DRIVER_JOB_DIR`), which a rename leaves alone, never by
+  `DRIVER_JOB_SLUG`, which a rename makes stale. The notes panel polls them
+  every 3s and takes what is on the daemon whenever it has nothing unsaved;
+  while the operator has unsaved typing, theirs wins and the autosave
+  overwrites whatever pi wrote in those few hundred milliseconds. Until
+  2026-11-13 notes never entered pi's context.
 - Links: URLs with a detected kind (GitHub PR, GitHub, Slack, Linear, other)
   and no labels — a chip reads as the PR number or the host. GitHub PR links
   show open/draft/merged/closed, polled with `gh`. Attached by hand (typed, or
@@ -120,8 +129,9 @@ internal/util/        env file loader, small helpers
 web/embed.go          //go:embed all:_ui/dist
 web/serve.go          static files + /api mux on 127.0.0.1:<port>
 web/_ui/              Vite + React + TypeScript SPA (kraken's board, trimmed) + xterm.js + react-markdown
-ext/driver.ts         the pi extension (status.json writer); embedded in the binary and
-                      written to ~/.driver/ext/driver.ts on every serve start
+ext/driver.ts         the pi extension (status.json writer, the driver_notes tool); embedded
+                      in the binary and written to ~/.driver/ext/driver.ts on every serve start;
+                      ext/driver.test.ts runs under `node --test`
 macos/                Driver.app: DriverApp.swift, ServerConfig.swift, project.yml,
                       Generated-Info.plist, build-without-xcode.sh, AppIcon-1024.png
 Makefile              build · install · install-serve (launchd) · mac · install-mac · dev · test
@@ -331,7 +341,11 @@ written without a rev bump so it neither ages the card nor trips the tick).
 session branch holds no user message yet — a fresh job at its prompt — else idle),
 `agent_start` (working), `tool_execution_start/end` (tool name), `ui_prompt_start`
 (dialog) / `ui_prompt_end`, `agent_settled` (idle when `ctx.isIdle()`, aborted when
-`e.aborted`), `session_shutdown` (exited). Type import:
+`e.aborted`), `session_shutdown` (exited). With `DRIVER_SERVE` set it also
+registers `driver_notes` (`action` read | append | replace, `text`), which
+calls `/api/job/notes` with `job_dir` (docs/API.md); its parameters are plain
+JSON Schema and it imports nothing but Node built-ins, so `node --test` loads
+the file outside pi. Type import:
 `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";`.
 
 **Following pi's session file.** pi can leave the file it was launched on

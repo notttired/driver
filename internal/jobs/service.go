@@ -797,6 +797,34 @@ func (s *Service) SetNotes(j *store.Job, text string) error {
 	return mapStoreErr(err)
 }
 
+// AppendNotes adds text at the end of the notes, after a blank line.
+func (s *Service) AppendNotes(j *store.Job, text string) error {
+	text = strings.Trim(text, "\n")
+	if strings.TrimSpace(text) == "" {
+		return fmt.Errorf("nothing to add: %w", ErrBadInput)
+	}
+	if strings.TrimSpace(j.Notes) == "" {
+		return s.SetNotes(j, text)
+	}
+	return s.SetNotes(j, strings.TrimRight(j.Notes, "\n")+"\n\n"+text)
+}
+
+// LookupJobDir finds the active job whose session files live in dir: the
+// DRIVER_JOB_DIR its pi was started with, which a rename leaves alone.
+func (s *Service) LookupJobDir(dir string) (*store.Job, error) {
+	all, err := s.Store.ListJobs()
+	if err != nil {
+		return nil, err
+	}
+	dir = filepath.Clean(dir)
+	for _, j := range all {
+		if s.Cfg.JobDir(j) == dir {
+			return j, nil
+		}
+	}
+	return nil, store.ErrNotFound
+}
+
 // AddLink attaches a URL with its detected kind, pinned; a duplicate is a
 // refusal.
 func (s *Service) AddLink(j *store.Job, rawURL string) (*store.Link, error) {

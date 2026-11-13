@@ -185,6 +185,9 @@ export const setJobColor = (slug: string, color: string) =>
 export const renameJob = (slug: string, to: string, name: string) =>
   postJSON<RenameResult>("/api/job/rename", { slug, to, name });
 
+export const fetchJobNotes = (slug: string, signal?: AbortSignal) =>
+  getJSON<{ text: string }>(`/api/job/notes?slug=${encodeURIComponent(slug)}`, signal);
+
 export const saveJobNotes = (slug: string, text: string) =>
   postJSON<OkResponse>("/api/job/notes", { slug, text });
 
