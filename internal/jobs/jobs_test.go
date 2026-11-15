@@ -311,6 +311,116 @@ func TestRetry(t *testing.T) {
 	}
 }
 
+// TestRetryAtStart: the machine shut down under the jobs, driver starts at
+// login and brings back every job whose pi was gone by then, as RETRY would.
+func TestRetryAtStart(t *testing.T) {
+	if !NewTmux().Available() {
+		t.Skip("tmux not on PATH")
+	}
+	sock, err := os.MkdirTemp("", "drvtmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(sock) })
+	t.Setenv("TMUX_TMPDIR", sock)
+	t.Setenv("TMUX", "")
+	t.Cleanup(func() { NewTmux().run("kill-server") })
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	home, work := t.TempDir(), t.TempDir()
+	fakePi := filepath.Join(t.TempDir(), "pi")
+	os.WriteFile(fakePi, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$DRIVER_JOB_DIR/argv\"\ncat > \"$DRIVER_JOB_DIR/typed\"\n"), 0o755)
+	svc := &Service{Store: st, Cfg: Config{Home: home, Port: 7781, PiBin: fakePi}, Tmux: NewTmux()}
+
+	waitFor := func(what string, ok func() bool) {
+		t.Helper()
+		for deadline := time.Now().Add(5 * time.Second); !ok(); time.Sleep(20 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %s", what)
+			}
+		}
+	}
+	read := func(j *store.Job, name string) string {
+		b, _ := os.ReadFile(filepath.Join(filepath.Dir(j.PiSession), name))
+		return string(b)
+	}
+	answered := `{"type":"message","id":"a1","parentId":"u1","message":{"role":"assistant","content":[{"type":"text","text":"Done."}],"stopReason":"stop"}}`
+	open := func(slug, state, status, lastTurn string) *store.Job {
+		t.Helper()
+		j, err := svc.Create(slug, "", work, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := svc.Submit(j); err != nil {
+			t.Fatal(err)
+		}
+		j, _ = st.GetJobBySlug(slug)
+		waitFor(slug+"'s pi to start", func() bool { return read(j, "argv") != "" })
+		body := `{"type":"session","version":3,"id":"h"}` + "\n" +
+			`{"type":"message","id":"u1","parentId":"h","message":{"role":"user","content":"Go."}}` + "\n" + lastTurn
+		if err := os.WriteFile(j.PiSession, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(filepath.Join(filepath.Dir(j.PiSession), "status.json"), []byte(`{"state":"`+status+`"}`), 0o644)
+		if _, err := st.UpdateJobFields(j.ID, j.Rev, map[string]any{"state": state}); err != nil {
+			t.Fatal(err)
+		}
+		j, _ = st.GetJobBySlug(slug)
+		return j
+	}
+
+	midTurn := open("mid-turn", "working", "working", "")
+	waiting := open("waiting", "blocked", "idle", answered+"\n")
+	svc.Tmux.run("kill-server")
+	os.Remove(filepath.Join(filepath.Dir(midTurn.PiSession), "argv"))
+	os.Remove(filepath.Join(filepath.Dir(waiting.PiSession), "argv"))
+	survivor := open("survivor", "blocked", "idle", answered+"\n")
+	quitter := open("quitter", "blocked", "idle", answered+"\n")
+
+	d := NewDaemon(svc)
+	tick := func() {
+		t.Helper()
+		svc.Tmux.Invalidate()
+		if _, err := d.tick(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tick()
+	svc.Tmux.run("send-keys", "-t", "="+SessionName(quitter)+":", "C-d")
+	waitFor("the quitter's pi to exit", func() bool { return svc.Tmux.PaneDead(SessionName(quitter)) })
+	os.Remove(filepath.Join(filepath.Dir(quitter.PiSession), "argv"))
+	tick()
+	tick()
+
+	waitFor("the mid-turn job's pi to come back", func() bool { return read(midTurn, "argv") != "" })
+	if args := read(midTurn, "argv"); !strings.Contains(args, "--session\n"+midTurn.PiSession+"\n") || !strings.HasSuffix(args, "--\ncontinue\n") {
+		t.Fatalf("a turn cut off by the shutdown resumes with continue:\n%s", args)
+	}
+	if got, _ := st.GetJobBySlug("mid-turn"); got.State != "working" || svc.Tmux.PaneDead(SessionName(got)) {
+		t.Fatalf("mid-turn after start: %+v", got)
+	}
+
+	waitFor("the waiting job's pi to come back", func() bool { return read(waiting, "argv") != "" })
+	if args := read(waiting, "argv"); !strings.Contains(args, "--session\n"+waiting.PiSession+"\n") || strings.Contains(args, "continue") {
+		t.Fatalf("a job that waited on you comes back at its prompt:\n%s", args)
+	}
+	if got, _ := st.GetJobBySlug("waiting"); got.State != "blocked" || svc.Tmux.PaneDead(SessionName(got)) {
+		t.Fatalf("waiting after start: %+v", got)
+	}
+
+	if got, _ := st.GetJobBySlug("survivor"); got.Tmux != survivor.Tmux || got.StartedAt != survivor.StartedAt || svc.Tmux.PaneDead(SessionName(got)) {
+		t.Fatalf("a job whose pi was up is left alone: %+v", got)
+	}
+
+	if got, _ := st.GetJobBySlug("quitter"); got.State != "blocked" || !svc.Tmux.PaneDead(SessionName(got)) || read(quitter, "argv") != "" {
+		t.Fatalf("a pi that exits once driver is up stays exited: %+v", got)
+	}
+}
+
 func TestWatch(t *testing.T) {
 	if !NewTmux().Available() {
 		t.Skip("tmux not on PATH")

@@ -81,6 +81,9 @@ usage, accounts, self-update) is left out on purpose.
   `exited`). Both are told apart from a job that finished and waits on you:
   such cards read `✗ <error>` or `✕ exited`, the BLOCKED head carries
   `↻ retry N` for all of them, and the overlay a RETRY for one.
+- Retry at start (2026-11-15): a shutdown or a logout kills every pi, and
+  `driver serve` comes back at login to a board of `✕ exited` cards that sat
+  there until each was retried by hand. Now the daemon retries them itself.
 - ⌘-click on a card (or on the dir in the overlay head) opens the job's
   directory in VS Code: the daemon runs `code <dir>` (`DRIVER_EDITOR` swaps the
   command, `open -b com.microsoft.VSCode` covers a missing CLI). No editor
@@ -280,6 +283,14 @@ is its first prompt and the job is written `working` (ring off, last in
 WORKING); otherwise pi comes back at its prompt and the job stays blocked.
 Anything else — pi answered and waits, a dialog, an interrupt you sent — is
 refused: nothing to retry.
+
+**Retry at start**: the jobs whose pi is not live on the daemon's first tick
+(ready, working or blocked) are retried by the daemon once each, as soon as
+the tick has written them `blocked` (at once for a blocked or ready job, after
+the one-tick hold for a working one); the log reads `<slug>: brought back —
+its pi was gone when driver started`, or `not brought back: <refusal>`. A job
+whose pi comes back first (a RETRY by hand) or that leaves the open states is
+dropped from the set. A pi that exits while the daemon runs is left to you.
 
 **Fork** (`POST /api/job/fork {slug, to, name}`): a copy of the job under a new
 slug and name — dir, model, colour, spec, notes and links (`CopyLinks`, status

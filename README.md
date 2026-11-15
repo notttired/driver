@@ -135,7 +135,9 @@ leaves pi up on a failed turn (the card reads `✗ Connection error` and the
 like), a logout kills pi (`✕ exited`). `↻ retry N` in the BLOCKED head (or
 RETRY in the overlay) types `continue` into the first kind and starts pi again
 on its conversation for the second, continuing it when it died mid-turn. Jobs
-that finished and wait on you are left alone.
+that finished and wait on you are left alone. When driver starts — at login,
+after a shutdown or a logout took every pi with it — it retries each job whose
+pi is gone by itself; a pi you quit while driver runs stays quit.
 Archived jobs free their slug and can be unarchived or deleted.
 
 **Notes, the record and links.** Notes are yours — autosaved, and pi reads

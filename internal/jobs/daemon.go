@@ -41,6 +41,7 @@ type Daemon struct {
 	blockedSince map[int64]int    // job id → tick the current hold began
 	lastReason   map[int64]string // job id → last blocked reason seen
 	elsewhere    map[int64]string // job id → a session path pi reported outside the job dir, logged once
+	goneAtStart  map[int64]bool
 	scanner      *sessionScanner
 	prBackoff    map[string]time.Time // PR url → last failed gh call
 	ghMissing    bool
@@ -54,6 +55,7 @@ func NewDaemon(svc *Service) *Daemon {
 		blockedSince: map[int64]int{},
 		lastReason:   map[int64]string{},
 		elsewhere:    map[int64]string{},
+		goneAtStart:  map[int64]bool{},
 		scanner:      newSessionScanner(svc.Store),
 		prBackoff:    map[string]time.Time{},
 	}
@@ -128,6 +130,8 @@ func (d *Daemon) tick() (live int, firstErr error) {
 		isLive := snap.Live(sess)
 		if isLive {
 			live++
+		} else if d.tickN == 1 {
+			d.goneAtStart[j.ID] = true
 		}
 		st := d.svc.Cfg.ReadStatus(j)
 		if st != nil {
@@ -152,7 +156,8 @@ func (d *Daemon) tick() (live int, firstErr error) {
 			} else if tr.attention < 0 && j.AttentionAt != 0 {
 				fields["attention_at"] = int64(0)
 			}
-			if _, err := d.svc.Store.UpdateJobFields(j.ID, j.Rev, fields); err != nil {
+			rev, err := d.svc.Store.UpdateJobFields(j.ID, j.Rev, fields)
+			if err != nil {
 				note(fmt.Errorf("%s: write state %s: %w", j.Slug, state, err))
 				continue
 			}
@@ -167,6 +172,7 @@ func (d *Daemon) tick() (live int, firstErr error) {
 			if state == "blocked" {
 				d.notify(fmt.Sprintf("driver ⚑ %s — %s", j.DisplayName(), reason))
 			}
+			j.State, j.Rev = state, rev
 		} else if j.State == "blocked" && reason == "exited" && d.lastReason[j.ID] != "" && d.lastReason[j.ID] != "exited" {
 			// already blocked (idle) and now pi is gone: the exit itself is
 			// worth a notification (design: "or its pi exits")
@@ -176,6 +182,16 @@ func (d *Daemon) tick() (live int, firstErr error) {
 			d.lastReason[j.ID] = reason
 		} else {
 			delete(d.lastReason, j.ID)
+		}
+		if d.goneAtStart[j.ID] && (isLive || j.State == "blocked") {
+			delete(d.goneAtStart, j.ID)
+			if !isLive {
+				if err := d.svc.Retry(j); err != nil {
+					log.Printf("%s: not brought back: %v", j.Slug, err)
+				} else {
+					log.Printf("%s: brought back — its pi was gone when driver started", j.Slug)
+				}
+			}
 		}
 	}
 	archived, err := d.svc.ArchiveStale(jobs, now)
@@ -196,6 +212,11 @@ func (d *Daemon) tick() (live int, firstErr error) {
 	for id := range d.elsewhere {
 		if !seen[id] {
 			delete(d.elsewhere, id)
+		}
+	}
+	for id := range d.goneAtStart {
+		if !seen[id] {
+			delete(d.goneAtStart, id)
 		}
 	}
 	for _, j := range jobs {
