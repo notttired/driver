@@ -622,6 +622,45 @@ struct BoardWebView: NSViewRepresentable {
             return nil
         }
 
+        // window.confirm / window.alert — the board asks before it closes a
+        // thread, cancels a job or deletes one forever. A web view whose UI
+        // delegate lacks these answers a confirm with FALSE at once and shows
+        // nothing (the same no-delegate-no-behavior shape as createWebViewWith
+        // above): the question never appeared and the action quietly did not
+        // happen. A sheet on the shell window; a floating alert without one.
+        func webView(
+            _ webView: WKWebView,
+            runJavaScriptConfirmPanelWithMessage message: String,
+            initiatedByFrame frame: WKFrameInfo,
+            completionHandler: @escaping (Bool) -> Void
+        ) {
+            let alert = NSAlert()
+            alert.messageText = message
+            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: "Cancel")
+            present(alert, over: webView) { completionHandler($0 == .alertFirstButtonReturn) }
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            runJavaScriptAlertPanelWithMessage message: String,
+            initiatedByFrame frame: WKFrameInfo,
+            completionHandler: @escaping () -> Void
+        ) {
+            let alert = NSAlert()
+            alert.messageText = message
+            alert.addButton(withTitle: "OK")
+            present(alert, over: webView) { _ in completionHandler() }
+        }
+
+        private func present(_ alert: NSAlert, over webView: WKWebView, _ done: @escaping (NSApplication.ModalResponse) -> Void) {
+            if let window = webView.window {
+                alert.beginSheetModal(for: window, completionHandler: done)
+            } else {
+                done(alert.runModal())
+            }
+        }
+
         // <input type="file"> anywhere in the board. WebKit routes a
         // file-input click to this delegate method, and a UI delegate
         // WITHOUT it drops the click SILENTLY (the same
