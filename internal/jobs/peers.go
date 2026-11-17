@@ -86,11 +86,19 @@ func (s *Service) PeerUpdate(j *store.Job, self int64, seen map[string]bool) (Pe
 			return PeerUpdate{}, err
 		}
 		var rows []string
+		added := -1 // the index of the last message put in rows
 		for i, m := range conv.Messages {
 			if m.ID == "" || seen[m.ID] {
 				continue
 			}
+			// an answer whose question was heard before it was answered (it
+			// was in progress then, or the hearer was opened mid-turn) brings
+			// the question along, so the pair reads whole
+			if q := i - 1; m.Role == "assistant" && q >= 0 && added != q && conv.Messages[q].Role == "user" {
+				rows = append(rows, peerRow(p.Name, conv.Messages[q], false)+" — asked earlier")
+			}
 			rows = append(rows, peerRow(p.Name, m, conv.Pending && i == len(conv.Messages)-1))
+			added = i
 			up.Carried = append(up.Carried, pi.Carried{Thread: p.ID, Entry: m.ID})
 		}
 		if len(rows) == 0 {

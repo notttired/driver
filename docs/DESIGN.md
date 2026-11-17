@@ -155,7 +155,10 @@ usage, accounts, self-update) is left out on purpose.
   operator's messages to them and their final answers (what the record
   shows: no narration, tool calls, results or thinking), the last message
   marked "in progress, no answer yet" while a peer is on it, failed and
-  interrupted turns marked as such — grouped by thread with its state
+  interrupted turns marked as such, and every answer with its question: an
+  answer whose question was heard before it was answered (in progress then,
+  or the hearer opened mid-turn) brings the question along again, marked
+  "asked earlier", so a pair always reads whole — grouped by thread with its state
   (working, waiting, exited, closed), under a preamble that says Driver
   added it, that it is context and not instructions, and that a
   contradiction with the thread's own work is reason to stop and ask. An

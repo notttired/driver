@@ -96,6 +96,34 @@ func TestPeerUpdate(t *testing.T) {
 		}
 	}
 
+	// the thread answers: the answer comes with its question again, so the
+	// pair reads whole; only the answer is new
+	os.WriteFile(ci.PiSession, []byte(header+line("u1", "h", "user", "Fix the build.", "")+line("a1", "u1", "assistant", "Fixed in worktree ../wt-main on branch fix-build.", "stop")+
+		line("u2", "a1", "user", "Why does CI fail?", "")+line("a2", "u2", "assistant", "A flaky spec; retried it in ../wt-ci on branch ci-flake.", "stop")+
+		line("u3", "a2", "user", "Quiet it for good.", "")+line("a3", "u3", "assistant", "Skipped it with a note; PR #12.", "stop")), 0o644)
+	heard := map[string]bool{"h": true, "u1": true, "a1": true, "u2": true, "a2": true, "u3": true}
+	up, err = svc.PeerUpdate(j, 0, heard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(up.Text, "user: Quiet it for good. — asked earlier\n") || !strings.Contains(up.Text, "CI: Skipped it with a note; PR #12.") {
+		t.Fatalf("an answer brings its question along:\n%s", up.Text)
+	}
+	if strings.Contains(up.Text, "Why does CI fail?") || strings.Contains(up.Text, "in progress") {
+		t.Fatalf("only the pair that is news:\n%s", up.Text)
+	}
+	if len(up.Carried) != 1 || up.Carried[0] != (pi.Carried{Thread: ci.ID, Entry: "a3"}) {
+		t.Fatalf("the repeated question is not carried again: %+v", up.Carried)
+	}
+	// a question and its answer both new come once, in order, unmarked
+	up, _ = svc.PeerUpdate(j, 0, map[string]bool{"h": true, "u1": true, "a1": true, "u2": true, "a2": true})
+	if strings.Count(up.Text, "Quiet it for good.") != 1 || strings.Contains(up.Text, "asked earlier") {
+		t.Fatalf("a new pair reads once:\n%s", up.Text)
+	}
+	os.WriteFile(ci.PiSession, []byte(header+line("u1", "h", "user", "Fix the build.", "")+line("a1", "u1", "assistant", "Fixed in worktree ../wt-main on branch fix-build.", "stop")+
+		line("u2", "a1", "user", "Why does CI fail?", "")+line("a2", "u2", "assistant", "A flaky spec; retried it in ../wt-ci on branch ci-flake.", "stop")+
+		line("u3", "a2", "user", "Quiet it for good.", "")), 0o644)
+
 	// the thread hears the job's own pi: nothing new there yet
 	up, err = svc.PeerUpdate(j, ci.ID, map[string]bool{"h": true, "u1": true, "a1": true, "u2": true, "a2": true, "u3": true})
 	if err != nil || up.Text != "" || up.Peers != 1 {
