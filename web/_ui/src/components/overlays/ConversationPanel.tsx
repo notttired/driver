@@ -1,4 +1,4 @@
-import { Fragment, memo, useLayoutEffect, useRef } from "react";
+import { Fragment, memo, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
@@ -19,6 +19,10 @@ export interface ConversationPanelProps {
   opened: boolean;
   /** the board's word on pi, for the row of a turn still in progress */
   pi?: WebPi;
+  /** what heads the panel in place of its title (the sidebar's switch) */
+  head?: ReactNode;
+  /** another panel has the sidebar: stay mounted, out of sight */
+  hidden?: boolean;
   onOpenLink?: (url: string) => void;
 }
 
@@ -28,10 +32,11 @@ export interface ConversationPanelProps {
  * stopped — as the daemon reads them from the session file
  * (GET /api/job/conversation). The narration between tool calls, the tool
  * calls and their output stay in the pane. pi's rows render as markdown;
- * yours stay as typed. Polled while the overlay is open; the list keeps to
- * its end until you scroll up.
+ * yours stay as typed. Each card is clamped to a few lines and opens whole on
+ * a click. Polled while the overlay is open; the list keeps to its end until
+ * you scroll up.
  */
-export function ConversationPanel({ slug, thread = 0, opened, pi, onOpenLink }: ConversationPanelProps) {
+export function ConversationPanel({ slug, thread = 0, opened, pi, head, hidden, onOpenLink }: ConversationPanelProps) {
   const last = useRef<WebConversation | null>(null);
   const { data, error } = usePoll<WebConversation>(
     async (signal) => {
@@ -61,9 +66,9 @@ export function ConversationPanel({ slug, thread = 0, opened, pi, onOpenLink }: 
   const empty = !opened || (data !== undefined && messages.length === 0 && !pending);
 
   return (
-    <section className="side-panel convo-panel">
+    <section className="side-panel convo-panel" hidden={hidden}>
       <div className="side-head">
-        <b>CONVERSATION</b>
+        {head ?? <b>CONVERSATION</b>}
         <span className={"side-hint" + (error ? " err" : "")}>
           {error ? `✗ ${error.message}` : turns ? `${turns} ${turns === 1 ? "turn" : "turns"}` : ""}
         </span>
@@ -105,28 +110,62 @@ export function ConversationPanel({ slug, thread = 0, opened, pi, onOpenLink }: 
 }
 
 /** A row re-renders only when its message does — the record's rows are
- *  stable objects between revs, so a board poll does not re-parse them. */
+ *  stable objects between revs, so a board poll does not re-parse them. Its
+ *  body is clamped to a fixed height (CSS --convo-clamp lines) while it
+ *  overflows that; a click anywhere on the card — not on a link, not a text
+ *  selection — opens it whole and closes it again. */
 const MessageRow = memo(function MessageRow({ m }: { m: WebMessage }) {
   const you = m.role === "user";
   const when = clockLabel(m.ts);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const [clamped, setClamped] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  // whether the body overflows its clamp, measured after layout and again
+  // whenever its size changes (the sidebar's divider, a theme's font)
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const measure = () => {
+      if (expanded) return; // an open card is not clamped; keep the mark
+      setClamped(el.scrollHeight > el.clientHeight + 1);
+    };
+    measure();
+    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [m, expanded]);
+  const toggle = (e: React.MouseEvent<HTMLLIElement>) => {
+    if (!clamped) return;
+    if ((e.target as Element).closest("a[href]")) return;
+    if (window.getSelection()?.toString()) return;
+    const li = e.currentTarget;
+    setExpanded((v) => {
+      // an opened card reads from its top
+      if (!v && typeof li.scrollIntoView === "function") requestAnimationFrame(() => li.scrollIntoView({ block: "start", behavior: "smooth" }));
+      return !v;
+    });
+  };
   return (
-    <li className={"convo-msg " + (you ? "you" : "pi")}>
+    <li className={"convo-msg " + (you ? "you" : "pi") + (clamped ? " clamped" : "") + (expanded ? " expanded" : "")} onClick={toggle}>
       <span className="convo-who">
         {you ? "you" : "pi"}
         {when && m.ts ? <time dateTime={new Date(m.ts * 1000).toISOString()}>{when}</time> : null}
       </span>
-      {m.text ? (
-        you ? (
-          <p className="convo-text">{linkify(m.text)}</p>
-        ) : (
-          <div className="convo-text convo-md">
-            <Markdown remarkPlugins={MD_PLUGINS} components={MD_COMPONENTS}>
-              {m.text}
-            </Markdown>
-          </div>
-        )
-      ) : null}
-      {m.end ? <p className="convo-text convo-end">{endLabel(m)}</p> : null}
+      <div className="convo-body" ref={bodyRef}>
+        {m.text ? (
+          you ? (
+            <p className="convo-text">{linkify(m.text)}</p>
+          ) : (
+            <div className="convo-text convo-md">
+              <Markdown remarkPlugins={MD_PLUGINS} components={MD_COMPONENTS}>
+                {m.text}
+              </Markdown>
+            </div>
+          )
+        ) : null}
+        {m.end ? <p className="convo-text convo-end">{endLabel(m)}</p> : null}
+      </div>
+      {clamped ? <span className="convo-more">{expanded ? "⌃ less" : "⌄ more"}</span> : null}
     </li>
   );
 });

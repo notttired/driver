@@ -231,6 +231,13 @@ describe("BoardView (DOM smoke test)", () => {
     // no spec step: a job is briefed in its pane once pi is open
     expect(within(overlay).queryByLabelText(/SPEC/)).toBeNull();
     expect((within(overlay).getByPlaceholderText(/notes to self/) as HTMLTextAreaElement).value).toBe("check staging");
+    // the sidebar shows the conversation; NOTES is a tab beside it
+    expect(within(overlay).getByRole("tab", { name: /CONVERSATION/ })).toHaveAttribute("aria-selected", "true");
+    expect(within(overlay).getByPlaceholderText(/notes to self/).closest(".side-panel")).toHaveAttribute("hidden");
+    fireEvent.click(within(overlay).getByRole("tab", { name: /NOTES/ }));
+    expect(within(overlay).getByPlaceholderText(/notes to self/).closest(".side-panel")).not.toHaveAttribute("hidden");
+    expect(within(overlay).getByRole("tab", { name: /NOTES/ })).toHaveAttribute("aria-selected", "true");
+    expect(overlay.querySelector(".convo-panel")).toHaveAttribute("hidden");
     // links: a URL box only — no label field; a PR chip on the board reads as #N
     expect(within(overlay).getByLabelText("link url")).toBeInTheDocument();
     expect(within(overlay).queryByLabelText("link label")).toBeNull();

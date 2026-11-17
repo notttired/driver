@@ -927,22 +927,24 @@ body.splitting .term-pane, body.splitting .job-side { pointer-events: none; }
 
 /* sidebar panels */
 .side-panel { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
-/* notes and the conversation record share the top of the sidebar half and
-   half; links take what they need beneath */
-.side-split {
-  flex: 1 1 auto;
-  min-height: 220px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  border-bottom: 1px solid var(--border);
+/* the conversation record and the notes take turns at the top of the sidebar
+   (the switch in the head); links take what they need beneath */
+.side-main { flex: 1 1 auto; min-height: 220px; display: flex; flex-direction: column; border-bottom: 1px solid var(--border); }
+.side-main > .side-panel { flex: 1; min-width: 0; min-height: 0; border-bottom: 0; }
+.side-main > .side-panel[hidden] { display: none; }
+.side-switch { display: flex; gap: 2px; }
+.side-tab {
+  font: 600 9px/1 var(--display);
+  letter-spacing: 0.2em;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  padding: 2px 6px 4px;
+  cursor: pointer;
 }
-.side-split > .side-panel { min-width: 0; min-height: 0; border-bottom: 0; }
-.side-split > .side-panel + .side-panel { border-left: 1px solid var(--border); }
-@media (max-width: 600px) {
-  .side-split { grid-template-columns: 1fr; grid-template-rows: minmax(160px, 1fr) minmax(160px, 1fr); }
-  .side-split > .side-panel + .side-panel { border-left: 0; border-top: 1px solid var(--border); }
-}
-.notes-panel { min-height: 160px; }
+.side-tab:hover { color: var(--fg); }
+.side-tab.selected { color: var(--fg); border-bottom-color: var(--ac); cursor: default; }
 .links-panel { flex: 0 0 auto; }
 .side-head { display: flex; align-items: center; gap: 8px; }
 .side-head b { font: 600 9px/1 var(--display); letter-spacing: 0.2em; color: var(--muted); }
@@ -973,6 +975,22 @@ body.splitting .term-pane, body.splitting .job-side { pointer-events: none; }
   background: color-mix(in srgb, var(--ac) 3%, var(--b1));
 }
 .convo-msg.you { border-color: var(--accent-edge); background: color-mix(in srgb, var(--ac) 9%, var(--b1)); }
+/* a card shows --convo-clamp lines until clicked open; the fade says there is more */
+.convo-msg { --convo-clamp: 6; position: relative; }
+.convo-body { max-height: calc(var(--convo-clamp) * 1.6 * 10px); overflow: hidden; position: relative; }
+.convo-msg.clamped { cursor: pointer; }
+.convo-msg.clamped:not(.expanded) .convo-body::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 28px;
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--ac) 3%, var(--b1)));
+  pointer-events: none;
+}
+.convo-msg.you.clamped:not(.expanded) .convo-body::after { background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--ac) 9%, var(--b1))); }
+.convo-msg.expanded .convo-body { max-height: none; }
+.convo-more { align-self: flex-end; font: 500 8px/1 var(--mono); letter-spacing: 0.08em; color: var(--muted); }
+.convo-msg.clamped:hover .convo-more { color: var(--ac); }
 .convo-who { display: flex; align-items: baseline; gap: 8px; font: 600 8px/1 var(--display); letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
 .convo-msg.you .convo-who { color: var(--ac); }
 .convo-who time { font: 400 8px/1 var(--mono); letter-spacing: 0; text-transform: none; color: var(--muted); margin-left: auto; }

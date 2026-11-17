@@ -35,6 +35,7 @@ import { LinksPanel } from "./LinksPanel.tsx";
 import { NotesPanel } from "./NotesPanel.tsx";
 import { Overlay, type Mutate } from "./Overlay.tsx";
 import { RenameButton, RenameRow, useRenameControl, type RenameControlState } from "./RenameControl.tsx";
+import { SideSwitch, type SideView } from "./SideSwitch.tsx";
 import { SwatchStrip } from "./SwatchStrip.tsx";
 import { ThreadTabs } from "./ThreadTabs.tsx";
 
@@ -268,6 +269,9 @@ function JobPanel({
     [jobThreads, title, job?.live, job?.pi, job?.retryable],
   );
   const [thread, setThread] = useState(0);
+  // the sidebar: the conversation, or the notes when asked
+  const [side, setSide] = useState<SideView>("conversation");
+  const sideHead = <SideSwitch view={side} onSwitch={setSide} />;
   const cur: WebThread = threads.find((t) => t.id === thread) ?? threads[0] ?? { id: 0, name: title, live: false };
   useEffect(() => {
     if (thread !== 0 && !threads.some((t) => t.id === thread)) setThread(0);
@@ -502,14 +506,25 @@ function JobPanel({
         <aside className="job-side">
           {form !== null ? (
             <>
-              <div className="side-split">
+              <div className="side-main">
+                <ConversationPanel
+                  key={`${slug}:${cur.id}`}
+                  slug={slug}
+                  thread={cur.id}
+                  opened={opened}
+                  pi={cur.pi ?? job?.pi}
+                  head={sideHead}
+                  hidden={side !== "conversation"}
+                  onOpenLink={openLink}
+                />
                 <NotesPanel
                   slug={slug}
                   initial={form.notes}
+                  head={sideHead}
+                  hidden={side !== "notes"}
                   onSaved={() => void board.refetch()}
                   registerFlush={registerNotesFlush}
                 />
-                <ConversationPanel key={`${slug}:${cur.id}`} slug={slug} thread={cur.id} opened={opened} pi={cur.pi ?? job?.pi} onOpenLink={openLink} />
               </div>
               <LinksPanel
                 slug={slug}

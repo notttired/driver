@@ -127,3 +127,62 @@ describe("ConversationPanel", () => {
     expect(container.querySelectorAll(".convo-msg.you strong")).toHaveLength(0);
   });
 });
+
+describe("ConversationPanel cards", () => {
+  afterEach(() => {
+    cleanup();
+    fetchConversation.mockReset();
+    vi.restoreAllMocks();
+  });
+
+  /** jsdom lays nothing out: pretend every card body is taller than its clamp
+   *  (the long one) or fits (the short one) by its text. */
+  const pretendLayout = () => {
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (this: HTMLElement) {
+      return (this.textContent?.length ?? 0) > 60 ? 400 : 40;
+    });
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(96);
+  };
+
+  it("clamps a long card to a fixed height and expands it on click; a short card stays as it is", async () => {
+    pretendLayout();
+    const long = Array.from({ length: 30 }, (_, i) => `line ${i} of a long answer`).join("\n");
+    fetchConversation.mockResolvedValue({
+      rev: "1",
+      pending: false,
+      messages: [
+        { role: "user", text: "Short.", ts: 1 },
+        { role: "assistant", text: long, ts: 2 },
+      ],
+    });
+    render(<ConversationPanel slug="demo" opened />);
+    const cards = await screen.findAllByRole("listitem");
+    expect(cards).toHaveLength(2);
+    expect(cards[0]).not.toHaveClass("clamped");
+    expect(cards[0]!.querySelector(".convo-more")).toBeNull();
+    expect(cards[1]).toHaveClass("clamped");
+    expect(cards[1]).not.toHaveClass("expanded");
+    expect(cards[1]!.querySelector(".convo-more")).toHaveTextContent(/more/);
+
+    fireEvent.click(cards[1]!);
+    expect(cards[1]).toHaveClass("expanded");
+    expect(cards[1]!.querySelector(".convo-more")).toHaveTextContent(/less/);
+    fireEvent.click(cards[1]!);
+    expect(cards[1]).not.toHaveClass("expanded");
+  });
+
+  it("does not toggle a card when a link in it is clicked", async () => {
+    pretendLayout();
+    const onOpenLink = vi.fn();
+    fetchConversation.mockResolvedValue({
+      rev: "1",
+      pending: false,
+      messages: [{ role: "assistant", text: "see https://example.com/x " + "x".repeat(80), ts: 2 }],
+    });
+    render(<ConversationPanel slug="demo" opened onOpenLink={onOpenLink} />);
+    const card = (await screen.findAllByRole("listitem"))[0]!;
+    fireEvent.click(card.querySelector("a")!);
+    expect(onOpenLink).toHaveBeenCalledWith("https://example.com/x");
+    expect(card).not.toHaveClass("expanded");
+  });
+});

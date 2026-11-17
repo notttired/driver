@@ -521,7 +521,14 @@ with GitHub flavour: tables, task lists, strikethrough, bare URLs linked; a
 single newline is a line break, as in the pane; raw HTML shows as text, never
 as markup; only http(s) targets become links, opening in the browser like every
 link on the board). Your rows stay as typed, their URLs anchors as in the links
-panel.
+panel. Each row is a card clamped to six lines (`--convo-clamp`) while its
+body overflows that — measured after layout and on resize, so a short card is
+just a card — with a fade and a "more" mark; a click anywhere on it but a link
+or a selection opens it whole (scrolled to its top) and closes it again. The
+record has the sidebar's top to itself: CONVERSATION and NOTES are two tabs
+in its head over one space (the conversation by default), both panels staying
+mounted — the notes keep unsaved typing and the record its scroll — with the
+one not shown hidden; the links keep their place beneath.
 
 ## Terminal
 

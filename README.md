@@ -88,9 +88,10 @@ moves to **working** by itself. (A job cancelled back to draft shows a small
 form instead — directory, model, START — until it is started again.)
 
 **Reading it.** Click a card for the job overlay: the live pane on the left;
-on the right, your notes beside a record of the conversation — what you typed
-and pi's final answer to each message, without the narration between tool
-calls — and the links beneath. The pane is the real tmux session — type in it
+on the right, a record of the conversation — what you typed and pi's final
+answer to each message, without the narration between tool calls, each as a
+card a few lines tall that opens whole when clicked — with the links beneath,
+and NOTES beside CONVERSATION in its head to show your notes in its place. The pane is the real tmux session — type in it
 exactly as you would in a terminal (`tmux attach -t drv-<slug>-<id>` works too),
 ⌘← / ⌘→ jump to the start / end of the line in pi's editor as they do anywhere
 else on the Mac, ⌘⌫ deletes the whole line, and ⌘-click a URL in it to open it
