@@ -104,7 +104,10 @@ describe("ThreadTabs", () => {
 });
 
 describe("ThreadTabs keys", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    openThread.mockReset();
+  });
 
   const press = (code: string, extra: Partial<KeyboardEventInit> = {}) =>
     fireEvent.keyDown(document, { code, key: code === "BracketRight" ? "}" : "{", metaKey: true, shiftKey: true, ...extra });
@@ -126,6 +129,30 @@ describe("ThreadTabs keys", () => {
     render(<ThreadTabs slug="multi" threads={threads} current={0} onSelect={onSelect} onToast={() => {}} />);
     press("BracketLeft");
     expect(onSelect).toHaveBeenLastCalledWith(7);
+  });
+
+  it("⌘T opens a thread from the current tab under the default name, no box to fill, and selects it", async () => {
+    openThread.mockResolvedValue({ ok: true, thread: { id: 9, name: "thread 4", live: true } });
+    const onSelect = vi.fn();
+    const onChanged = vi.fn();
+    render(<ThreadTabs slug="multi" threads={threads} current={4} onSelect={onSelect} onChanged={onChanged} onToast={() => {}} />);
+    fireEvent.keyDown(document, { key: "t", metaKey: true });
+    await waitFor(() => expect(openThread).toHaveBeenCalledWith("multi", 4, "thread 4"));
+    await waitFor(() => expect(onSelect).toHaveBeenCalledWith(9));
+    expect(onChanged).toHaveBeenCalled();
+    expect(screen.queryByPlaceholderText(/name of the thread/i)).toBeNull();
+  });
+
+  it("⌘T tells you when the daemon refuses, and ignores ⌘⇧T, ⌥⌘T and plain T", async () => {
+    openThread.mockRejectedValue(new Error("dir is gone"));
+    const onToast = vi.fn();
+    render(<ThreadTabs slug="multi" threads={threads} current={0} onSelect={() => {}} onToast={onToast} />);
+    fireEvent.keyDown(document, { key: "T", metaKey: true, shiftKey: true });
+    fireEvent.keyDown(document, { key: "t", metaKey: true, altKey: true });
+    fireEvent.keyDown(document, { key: "t" });
+    expect(openThread).not.toHaveBeenCalled();
+    fireEvent.keyDown(document, { key: "t", metaKey: true });
+    await waitFor(() => expect(onToast).toHaveBeenCalledWith("new thread: dir is gone"));
   });
 
   it("leaves the brackets alone without both ⌘ and ⇧, and does nothing with one tab", () => {

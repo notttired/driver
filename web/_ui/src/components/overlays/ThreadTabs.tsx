@@ -87,26 +87,46 @@ export function ThreadTabs({ slug, threads, current, onSelect, onChanged, onToas
     setError("");
     setAdding(true);
   };
-  const submit = () => {
-    const trimmed = name.trim();
-    if (!trimmed || inFlight.current) return;
+  // open a thread from the current tab as `named`; the new tab is selected
+  // once the board knows it. The row shows a refusal; a key reports it as
+  // a toast.
+  const open = async (named: string, onError: (message: string) => void) => {
+    if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
     setError("");
-    void (async () => {
-      try {
-        const res = await openThread(slug, current, trimmed);
-        setAdding(false);
-        await onChanged?.();
-        onSelect(res.thread.id);
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        inFlight.current = false;
-        setBusy(false);
-      }
-    })();
+    try {
+      const res = await openThread(slug, current, named);
+      setAdding(false);
+      await onChanged?.();
+      onSelect(res.thread.id);
+    } catch (e: unknown) {
+      onError(e instanceof Error ? e.message : String(e));
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
   };
+  const submit = () => {
+    const trimmed = name.trim();
+    if (trimmed) void open(trimmed, setError);
+  };
+
+  // ⌘T: a thread from the current tab under the default name, no box to
+  // fill — the tab can be renamed later
+  const openRef = useRef(open);
+  openRef.current = open;
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey || e.key.toLowerCase() !== "t") return;
+      e.preventDefault();
+      void openRef.current(suggestThreadName(threadsRef.current), (message) => onToast(`new thread: ${message}`));
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onToast]);
   const close = (t: WebThread) => closeThreadNow(slug, t, { current, onSelect, onChanged, onToast });
   const rename = () => {
     if (!renaming) return;
@@ -181,7 +201,7 @@ export function ThreadTabs({ slug, threads, current, onSelect, onChanged, onToas
         <button
           type="button"
           className="thread-add"
-          title="new thread — another pi on this job, starting from a copy of this tab's conversation"
+          title="new thread (⌘T for one named by default) — another pi on this job, starting from a copy of this tab's conversation"
           hidden={adding}
           onClick={begin}
         >
