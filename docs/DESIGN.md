@@ -133,6 +133,40 @@ usage, accounts, self-update) is left out on purpose.
   copies the job's own pi only. The daemon follows a thread's session file,
   scans it for links (scan key `<job id>/t<thread id>`) and brings it back
   at start as it does the job's. v10 adds `threads`.
+- Threads: shared context (2026-11-17). The threads hear each other, at the
+  operator's pace. Every message the operator sends a thread arrives with
+  what the other threads said since that thread last heard from them — the
+  operator's messages to them and their final answers (what the record
+  shows: no narration, tool calls, results or thinking), the last message
+  marked "in progress, no answer yet" while a peer is on it, failed and
+  interrupted turns marked as such — grouped by thread with its state
+  (working, waiting, exited, closed), under a preamble that says Driver
+  added it, that it is context and not instructions, and that a
+  contradiction with the thread's own work is reason to stop and ask. An
+  update never wakes a thread: the extension asks the daemon at
+  `before_agent_start` (a message of the operator's starting a run) and at
+  `turn_end` when a message of the operator's is queued for delivery (it
+  lands right before it). The update is a `custom_message` of type
+  `driver-peers` (`pi.PeersType`) — a user-role message in the model's
+  context — whose `details.carried` names every peer message it brought
+  (thread id, entry id). What a thread has heard is read from its live
+  branch, never a stored marker: the extension sends the daemon every entry
+  id on the branch (a thread opened from another shares its entries up to
+  the fork, so a peer's older messages are not news) and every id its
+  `driver-peers` messages carried; a `/tree` jump to an older point
+  therefore hears again what the abandoned branch had heard. Closed threads
+  speak too. Final answers only is a deliberate trade: a peer's reasoning is
+  noise to another agent, and the evidence (errors, file contents, output)
+  is one `driver_threads` call away — `history` renders a thread's whole
+  branch (`pi.Transcript`: every message, tool call and result, results cut
+  to 2000 characters). While a job has other threads, open or closed, each
+  pi's system prompt carries a `driver_threads` section with the rules: a
+  git worktree of its own before the first change to files or git (threads
+  share one checkout; by instruction, since the agent manages its own
+  checkout and a worktree in a monorepo is expensive to set up — the
+  operator cleans worktrees up), what it changed at the end of every answer
+  (that is all the others see), stop and tell the operator on a
+  contradiction, and the tool. Driver never removes worktrees.
 - Every column, state columns, WATCHING and lanes alike, is dragged by its head into
   any order; the order is saved in the daemon (kv `board-columns`). `«` in a
   head folds the column to a strip (name, count; still a drop target) and the
@@ -387,7 +421,14 @@ session branch holds no user message yet — a fresh job at its prompt — else 
 (dialog) / `ui_prompt_end`, `agent_settled` (idle when `ctx.isIdle()`, aborted when
 `e.aborted`), `session_shutdown` (exited). With `DRIVER_SERVE` set it also
 registers `driver_notes` (`action` read | append | replace, `text`), which
-calls `/api/job/notes` with `job_dir` (docs/API.md); its parameters are plain
+calls `/api/job/notes` with `job_dir` (docs/API.md), and the threads' shared
+context ("Threads: shared context" above): `before_agent_start` and
+`turn_end` post `/api/job/threads/update` with `job_dir` and the ids the
+branch holds, inject the answer as a `driver-peers` custom message and, when
+the job has other threads, set the `driver_threads` system prompt section;
+`driver_threads` (`action` list | history, `thread`) reads
+`/api/job/threads` and `/api/job/threads/history`. A daemon that does not
+answer within 5s costs nothing but the update. Its parameters are plain
 JSON Schema and it imports nothing but Node built-ins, so `node --test` loads
 the file outside pi. Type import:
 `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";`.

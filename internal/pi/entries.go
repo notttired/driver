@@ -34,19 +34,38 @@ type Entry struct {
 	ParentID     string
 	Time         int64
 	Role         string // message.role: user | assistant | toolResult
-	Text         string // user, assistant: the text blocks, newline-joined (thinking left out)
+	Text         string // user, assistant, custom_message: the text blocks, newline-joined (thinking left out)
 	StopReason   string // assistant: stop | length | toolUse | error | aborted | …
 	ErrorMessage string // assistant, StopReason error: what went wrong
 	ToolCalls    []ToolCall
 	Result       *ToolResult
+	CustomType   string    // custom_message: the extension's type
+	Carried      []Carried // custom_message of type PeersType: the peer messages it carried
+}
+
+// PeersType is the customType of the context driver's extension adds to a
+// thread's conversation from the job's other threads (docs/DESIGN.md
+// "Threads: shared context").
+const PeersType = "driver-peers"
+
+// Carried names one peer message a PeersType custom message carried: the
+// thread it came from (0 = the job's own pi) and its entry id there.
+type Carried struct {
+	Thread int64  `json:"thread"`
+	Entry  string `json:"entry"`
 }
 
 type rawEntry struct {
-	Type      string          `json:"type"`
-	ID        string          `json:"id"`
-	ParentID  string          `json:"parentId"`
-	Timestamp json.RawMessage `json:"timestamp"`
-	Message   *struct {
+	Type       string          `json:"type"`
+	ID         string          `json:"id"`
+	ParentID   string          `json:"parentId"`
+	Timestamp  json.RawMessage `json:"timestamp"`
+	CustomType string          `json:"customType"`
+	Content    json.RawMessage `json:"content"`
+	Details    *struct {
+		Carried []Carried `json:"carried"`
+	} `json:"details"`
+	Message *struct {
 		Role         string          `json:"role"`
 		ToolCallID   string          `json:"toolCallId"`
 		ToolName     string          `json:"toolName"`
@@ -76,6 +95,14 @@ func ParseEntry(line []byte) (e Entry, ok bool) {
 	e.ID = raw.ID
 	e.ParentID = raw.ParentID
 	e.Time = parseTime(raw.Timestamp)
+	if raw.Type == "custom_message" {
+		e.CustomType = raw.CustomType
+		e.Text = textOf(parseBlocks(raw.Content))
+		if raw.CustomType == PeersType && raw.Details != nil {
+			e.Carried = raw.Details.Carried
+		}
+		return e, true
+	}
 	if raw.Type != "message" || raw.Message == nil {
 		return e, true
 	}

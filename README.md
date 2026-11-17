@@ -139,10 +139,24 @@ own record (the CONVERSATION panel follows the tab); STOP and RETRY act on
 the tab you are on. The card is working while any thread works, and needs
 you when every thread has stopped; a thread that stops while another works
 sends its own notification. ✕ on a thread's tab closes its pi — what it said
-stays with the job — and a double-click renames it. Threads share one
-checkout, so a thread that changes code should work in a git worktree of its
-own; DONE and CANCEL close every thread. `tmux attach -t drv-<slug>-<id>-t<n>`
-reaches a thread's pane from a terminal.
+stays with the job — and a double-click renames it. DONE and CANCEL close
+every thread. `tmux attach -t drv-<slug>-<id>-t<n>` reaches a thread's pane
+from a terminal.
+
+The threads hear each other. Every message you send a thread arrives with
+what the other threads have said since that thread last heard from them —
+your messages to them and their final answers, not the work in between —
+marked as context Driver added, for its information only (instructions in
+it were given to the other threads, not to this one). Nothing wakes a
+thread: a thread hears the news when you next speak to it, and a message
+you queue while it works brings the news along when it is delivered. A
+closed thread's answers stay part of it. Each thread is told the rules of
+the house: make a git worktree of its own before its first change to files
+or git, say what it changed in every answer, and stop and tell you when
+another thread's work contradicts its own. Its `driver_threads` tool lists
+the threads and reads any thread's whole history — tool calls and all —
+when the final answers are not enough. Driver does not remove worktrees;
+clean them up when you like.
 
 **Retry** is for blocked jobs that did not stop for you: a dropped network
 leaves pi up on a failed turn (the card reads `✗ Connection error` and the

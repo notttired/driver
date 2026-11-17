@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // entry builds one session line. role "" makes a non-message entry of kind.
@@ -70,13 +71,13 @@ func TestBuildConversation(t *testing.T) {
 	got := BuildConversation(entries)
 	ts := int64(1793181600) // 2026-10-28T10:00:00Z
 	want := []Message{
-		{Role: "user", Text: "What is in fruit.txt?", Time: ts},
-		{Role: "assistant", Text: "It holds one word:\npineapple", Time: ts},
-		{Role: "user", Text: "Rename it.", Time: ts},
-		{Role: "assistant", Text: "", Time: ts, End: "aborted"},
-		{Role: "user", Text: "Try again.", Time: ts},
-		{Role: "assistant", Text: "", Time: ts, End: "error", Error: "Connection error."},
-		{Role: "user", Text: "And now?", Time: ts},
+		{ID: "u1", Role: "user", Text: "What is in fruit.txt?", Time: ts},
+		{ID: "a2", Role: "assistant", Text: "It holds one word:\npineapple", Time: ts},
+		{ID: "u2", Role: "user", Text: "Rename it.", Time: ts},
+		{ID: "a3", Role: "assistant", Text: "", Time: ts, End: "aborted"},
+		{ID: "u3", Role: "user", Text: "Try again.", Time: ts},
+		{ID: "a4", Role: "assistant", Text: "", Time: ts, End: "error", Error: "Connection error."},
+		{ID: "u4", Role: "user", Text: "And now?", Time: ts},
 	}
 	if !reflect.DeepEqual(got.Messages, want) {
 		t.Fatalf("messages:\n got %+v\nwant %+v", got.Messages, want)
@@ -248,4 +249,59 @@ func mustParse(t *testing.T, line string) Entry {
 		t.Fatalf("parse %s", line)
 	}
 	return e
+}
+
+func TestParseCustomMessage(t *testing.T) {
+	line := `{"type":"custom_message","id":"x1","parentId":"a2","timestamp":"2026-10-28T10:00:00.000Z","customType":"driver-peers","content":"Context from…","display":true,"details":{"carried":[{"thread":0,"entry":"a9"},{"thread":3,"entry":"u7"}]}}`
+	e, ok := ParseEntry([]byte(line))
+	if !ok || e.Kind != "custom_message" || e.CustomType != "driver-peers" || e.Text != "Context from…\n" {
+		t.Fatalf("custom message: %+v", e)
+	}
+	if len(e.Carried) != 2 || e.Carried[0] != (Carried{Thread: 0, Entry: "a9"}) || e.Carried[1] != (Carried{Thread: 3, Entry: "u7"}) {
+		t.Fatalf("carried: %+v", e.Carried)
+	}
+	// another extension's custom message carries nothing
+	e, _ = ParseEntry([]byte(`{"type":"custom_message","id":"x2","parentId":"x1","customType":"other","content":[{"type":"text","text":"hi"}],"display":false}`))
+	if e.CustomType != "other" || len(e.Carried) != 0 || e.Text != "hi\n" {
+		t.Fatalf("other custom message: %+v", e)
+	}
+}
+
+func TestTranscript(t *testing.T) {
+	lines := []string{
+		entry("h", "", "session", "", nil, map[string]any{"version": 3}),
+		entry("u1", "h", "message", "user", text("What is in fruit.txt?"), nil),
+		entry("a1", "u1", "message", "assistant", []map[string]any{
+			{"type": "thinking", "thinking": "hmm"},
+			{"type": "text", "text": "Let me check the file."},
+			{"type": "toolCall", "id": "c1", "name": "bash", "arguments": map[string]any{"command": "cat fruit.txt"}},
+		}, map[string]any{"stopReason": "toolUse"}),
+		entry("r1", "a1", "message", "toolResult", text("pineapple\n"), map[string]any{"toolCallId": "c1", "toolName": "bash"}),
+		entry("a2", "r1", "message", "assistant", text("It holds one word: pineapple"), map[string]any{"stopReason": "stop"}),
+		entry("x1", "a2", "custom_message", "", nil, map[string]any{"customType": "driver-peers", "content": "Context from the other threads…", "display": true}),
+		entry("u2", "x1", "message", "user", text("Rename it."), nil),
+		entry("a3", "u2", "message", "assistant", []map[string]any{}, map[string]any{"stopReason": "error", "errorMessage": "Connection error."}),
+		entry("u3", "a3", "message", "user", text("Again."), nil),
+	}
+	var entries []Entry
+	for _, l := range lines {
+		entries = append(entries, mustParse(t, l))
+	}
+	hh := time.Unix(1793181600, 0).Format("[15:04] ") // the entries' stamp, in local time
+	got := Transcript(entries, 12)
+	want := strings.Join([]string{
+		hh + "user: What is in fruit.txt?",
+		hh + "assistant: Let me check the file.",
+		hh + "assistant → bash: cat fruit.txt",
+		hh + "bash result: pineapple",
+		hh + "assistant: It holds one word: pineapple",
+		hh + "context from the other threads (added by Driver): Context from the other threads…",
+		hh + "user: Rename it.",
+		hh + "assistant: (turn failed: Connection error.)",
+		hh + "user: Again.",
+		"(no answer yet)",
+	}, "\n")
+	if got != want {
+		t.Fatalf("transcript:\n%s\nwant:\n%s", got, want)
+	}
 }

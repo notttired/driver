@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 )
 
 // Message is one row of a job's conversation record: what the operator
@@ -16,6 +17,7 @@ import (
 // the tool calls and their results, thinking, system messages and messages
 // injected by extensions are all left out.
 type Message struct {
+	ID   string // the session entry's id
 	Role string // user | assistant
 	Text string // the text blocks, newline-joined, trailing newlines trimmed
 	Time int64  // unix seconds, 0 when the entry carried no timestamp
@@ -49,12 +51,22 @@ func (c Conversation) Failed() (string, bool) {
 // entries in the file, off the path). A partial trailing line (pi
 // mid-write) is skipped; a missing file is an empty record.
 func ReadConversation(path string) (Conversation, error) {
+	entries, err := ReadEntries(path)
+	if err != nil {
+		return Conversation{}, err
+	}
+	return BuildConversation(entries), nil
+}
+
+// ReadEntries parses the session JSONL at path, in file order. A partial
+// trailing line (pi mid-write) is skipped; a missing file is no entries.
+func ReadEntries(path string) ([]Entry, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return Conversation{Messages: []Message{}}, nil
+			return nil, nil
 		}
-		return Conversation{}, fmt.Errorf("open %s: %w", path, err)
+		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 	defer f.Close()
 	var entries []Entry
@@ -73,10 +85,10 @@ func ReadConversation(path string) (Conversation, error) {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return Conversation{}, fmt.Errorf("read %s: %w", path, err)
+			return nil, fmt.Errorf("read %s: %w", path, err)
 		}
 	}
-	return BuildConversation(entries), nil
+	return entries, nil
 }
 
 // BuildConversation is ReadConversation on already-parsed entries, in file
@@ -99,7 +111,7 @@ func BuildConversation(entries []Entry) Conversation {
 		switch e.Role {
 		case "user":
 			flush()
-			conv.Messages = append(conv.Messages, Message{Role: "user", Text: trimText(e.Text), Time: e.Time})
+			conv.Messages = append(conv.Messages, Message{ID: e.ID, Role: "user", Text: trimText(e.Text), Time: e.Time})
 			open, last = true, nil
 		case "assistant":
 			if open {
@@ -131,7 +143,7 @@ func answerOf(e *Entry) (Message, bool) {
 	if e == nil || midTurn(e.StopReason) {
 		return Message{}, false
 	}
-	m := Message{Role: "assistant", Text: trimText(e.Text), Time: e.Time}
+	m := Message{ID: e.ID, Role: "assistant", Text: trimText(e.Text), Time: e.Time}
 	switch e.StopReason {
 	case "", "stop":
 		if m.Text == "" {
@@ -191,3 +203,86 @@ func currentBranch(entries []Entry) []Entry {
 }
 
 func trimText(s string) string { return strings.TrimRight(s, "\n") }
+
+// Transcript renders a session's current branch whole, for an agent reading
+// another thread's history: every message of the operator's, everything pi
+// said between tool calls and in the end, each tool call (bash: its
+// command) and each tool's result, cut to resultChars characters. Thinking
+// stays out. An unfinished last turn ends in "(no answer yet)".
+func Transcript(entries []Entry, resultChars int) string {
+	var b strings.Builder
+	line := func(t int64, s string) {
+		if t != 0 {
+			b.WriteString(time.Unix(t, 0).Format("[15:04] "))
+		}
+		b.WriteString(s)
+		b.WriteByte('\n')
+	}
+	path := currentBranch(entries)
+	var last *Entry
+	open := false
+	for i := range path {
+		e := &path[i]
+		switch e.Kind {
+		case "custom_message":
+			if t := trimText(e.Text); t != "" {
+				who := "context from " + e.CustomType
+				if e.CustomType == PeersType {
+					who = "context from the other threads (added by Driver)"
+				}
+				line(e.Time, who+": "+t)
+			}
+		case "message":
+			switch e.Role {
+			case "user":
+				line(e.Time, "user: "+trimText(e.Text))
+				open, last = true, nil
+			case "assistant":
+				last = e
+				if t := trimText(e.Text); t != "" {
+					line(e.Time, "assistant: "+t)
+				}
+				for _, tc := range e.ToolCalls {
+					if tc.Command != "" {
+						line(e.Time, "assistant → "+tc.Name+": "+tc.Command)
+					} else {
+						line(e.Time, "assistant → "+tc.Name)
+					}
+				}
+				if note := turnEnd(e); note != "" {
+					line(e.Time, "assistant: "+note)
+				}
+			case "toolResult":
+				if e.Result != nil {
+					text := strings.TrimSpace(e.Result.Text)
+					if len(text) > resultChars {
+						text = text[:resultChars] + "… (cut)"
+					}
+					if e.Result.IsError {
+						line(e.Time, e.Result.ToolName+" error: "+text)
+					} else {
+						line(e.Time, e.Result.ToolName+" result: "+text)
+					}
+				}
+			}
+		}
+	}
+	if open && (last == nil || midTurn(last.StopReason)) {
+		b.WriteString("(no answer yet)\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// turnEnd words how an assistant message ended when not with an answer:
+// "" for a plain stop or a tool call.
+func turnEnd(e *Entry) string {
+	switch e.StopReason {
+	case "error":
+		return "(turn failed: " + strings.TrimSpace(e.ErrorMessage) + ")"
+	case "aborted":
+		return "(interrupted)"
+	case "length":
+		return "(cut off by the output limit)"
+	}
+	return ""
+}

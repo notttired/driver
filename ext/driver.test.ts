@@ -101,3 +101,150 @@ describe("driver_notes", () => {
     assert.equal(load({ DRIVER_JOB_DIR: jobDir, DRIVER_SERVE: undefined }).has("driver_notes"), false);
   });
 });
+
+type Handler = (event: Record<string, unknown>, ctx: Record<string, unknown>) => unknown;
+
+/** Loads the extension capturing its tools AND its event handlers. */
+const loadAll = (env: Record<string, string | undefined>) => {
+  const saved = { ...process.env };
+  Object.assign(process.env, env);
+  for (const [k, v] of Object.entries(env)) if (v === undefined) delete process.env[k];
+  const tools = new Map<string, Tool>();
+  const handlers = new Map<string, Handler[]>();
+  try {
+    driver({
+      on: (name: string, h: Handler) => handlers.set(name, [...(handlers.get(name) ?? []), h]),
+      registerTool: (t: Tool) => tools.set(t.name, t),
+    } as never);
+  } finally {
+    process.env = saved;
+  }
+  const fire = async (name: string, event: Record<string, unknown>, ctx: Record<string, unknown>) => {
+    let out: unknown;
+    for (const h of handlers.get(name) ?? []) out = (await h(event, ctx)) ?? out;
+    return out as Record<string, unknown> | undefined;
+  };
+  return { tools, fire };
+};
+
+describe("threads: shared context", () => {
+  const jobDir = join(mkdtempSync(join(tmpdir(), "driver-ext-")), "job-3", "t2");
+  let server: Server;
+  let serve: string;
+  let seen: Seen[] = [];
+  let reply: (url: string) => { status: number; body: unknown } = () => ({ status: 200, body: {} });
+
+  before(async () => {
+    server = createServer(async (req: IncomingMessage, res) => {
+      let raw = "";
+      for await (const chunk of req) raw += chunk;
+      seen.push({ method: req.method ?? "", url: req.url ?? "", body: raw ? JSON.parse(raw) : undefined });
+      const r = reply(req.url ?? "");
+      res.writeHead(r.status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(r.body));
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    serve = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  after(() => server.close());
+  beforeEach(() => {
+    seen = [];
+    reply = () => ({ status: 200, body: {} });
+  });
+
+  const branch = [
+    { type: "session", id: "h" },
+    { type: "message", id: "u1", message: { role: "user", content: "Go." } },
+    { type: "message", id: "a1", message: { role: "assistant", content: [] } },
+    { type: "custom_message", id: "x1", customType: "driver-peers", content: "earlier", details: { carried: [{ thread: 0, entry: "u9" }, { thread: 0, entry: "a9" }] } },
+    { type: "custom_message", id: "x2", customType: "other", content: "noise", details: { carried: [{ thread: 0, entry: "zz" }] } },
+  ];
+  const ctx = (extra: Record<string, unknown> = {}) => ({
+    sessionManager: { getBranch: () => branch, getSessionFile: () => join(jobDir, "session.jsonl") },
+    isIdle: () => true,
+    ...extra,
+  });
+  const update = { text: "Context from the other threads…", carried: [{ thread: 0, entry: "u10" }], peers: 1 };
+
+  it("asks the daemon what the other threads said, with what it already holds, and adds it to the prompt", async () => {
+    reply = () => ({ status: 200, body: update });
+    const { fire } = loadAll({ DRIVER_JOB_DIR: jobDir, DRIVER_SERVE: serve });
+    const sections: Record<string, string> = {};
+    const out = await fire("before_agent_start", { messageType: "user", prompt: "hi", systemPromptOptions: { sections } }, ctx());
+    assert.deepEqual(seen.map((s) => [s.method, s.url]), [["POST", "/api/job/threads/update"]]);
+    const body = seen[0]!.body as { job_dir: string; seen: string[] };
+    assert.equal(body.job_dir, jobDir);
+    assert.deepEqual([...body.seen].sort(), ["a1", "a9", "h", "u1", "u9", "x1", "x2"].sort(), "every id on the branch and every id the driver-peers messages carried");
+    assert.deepEqual(out?.message, { customType: "driver-peers", content: update.text, display: true, details: { carried: update.carried } });
+    assert.match(sections.driver_threads ?? "", /one of several threads/);
+    assert.match(sections.driver_threads ?? "", /git worktree/);
+    assert.match(sections.driver_threads ?? "", /stop and tell the user/);
+  });
+
+  it("adds nothing when there is nothing new, and no rules when the job has one pi", async () => {
+    reply = () => ({ status: 200, body: { text: "", carried: [], peers: 0 } });
+    const { fire } = loadAll({ DRIVER_JOB_DIR: jobDir, DRIVER_SERVE: serve });
+    const sections: Record<string, string> = {};
+    const out = await fire("before_agent_start", { messageType: "user", prompt: "hi", systemPromptOptions: { sections } }, ctx());
+    assert.equal(out?.message, undefined);
+    assert.equal(sections.driver_threads, undefined);
+  });
+
+  it("keeps the rules once the job has threads, even with nothing new", async () => {
+    reply = () => ({ status: 200, body: { text: "", carried: [], peers: 2 } });
+    const { fire } = loadAll({ DRIVER_JOB_DIR: jobDir, DRIVER_SERVE: serve });
+    const sections: Record<string, string> = {};
+    await fire("before_agent_start", { messageType: "user", prompt: "hi", systemPromptOptions: { sections } }, ctx());
+    assert.match(sections.driver_threads ?? "", /one of several threads/);
+  });
+
+  it("lets a run start when the daemon is unreachable", async () => {
+    const { fire } = loadAll({ DRIVER_JOB_DIR: jobDir, DRIVER_SERVE: "http://127.0.0.1:1" });
+    const out = await fire("before_agent_start", { messageType: "user", prompt: "hi", systemPromptOptions: { sections: {} } }, ctx());
+    assert.equal(out?.message, undefined);
+  });
+
+  it("leaves runs started by other extensions' messages alone", async () => {
+    reply = () => ({ status: 200, body: update });
+    const { fire } = loadAll({ DRIVER_JOB_DIR: jobDir, DRIVER_SERVE: serve });
+    const out = await fire("before_agent_start", { messageType: "custom", message: {}, systemPromptOptions: { sections: {} } }, ctx());
+    assert.equal(out, undefined);
+    assert.deepEqual(seen, []);
+  });
+
+  it("puts the update before a message of yours that was waiting for the turn to end", async () => {
+    reply = () => ({ status: 200, body: update });
+    const { fire } = loadAll({ DRIVER_JOB_DIR: jobDir, DRIVER_SERVE: serve });
+    const prior = [{ type: "custom", customType: "x", data: 1 }];
+    const out = await fire(
+      "turn_end",
+      { entries: prior, context: { pendingMessages: [{ role: "user", content: "and this" }] }, outcome: "completed" },
+      ctx(),
+    );
+    assert.deepEqual(out?.entries, [...prior, { type: "custom_message", customType: "driver-peers", content: update.text, display: true, details: { carried: update.carried } }]);
+  });
+
+  it("does nothing at a turn's end when no message of yours is waiting", async () => {
+    reply = () => ({ status: 200, body: update });
+    const { fire } = loadAll({ DRIVER_JOB_DIR: jobDir, DRIVER_SERVE: serve });
+    const out = await fire("turn_end", { entries: [], context: { pendingMessages: [] }, outcome: "completed" }, ctx());
+    assert.equal(out, undefined);
+    assert.deepEqual(seen, []);
+  });
+
+  it("gives pi the driver_threads tool: the list and any thread's history", async () => {
+    reply = (url) =>
+      url.startsWith("/api/job/threads/history")
+        ? { status: 200, body: { text: "[10:00] user: Go.\n[10:01] assistant: Done." } }
+        : { status: 200, body: { self: 2, threads: [{ id: 0, name: "Multi", state: "waiting" }, { id: 2, name: "CI", state: "working" }] } };
+    const { tools } = loadAll({ DRIVER_JOB_DIR: jobDir, DRIVER_SERVE: serve });
+    const tool = tools.get("driver_threads");
+    assert.ok(tool, "driver_threads is registered in a driver job");
+    assert.equal(text(await tool.execute("c1", { action: "list" })), "Threads of this job:\n- 0: Multi (waiting)\n- 2: CI (working) — you");
+    assert.equal(text(await tool.execute("c2", { action: "history", thread: 0 })), "[10:00] user: Go.\n[10:01] assistant: Done.");
+    assert.equal(seen[1]!.url, `/api/job/threads/history?job_dir=${encodeURIComponent(jobDir)}&thread=0`);
+    await assert.rejects(tool.execute("c3", { action: "history" }), { message: "history needs a thread id" });
+    reply = () => ({ status: 404, body: { error: "no such thread" } });
+    await assert.rejects(tool.execute("c4", { action: "history", thread: 9 }), { message: "no such thread" });
+  });
+});
