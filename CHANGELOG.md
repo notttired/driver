@@ -8,7 +8,7 @@ behind each, [docs/API.md](docs/API.md) the wire contract.
 
 ## 2026-11-17
 
-- **⌘T opens a thread with the default name** (`8904fac`): from the current
+- **⌘T opens a thread with the default name** (`916d936`): from the current
   tab, named "thread N", no box to fill; rename it later if you like.
 - **Closing a thread asks nothing** (`cf96c3a`). ✕ and ⌘W close a thread at
   once; nothing is lost, since the thread's conversation stays with the job.

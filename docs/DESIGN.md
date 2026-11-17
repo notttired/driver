@@ -132,7 +132,8 @@ usage, accounts, self-update) is left out on purpose.
   its own (`drv-<slug>-<id>-t<n>`: windows in one session would share the
   session's current window across every attached client, so the board's pane
   and a `tmux attach` would fight over the tab shown), in the job's dir,
-  under a name typed in the tab row. Every thread is a full agent with the
+  under a name typed in the tab row (⌘T skips the row: the default "thread
+  N", renamed later if wanted). Every thread is a full agent with the
   same tools; they share one checkout, so the operator's rule is a git
   worktree per thread that changes code. The card folds its threads
   together: working while any works, else blocked when any waits (the first
