@@ -17,6 +17,23 @@ export interface ThreadTabsProps {
   onToast: (message: string) => void;
 }
 
+/** Close a thread's pi after asking: the row and its conversation stay with
+ *  the job. The tab in view falls back to the job's own when it was this
+ *  one; the board refetches. Shared by the tab's ✕ and ⌘W. */
+export function closeThreadAsking(
+  slug: string,
+  t: WebThread,
+  opts: { current: number; onSelect: (id: number) => void; onChanged?: () => Promise<unknown> | void; onToast: (message: string) => void },
+): void {
+  if (!window.confirm(`Close ${t.name}? Its pi is closed; what it said stays with the job.`)) return;
+  void closeThread(slug, t.id)
+    .then(() => {
+      if (opts.current === t.id) opts.onSelect(0);
+      void opts.onChanged?.();
+    })
+    .catch((e: unknown) => opts.onToast(`${t.name}: ${e instanceof Error ? e.message : String(e)}`));
+}
+
 /** "thread N" for the Nth tab, skipping names in use. */
 export function suggestThreadName(threads: readonly Pick<WebThread, "name">[]): string {
   const taken = new Set(threads.map((t) => t.name.toLowerCase()));
@@ -90,15 +107,7 @@ export function ThreadTabs({ slug, threads, current, onSelect, onChanged, onToas
       }
     })();
   };
-  const close = (t: WebThread) => {
-    if (!window.confirm(`Close ${t.name}? Its pi is closed; what it said stays with the job.`)) return;
-    void closeThread(slug, t.id)
-      .then(() => {
-        if (current === t.id) onSelect(0);
-        onChanged?.();
-      })
-      .catch((e: unknown) => onToast(`${t.name}: ${e instanceof Error ? e.message : String(e)}`));
-  };
+  const close = (t: WebThread) => closeThreadAsking(slug, t, { current, onSelect, onChanged, onToast });
   const rename = () => {
     if (!renaming) return;
     const value = renaming.value.trim();

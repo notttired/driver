@@ -9,8 +9,10 @@ import { JobOverlay } from "./components/overlays/JobOverlay.tsx";
 import { NewJobOverlay } from "./components/overlays/NewJobOverlay.tsx";
 import { WatchPromptOverlay } from "./components/overlays/WatchPromptOverlay.tsx";
 import { Toast, showToast } from "./components/overlays/Toast.tsx";
+import { closeThreadAsking } from "./components/overlays/ThreadTabs.tsx";
 import { CommandPalette, type PalettePick } from "./components/palette/CommandPalette.tsx";
 import { useBoard } from "./hooks/useBoard.ts";
+import { slugOfKey } from "./lib/jobKey.ts";
 
 const NO_JOBS: never[] = [];
 
@@ -98,25 +100,40 @@ export function App() {
   );
 
   // ⌘K: the palette, from anywhere (ctrl-K too, unless a pane has it); ⌘N: a
-  // new job
+  // new job; ⌘W: close what is on top — the palette, a dialog, the thread tab
+  // in view (asking first), else the job overlay; the board itself never
+  // (Driver.app leaves the key to the page for this)
+  const byKey = board.byKey;
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.altKey || e.shiftKey) return;
       const key = e.key.toLowerCase();
-      if (key !== "n" && key !== "k") return;
+      if (key !== "n" && key !== "k" && key !== "w") return;
       if (!e.metaKey && !(e.ctrlKey && !overlayOpen)) return;
       e.preventDefault();
       if (key === "k") {
         setPalette(true);
         return;
       }
-      setPalette(false);
-      setOpenKey(null);
-      setNewJob(true);
+      if (key === "n") {
+        setPalette(false);
+        setOpenKey(null);
+        setNewJob(true);
+        return;
+      }
+      if (palette) setPalette(false);
+      else if (watchPrompt) setWatchPrompt(false);
+      else if (newJob) setNewJob(false);
+      else if (openKey !== null) {
+        const t = openThread ? byKey.get(openKey)?.threads?.find((x) => x.id === openThread) : undefined;
+        if (t) {
+          closeThreadAsking(slugOfKey(openKey), t, { current: openThread, onSelect: setOpenThread, onChanged: () => board.refetch(), onToast: showToast });
+        } else setOpenKey(null);
+      }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [overlayOpen, setOpenKey]);
+  }, [overlayOpen, setOpenKey, palette, watchPrompt, newJob, openKey, openThread, byKey, board]);
 
   return (
     <>

@@ -300,6 +300,55 @@ describe("BoardView (DOM smoke test)", () => {
     expect(bodies.at(-1)).toEqual({ path: "/api/retry", slug: "net-flake" });
   });
 
+  it("⌘W closes the thread tab you are on, else whatever is open on top; never the board", async () => {
+    const board = fixtureBoard();
+    const NOW2 = Math.floor(Date.now() / 1000);
+    board.jobs.push(
+      makeJob({
+        slug: "threaded",
+        state: "working",
+        live: true,
+        pi: { state: "working", ts: NOW2 },
+        threads: [
+          { id: 0, name: "threaded", live: true, pi: { state: "working", ts: NOW2 } },
+          { id: 5, name: "CI", live: true, pi: { state: "idle", reason: "idle", ts: NOW2 } },
+        ],
+      }),
+    );
+    installFetch(board);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App />);
+    const overlay = document.getElementById("job-overlay")!;
+    const closeKey = () => fireEvent.keyDown(document, { key: "w", metaKey: true });
+
+    // nothing open: nothing happens
+    await screen.findByText("threaded");
+    closeKey();
+    expect(overlay).toHaveAttribute("hidden");
+
+    // the palette on top goes first
+    fireEvent.keyDown(document, { key: "k", metaKey: true });
+    expect(screen.getByRole("combobox")).toBeInTheDocument();
+    closeKey();
+    expect(screen.queryByRole("combobox")).toBeNull();
+
+    // a job on its own tab: the overlay closes
+    fireEvent.click(screen.getByText("threaded").closest(".card")!);
+    await waitFor(() => expect(overlay).not.toHaveAttribute("hidden"));
+    await within(overlay).findByRole("tab", { name: /CI/ });
+    closeKey();
+    await waitFor(() => expect(overlay).toHaveAttribute("hidden"));
+    expect(bodies.some((b) => b.path === "/api/job/thread")).toBe(false);
+
+    // on a thread's tab: that thread is closed (after the confirm), the overlay stays
+    fireEvent.click(screen.getByText("threaded").closest(".card")!);
+    await waitFor(() => expect(overlay).not.toHaveAttribute("hidden"));
+    fireEvent.click(await within(overlay).findByRole("tab", { name: /CI/ }));
+    closeKey();
+    await waitFor(() => expect(bodies.filter((b) => b.path === "/api/job/thread")).toEqual([{ path: "/api/job/thread", slug: "threaded", op: "close", id: 5 }]));
+    expect(overlay).not.toHaveAttribute("hidden");
+  });
+
   it("has no retry button when nothing blocked failed, and none in a job that waits on you", async () => {
     render(<App />);
     const blocked = await waitFor(() => document.querySelector<HTMLElement>('.col[data-col="blocked"]')!);

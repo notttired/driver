@@ -142,7 +142,12 @@ usage, accounts, self-update) is left out on purpose.
   (`/api/term?thread=`), its own record (`/api/job/conversation?thread=`),
   STOP and RETRY; ⌘⇧] / ⌘⇧[ step through the tabs, round the end (a
   document listener keyed on the bracket key codes, so the pane — which
-  leaves ⌘-combinations to the page — and the sidebar both hear it). ✕ closes a thread's pi; the row and its conversation stay
+  leaves ⌘-combinations to the page — and the sidebar both hear it). ⌘W
+  closes what is on top: the palette, a dialog, the thread tab in view
+  (asking, as ✕ does), else the job overlay; never the board. Driver.app
+  drops the File ▸ Close menu item (`CommandGroup(replacing: .saveItem)`)
+  so the key reaches the page instead of closing the window — which the
+  traffic light still does. ✕ closes a thread's pi; the row and its conversation stay
   (what it said is still part of the job: the tab goes, the record remains
   readable). DONE closes every thread, CANCEL drops them; the job's own pi
   is the one fork, watch, reactivate and rename work on, and a job fork

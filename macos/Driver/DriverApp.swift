@@ -152,6 +152,11 @@ struct DriverApp: App {
         .defaultSize(width: 1440, height: 900)
         .windowStyle(.hiddenTitleBar)
         .commands {
+            // No File ▸ Close: ⌘W is the board's (it closes the thread tab in
+            // view, or whatever is open on top, never the board), and a menu
+            // item holding the key equivalent would take it before the page
+            // saw it. The window still closes from its traffic light.
+            CommandGroup(replacing: .saveItem) {}
             // Safari's View-menu trio. ⌘= rather than ⌘+ as the zoom-in key:
             // a "+" key equivalent only matches with shift held, while the
             // gesture everyone types is bare Cmd and the =/+ key. The clamp
