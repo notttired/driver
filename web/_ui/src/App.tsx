@@ -9,7 +9,7 @@ import { JobOverlay } from "./components/overlays/JobOverlay.tsx";
 import { NewJobOverlay } from "./components/overlays/NewJobOverlay.tsx";
 import { WatchPromptOverlay } from "./components/overlays/WatchPromptOverlay.tsx";
 import { Toast, showToast } from "./components/overlays/Toast.tsx";
-import { closeThreadAsking } from "./components/overlays/ThreadTabs.tsx";
+import { closeThreadNow } from "./components/overlays/ThreadTabs.tsx";
 import { CommandPalette, type PalettePick } from "./components/palette/CommandPalette.tsx";
 import { useBoard } from "./hooks/useBoard.ts";
 import { slugOfKey } from "./lib/jobKey.ts";
@@ -101,7 +101,7 @@ export function App() {
 
   // ⌘K: the palette, from anywhere (ctrl-K too, unless a pane has it); ⌘N: a
   // new job; ⌘W: close what is on top — the palette, a dialog, the thread tab
-  // in view (asking first), else the job overlay; the board itself never
+  // in view, else the job overlay; the board itself never
   // (Driver.app leaves the key to the page for this)
   const byKey = board.byKey;
   useEffect(() => {
@@ -127,7 +127,7 @@ export function App() {
       else if (openKey !== null) {
         const t = openThread ? byKey.get(openKey)?.threads?.find((x) => x.id === openThread) : undefined;
         if (t) {
-          closeThreadAsking(slugOfKey(openKey), t, { current: openThread, onSelect: setOpenThread, onChanged: () => board.refetch(), onToast: showToast });
+          closeThreadNow(slugOfKey(openKey), t, { current: openThread, onSelect: setOpenThread, onChanged: () => board.refetch(), onToast: showToast });
         } else setOpenKey(null);
       }
     };

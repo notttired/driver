@@ -316,7 +316,7 @@ describe("BoardView (DOM smoke test)", () => {
       }),
     );
     installFetch(board);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const confirm = vi.spyOn(window, "confirm");
     render(<App />);
     const overlay = document.getElementById("job-overlay")!;
     const closeKey = () => fireEvent.keyDown(document, { key: "w", metaKey: true });
@@ -340,12 +340,13 @@ describe("BoardView (DOM smoke test)", () => {
     await waitFor(() => expect(overlay).toHaveAttribute("hidden"));
     expect(bodies.some((b) => b.path === "/api/job/thread")).toBe(false);
 
-    // on a thread's tab: that thread is closed (after the confirm), the overlay stays
+    // on a thread's tab: that thread is closed, no question asked; the overlay stays
     fireEvent.click(screen.getByText("threaded").closest(".card")!);
     await waitFor(() => expect(overlay).not.toHaveAttribute("hidden"));
     fireEvent.click(await within(overlay).findByRole("tab", { name: /CI/ }));
     closeKey();
     await waitFor(() => expect(bodies.filter((b) => b.path === "/api/job/thread")).toEqual([{ path: "/api/job/thread", slug: "threaded", op: "close", id: 5 }]));
+    expect(confirm).not.toHaveBeenCalled();
     expect(overlay).not.toHaveAttribute("hidden");
   });
 

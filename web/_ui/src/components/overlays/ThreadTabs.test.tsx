@@ -76,15 +76,16 @@ describe("ThreadTabs", () => {
     expect(screen.getByPlaceholderText(/name of the thread/i)).toBeInTheDocument();
   });
 
-  it("closes a thread after confirming; the job's own tab cannot be closed", async () => {
+  it("closes a thread at once, no question asked; the job's own tab cannot be closed", async () => {
     closeThread.mockResolvedValue({ ok: true });
     const onSelect = vi.fn();
     const onChanged = vi.fn();
-    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const confirm = vi.spyOn(window, "confirm");
     render(<ThreadTabs slug="multi" threads={threads} current={7} onSelect={onSelect} onChanged={onChanged} onToast={() => {}} />);
     expect(screen.getByRole("tab", { name: /Multi/ }).querySelector(".thread-close")).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: /Docs/ }).querySelector(".thread-close")!);
     await waitFor(() => expect(closeThread).toHaveBeenCalledWith("multi", 7));
+    expect(confirm).not.toHaveBeenCalled();
     expect(onSelect).toHaveBeenCalledWith(0);
     expect(onChanged).toHaveBeenCalled();
   });

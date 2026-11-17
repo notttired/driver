@@ -17,15 +17,15 @@ export interface ThreadTabsProps {
   onToast: (message: string) => void;
 }
 
-/** Close a thread's pi after asking: the row and its conversation stay with
- *  the job. The tab in view falls back to the job's own when it was this
- *  one; the board refetches. Shared by the tab's ✕ and ⌘W. */
-export function closeThreadAsking(
+/** Close a thread's pi, no questions asked: the row and its conversation
+ *  stay with the job, so nothing is lost. The tab in view falls back to the
+ *  job's own when it was this one; the board refetches. Shared by the tab's
+ *  ✕ and ⌘W. */
+export function closeThreadNow(
   slug: string,
   t: WebThread,
   opts: { current: number; onSelect: (id: number) => void; onChanged?: () => Promise<unknown> | void; onToast: (message: string) => void },
 ): void {
-  if (!window.confirm(`Close ${t.name}? Its pi is closed; what it said stays with the job.`)) return;
   void closeThread(slug, t.id)
     .then(() => {
       if (opts.current === t.id) opts.onSelect(0);
@@ -107,7 +107,7 @@ export function ThreadTabs({ slug, threads, current, onSelect, onChanged, onToas
       }
     })();
   };
-  const close = (t: WebThread) => closeThreadAsking(slug, t, { current, onSelect, onChanged, onToast });
+  const close = (t: WebThread) => closeThreadNow(slug, t, { current, onSelect, onChanged, onToast });
   const rename = () => {
     if (!renaming) return;
     const value = renaming.value.trim();

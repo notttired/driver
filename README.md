@@ -140,8 +140,8 @@ tab you are on, under a name you type — so one thread can carry on with the
 task while you ask another something else. Each tab has its own pane and its
 own record (the CONVERSATION panel follows the tab); STOP and RETRY act on
 the tab you are on, ⌘⇧] / ⌘⇧[ move to the next / previous tab, and ⌘W closes
-the thread you are on (asking first) — on the job's own tab it closes the
-overlay, and it never closes Driver's window. The card is working while any thread works, and needs
+the thread you are on — on the job's own tab it closes the overlay, and it
+never closes Driver's window. The card is working while any thread works, and needs
 you when every thread has stopped; a thread that stops while another works
 sends its own notification. ✕ on a thread's tab closes its pi — what it said
 stays with the job — and a double-click renames it. DONE and CANCEL close
