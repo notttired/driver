@@ -96,7 +96,9 @@ exactly as you would in a terminal (`tmux attach -t drv-<slug>-<id>` works too),
 ⌘← / ⌘→ jump to the start / end of the line in pi's editor as they do anywhere
 else on the Mac, ⌘⌫ deletes the whole line, and ⌘-click a URL in it to open it
 in your browser.
-Cards show state and age; link chips show a PR's open/draft/merged/closed.
+Cards show state and age, and up to five link chips (the pinned ones first,
+then the newest; "+N" counts the rest) — a PR's chip shows its
+open/draft/merged/closed.
 **⌘-click a card** (or the directory in the overlay's head) to open that
 directory in VS Code — the window that already has it, else a new one.
 

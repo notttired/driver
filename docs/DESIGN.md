@@ -62,7 +62,8 @@ usage, accounts, self-update) is left out on purpose.
   five visible rows, and a fresh 📌 landed out of sight. Mentions are still
   counted, shown as ×N: a mention is a message that carries the URL (yours or
   pi's, or the result of the `gh pr create` that printed it); a link added by
-  hand counts one. The panel's list shows five rows and scrolls for the rest.
+  hand counts one. The panel's list shows five rows and scrolls for the rest;
+  the card shows the same first five as chips and "+N" for the rest.
 - One link per page (2026-11-06): a link is stored under its page's URL — no
   `#…` fragment (a `#/…` or `#!…` route stays: single-page apps route on
   it), no trailing `/`, and every page of a GitHub or Delta pull request

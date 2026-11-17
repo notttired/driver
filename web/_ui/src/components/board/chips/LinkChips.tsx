@@ -1,16 +1,27 @@
 import { isHttpUrl, KIND_GLYPH, linkLabel, prStatusClass } from "../../../lib/links.ts";
 import type { WebLink } from "../../../lib/types.ts";
 
-/** One chip per link on a card: a PR reads `#N` in its status colour, every
- *  other kind its host behind a kind glyph. Anchors stop the click so the
- *  card underneath does not open. */
+/** How many links a card shows: as many as the overlay's links panel has
+ *  rows; the rest are a count. */
+export const MAX_CHIPS = 5;
+
+/** One chip per link on a card — the first MAX_CHIPS in display order
+ *  (pinned first, then newest), then "+N" for the rest: a PR reads `#N` in
+ *  its status colour, every other kind its host behind a kind glyph.
+ *  Anchors stop the click so the card underneath does not open. */
 export function LinkChips({ links, onOpen }: { links: WebLink[] | undefined; onOpen?: (url: string) => void }) {
   if (!links?.length) return null;
+  const rest = links.length - MAX_CHIPS;
   return (
     <div className="prs">
-      {links.map((l) => (
+      {links.slice(0, MAX_CHIPS).map((l) => (
         <LinkChip key={l.id} link={l} onOpen={onOpen} />
       ))}
+      {rest > 0 ? (
+        <span className="pr-chip pr-more" title={`${rest} more ${rest === 1 ? "link" : "links"} — open the job to see them all`}>
+          +{rest}
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -583,6 +583,7 @@ input:disabled, textarea:disabled { opacity: 0.6; }
 .pr-merged:hover { color: var(--fg); }
 .pr-open:hover { box-shadow: var(--glow-ok); }
 .pr-closed:hover { opacity: 1; }
+.pr-more { color: var(--muted); border-style: dashed; }
 
 /* new-job ghost card */
 .btn-new {
