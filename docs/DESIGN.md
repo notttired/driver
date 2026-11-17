@@ -139,7 +139,9 @@ usage, accounts, self-update) is left out on purpose.
   a thread that stops while the card stays working sends its own
   notification (`<job> · <thread> — <reason>`). Each tab has its own pane
   (`/api/term?thread=`), its own record (`/api/job/conversation?thread=`),
-  STOP and RETRY. ✕ closes a thread's pi; the row and its conversation stay
+  STOP and RETRY; ⌘⇧] / ⌘⇧[ step through the tabs, round the end (a
+  document listener keyed on the bracket key codes, so the pane — which
+  leaves ⌘-combinations to the page — and the sidebar both hear it). ✕ closes a thread's pi; the row and its conversation stay
   (what it said is still part of the job: the tab goes, the record remains
   readable). DONE closes every thread, CANCEL drops them; the job's own pi
   is the one fork, watch, reactivate and rename work on, and a job fork

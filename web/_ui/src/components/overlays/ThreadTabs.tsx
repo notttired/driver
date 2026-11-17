@@ -48,6 +48,23 @@ export function ThreadTabs({ slug, threads, current, onSelect, onChanged, onToas
     setRenaming(null);
   }, [slug]);
 
+  // ⌘⇧] / ⌘⇧[: the next / previous tab, round the end. On the document, so
+  // the pane (which leaves ⌘-combinations to the page) and the sidebar both
+  // hear it; by key code, so the brackets are the brackets on any layout.
+  useEffect(() => {
+    if (threads.length < 2) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!e.metaKey || !e.shiftKey || e.altKey || e.ctrlKey) return;
+      const step = e.code === "BracketRight" ? 1 : e.code === "BracketLeft" ? -1 : 0;
+      if (!step) return;
+      e.preventDefault();
+      const at = Math.max(0, threads.findIndex((t) => t.id === current));
+      onSelect(threads[(at + step + threads.length) % threads.length]!.id);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [threads, current, onSelect]);
+
   const begin = () => {
     setName(suggestThreadName(threads));
     setError("");
@@ -106,7 +123,7 @@ export function ThreadTabs({ slug, threads, current, onSelect, onChanged, onToas
               type="button"
               className={"thread-tab" + (selected ? " selected" : "") + (t.live ? "" : " dead")}
               aria-selected={selected}
-              title={`${t.name} — ${tok.text}${tok.detail ? ` ${tok.detail}` : ""}${t.id ? "\ndouble-click to rename · ✕ closes its pi" : ""}`}
+              title={`${t.name} — ${tok.text}${tok.detail ? ` ${tok.detail}` : ""}${t.id ? "\ndouble-click to rename · ✕ closes its pi" : ""}${threads.length > 1 ? "\n⌘⇧] / ⌘⇧[ next / previous tab" : ""}`}
               onClick={() => onSelect(t.id)}
               onDoubleClick={() => {
                 if (t.id) setRenaming({ id: t.id, value: t.name });

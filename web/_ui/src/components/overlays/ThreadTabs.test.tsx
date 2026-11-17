@@ -101,3 +101,42 @@ describe("ThreadTabs", () => {
     expect(onChanged).toHaveBeenCalled();
   });
 });
+
+describe("ThreadTabs keys", () => {
+  afterEach(cleanup);
+
+  const press = (code: string, extra: Partial<KeyboardEventInit> = {}) =>
+    fireEvent.keyDown(document, { code, key: code === "BracketRight" ? "}" : "{", metaKey: true, shiftKey: true, ...extra });
+
+  it("⌘⇧] and ⌘⇧[ move to the next and previous tab, wrapping around", () => {
+    const onSelect = vi.fn();
+    render(<ThreadTabs slug="multi" threads={threads} current={4} onSelect={onSelect} onToast={() => {}} />);
+    press("BracketRight");
+    expect(onSelect).toHaveBeenLastCalledWith(7);
+    press("BracketLeft");
+    expect(onSelect).toHaveBeenLastCalledWith(0);
+    cleanup();
+    onSelect.mockClear();
+    render(<ThreadTabs slug="multi" threads={threads} current={7} onSelect={onSelect} onToast={() => {}} />);
+    press("BracketRight");
+    expect(onSelect).toHaveBeenLastCalledWith(0);
+    cleanup();
+    onSelect.mockClear();
+    render(<ThreadTabs slug="multi" threads={threads} current={0} onSelect={onSelect} onToast={() => {}} />);
+    press("BracketLeft");
+    expect(onSelect).toHaveBeenLastCalledWith(7);
+  });
+
+  it("leaves the brackets alone without both ⌘ and ⇧, and does nothing with one tab", () => {
+    const onSelect = vi.fn();
+    render(<ThreadTabs slug="multi" threads={threads} current={0} onSelect={onSelect} onToast={() => {}} />);
+    press("BracketRight", { shiftKey: false });
+    press("BracketRight", { metaKey: false });
+    press("BracketRight", { altKey: true });
+    expect(onSelect).not.toHaveBeenCalled();
+    cleanup();
+    render(<ThreadTabs slug="multi" threads={threads.slice(0, 1)} current={0} onSelect={onSelect} onToast={() => {}} />);
+    press("BracketRight");
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+});
