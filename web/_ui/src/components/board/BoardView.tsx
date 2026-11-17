@@ -1,6 +1,5 @@
 import type { BoardModel } from "../../hooks/useBoard.ts";
 import { useCollapsedColumns } from "../../hooks/useCollapsedColumns.ts";
-import type { JobSearchModel } from "../../hooks/useJobSearch.ts";
 import { WATCHING, isStateColumn, laneId } from "../../lib/columns.ts";
 import { jobKey } from "../../lib/jobKey.ts";
 import type { WebJob } from "../../lib/types.ts";
@@ -35,28 +34,26 @@ export interface BoardActions {
 
 export interface BoardViewProps {
   board: BoardModel;
-  search: JobSearchModel;
   actions: BoardActions;
-  overlayOpen: boolean;
-  onSearchShortcut: () => void;
+  /** open the ⌘K palette */
+  onSearch: () => void;
 }
 
-export function BoardView({ board, search, actions, overlayOpen, onSearchShortcut }: BoardViewProps) {
-  const { byColumn, archived, active } = search;
+export function BoardView({ board, actions, onSearch }: BoardViewProps) {
+  const { byColumn, archived } = board;
   const columns = useColumns();
   const { isCollapsed, toggle } = useCollapsedColumns();
   const renderCard = (j: WebJob) => <JobCard key={jobKey(j)} job={j} actions={actions} />;
   return (
     <>
-      <BoardBar search={search} overlayOpen={overlayOpen} onShortcut={onSearchShortcut} />
+      <BoardBar total={(board.board?.jobs ?? []).filter((j) => !j.archived).length} onSearch={onSearch} />
       <main className="board" id="board">
         <SortableColumns columns={columns}>
           {columns.map((col) => {
-            const all = board.byColumn[col] ?? [];
+            const all = byColumn[col] ?? [];
             const shared = {
               col,
-              jobs: byColumn[col] ?? [],
-              total: active ? all.length : undefined,
+              jobs: all,
               onNewJob: actions.onNewJob,
               renderCard,
               collapsed: isCollapsed(col),

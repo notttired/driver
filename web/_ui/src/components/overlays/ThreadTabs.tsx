@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { closeThread, openThread, renameThread } from "../../api/client.ts";
-import { statusToken } from "../../lib/status.ts";
+import { threadStatusToken } from "../../lib/status.ts";
 import type { WebThread } from "../../lib/types.ts";
 
 export interface ThreadTabsProps {
@@ -24,14 +24,6 @@ export function suggestThreadName(threads: readonly Pick<WebThread, "name">[]): 
     const name = `thread ${n}`;
     if (!taken.has(name)) return name;
   }
-}
-
-/** The thread's status token: the column its pi alone would put the job in,
- *  then what it is doing there (lib/status.ts). */
-function tokenOf(t: WebThread) {
-  const state = t.pi?.state;
-  const column = state === "working" || state === "starting" ? "working" : state === "ready" ? "draft" : "blocked";
-  return statusToken({ state: column, pi: t.pi });
 }
 
 /**
@@ -105,7 +97,7 @@ export function ThreadTabs({ slug, threads, current, onSelect, onChanged, onToas
     <div className="thread-tabs" data-no-drag>
       <div className="thread-row" role="tablist" aria-label="threads">
         {threads.map((t) => {
-          const tok = tokenOf(t);
+          const tok = threadStatusToken(t);
           const selected = t.id === current;
           return (
             <button

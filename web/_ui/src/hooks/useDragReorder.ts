@@ -143,9 +143,6 @@ export interface DragReorderOptions {
   /** blocked → working: open the job overlay instead of writing anything */
   onOpenJob: (slug: string) => void;
   onToast?: (message: string) => void;
-  /** keys visible under an active search — a drop on the column body lands
-   *  after the last VISIBLE card, not after a hidden one */
-  visibleKeys?: ReadonlySet<string>;
 }
 
 export interface DragReorderModel {
@@ -173,7 +170,6 @@ export function useDragReorder({
   board,
   onOpenJob,
   onToast,
-  visibleKeys,
 }: DragReorderOptions): DragReorderModel {
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [activeColumn, setActiveColumn] = useState<Column | null>(null);
@@ -326,24 +322,13 @@ export function useDragReorder({
     [resolveOver],
   );
 
-  const lastVisibleIndex = useCallback(
-    (ordered: WebJob[]): number => {
-      if (!visibleKeys) return ordered.length - 1;
-      for (let i = ordered.length - 1; i >= 0; i--) {
-        if (visibleKeys.has(jobKey(ordered[i]!))) return i;
-      }
-      return ordered.length - 1;
-    },
-    [visibleKeys],
-  );
-
   const commitReorder = useCallback(
     async (column: Column, key: string, overId: UniqueIdentifier | undefined) => {
       const ordered = orderJobs(column, byColumn[column] ?? []);
       const oldIdx = ordered.findIndex((j) => jobKey(j) === key);
       const newIdx =
         parseColumnDropId(overId) !== null
-          ? Math.max(oldIdx, lastVisibleIndex(ordered))
+          ? ordered.length - 1
           : ordered.findIndex((j) => jobKey(j) === String(overId));
       if (oldIdx < 0 || newIdx < 0) {
         await refetch();
@@ -374,7 +359,7 @@ export function useDragReorder({
         await refetch();
       }
     },
-    [byColumn, lastVisibleIndex, mutate, onToast, orderJobs, refetch],
+    [byColumn, mutate, onToast, orderJobs, refetch],
   );
 
   const onDragEnd = useCallback(

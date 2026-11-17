@@ -196,8 +196,12 @@ from the overlay: a fork is a copy — conversation, notes, links, directory,
 model — under the name you give it, placed beside the original in its column;
 an open job's fork gets its own pi, resumed on the copied conversation, and a
 done job's fork is done until you reactivate it. ⌘K, from anywhere (a job's
-overlay too), takes you to the search over names, slugs and directories of the
-jobs on the board — archived ones are left out — and ⌘N opens NEW JOB. A
+overlay too), opens the palette: every pane on the board — each job and each
+of its threads, archived jobs last — with its column and status, narrowing as
+you type to what the words are found in (names, slugs, directories, columns,
+states such as "needs you", links, models, the tool pi is in, thread names);
+↑↓ move, ⏎ opens the pane, ⌘⏎ opens its directory in the editor, Esc
+closes. ⌘N opens NEW JOB. A
 notification arrives when a job turns blocked or its pi exits, and the card
 wears a ring until you open it; WORKING and BLOCKED keep their cards in the
 order they arrived. The `⊞ tabs`

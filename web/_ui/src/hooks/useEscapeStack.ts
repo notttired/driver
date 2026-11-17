@@ -5,6 +5,8 @@ import { useEffect } from "react";
 // listener (useMenuDismiss) and stop propagation, so they always win.
 export const ESC_PRIORITY = {
   job: 20,
+  /** the ⌘K palette sits over every other layer */
+  palette: 30,
 } as const;
 
 type Registered = { priority: number; close: () => void };

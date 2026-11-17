@@ -153,44 +153,59 @@ describe("BoardView (DOM smoke test)", () => {
     expect(screen.getByText("6 jobs")).toBeInTheDocument();
   });
 
-  it("filters cards by search and shows the matched read-out", async () => {
-    render(<App />);
-    await screen.findByText("Stripe webhooks retry");
-    const input = screen.getByLabelText("search jobs");
-    fireEvent.change(input, { target: { value: "reindex" } });
-    expect(screen.getByText("search-reindex")).toBeInTheDocument();
-    expect(screen.queryByText("flaky-ci")).not.toBeInTheDocument();
-    expect(screen.getByText("of 6 jobs", { exact: false })).toBeInTheDocument();
-    // the typed name is searched too
-    fireEvent.change(input, { target: { value: "retry" } });
-    expect(screen.getByText("Stripe webhooks retry")).toBeInTheDocument();
-    expect(screen.queryByText("search-reindex")).not.toBeInTheDocument();
-    fireEvent.keyDown(input, { key: "Escape" });
-    expect(await screen.findByText("flaky-ci")).toBeInTheDocument();
-  });
-
-  it("⌘K searches the jobs that are not archived, from the board or from an open job", async () => {
+  it("⌘K opens the palette over the board or an open job; a pick opens that pane", async () => {
     render(<App />);
     const card = (await screen.findByText("flaky-ci")).closest(".card")!;
-    const input = screen.getByLabelText("search jobs");
     const overlay = document.getElementById("job-overlay")!;
+    expect(document.getElementById("palette")).toBeNull();
 
     fireEvent.keyDown(document, { key: "k", metaKey: true });
+    const input = await screen.findByRole("combobox");
     expect(document.activeElement).toBe(input);
+    // every pane, archived last, each with its status
+    const options = screen.getAllByRole("option");
+    expect(options.map((o) => o.querySelector(".pal-title")?.textContent)).toEqual([
+      "Stripe webhooks retry",
+      "flaky-ci",
+      "search-reindex",
+      "onboarding-copy",
+      "rate-limits",
+      "legacy-export",
+      "spike-graphql",
+    ]);
+    expect(options[2]!.querySelector(".status")).toHaveTextContent("● working");
+    expect(options[3]!.querySelector(".status")).toHaveTextContent("⚑ needs you");
 
-    fireEvent.click(card);
+    fireEvent.change(input, { target: { value: "reindex" } });
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(overlay).not.toHaveAttribute("hidden"));
-    fireEvent.keyDown(document, { key: "k", ctrlKey: true });
-    expect(overlay).not.toHaveAttribute("hidden");
-    fireEvent.keyDown(document, { key: "k", metaKey: true });
-    expect(overlay).toHaveAttribute("hidden");
-    expect(document.activeElement).toBe(input);
+    expect(document.getElementById("palette")).toBeNull();
+    expect(within(overlay).getByTitle("search-reindex")).toBeInTheDocument();
 
-    fireEvent.change(input, { target: { value: "graphql" } });
-    expect(screen.getByText("of 6 jobs", { exact: false })).toHaveTextContent("0 of 6 jobs");
-    expect(document.querySelector(".archive-cards")).toHaveAttribute("hidden");
-    fireEvent.change(input, { target: { value: "legacy" } });
-    expect(screen.getByText("of 6 jobs", { exact: false })).toHaveTextContent("1 of 6 jobs");
+    // from an open job: ⌘K takes it, ctrl-K belongs to the pane; Escape
+    // closes the palette and leaves the job open
+    fireEvent.keyDown(document, { key: "k", ctrlKey: true });
+    expect(document.getElementById("palette")).toBeNull();
+    fireEvent.keyDown(document, { key: "k", metaKey: true });
+    expect(screen.getByRole("combobox")).toBeInTheDocument();
+    expect(overlay).not.toHaveAttribute("hidden");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(document.getElementById("palette")).toBeNull();
+    expect(overlay).not.toHaveAttribute("hidden");
+
+    // the bar's button opens it too
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(overlay).toHaveAttribute("hidden"));
+    fireEvent.click(screen.getByTitle(/jump to a pane/));
+    expect(screen.getByRole("combobox")).toBeInTheDocument();
+    // archived jobs are found too, marked as such
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "graphql" } });
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(screen.getByRole("option").querySelector(".pal-col")).toHaveTextContent("ARCHIVED");
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "zzz" } });
+    expect(screen.getByText(/nothing matches/)).toBeInTheDocument();
+    expect(card).toBeInTheDocument();
   });
 
   it("⌘N opens the new job dialog, from the board or from an open job", async () => {

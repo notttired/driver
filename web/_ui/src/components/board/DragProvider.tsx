@@ -41,7 +41,6 @@ export interface DragProviderProps {
   onToast?: (message: string) => void;
   /** the card under the pointer while dragging; a bare slug box by default */
   renderOverlay?: (job: WebJob | null, key: string) => ReactNode;
-  visibleKeys?: ReadonlySet<string>;
   children: ReactNode;
 }
 
@@ -50,10 +49,9 @@ export function DragProvider({
   onOpenJob,
   onToast,
   renderOverlay,
-  visibleKeys,
   children,
 }: DragProviderProps) {
-  const drag = useDragReorder({ board, onOpenJob, onToast, visibleKeys });
+  const drag = useDragReorder({ board, onOpenJob, onToast });
 
   const value = useMemo<DragContextValue>(
     () => ({

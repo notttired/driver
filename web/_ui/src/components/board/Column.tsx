@@ -11,8 +11,6 @@ export interface ColumnProps {
   /** the head's title; the label, as a plain heading, by default */
   title?: ReactNode;
   jobs: WebJob[];
-  /** the unfiltered count while a search is active — "2/7" */
-  total?: number;
   renderCard(job: WebJob): ReactNode;
   head?: ReactNode;
   footer?: ReactNode;
@@ -26,7 +24,6 @@ export function BoardColumn({
   label,
   title,
   jobs,
-  total,
   renderCard,
   head,
   footer,
@@ -37,7 +34,7 @@ export function BoardColumn({
   const ordered = useColumnJobs(col, jobs);
   const drop = useColumnDrop(col);
   const sort = useSortableColumn(col);
-  const count = total === undefined ? String(ordered.length) : `${ordered.length}/${total}`;
+  const count = String(ordered.length);
   const setRef = (el: HTMLElement | null) => {
     drop.setNodeRef(el);
     sort.setNodeRef(el);

@@ -9,15 +9,26 @@ import { JobOverlay } from "./components/overlays/JobOverlay.tsx";
 import { NewJobOverlay } from "./components/overlays/NewJobOverlay.tsx";
 import { WatchPromptOverlay } from "./components/overlays/WatchPromptOverlay.tsx";
 import { Toast, showToast } from "./components/overlays/Toast.tsx";
+import { CommandPalette, type PalettePick } from "./components/palette/CommandPalette.tsx";
 import { useBoard } from "./hooks/useBoard.ts";
-import { useJobSearch } from "./hooks/useJobSearch.ts";
+
+const NO_JOBS: never[] = [];
 
 export function App() {
   const board = useBoard();
-  const search = useJobSearch(board);
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [openKey, setOpenKeyRaw] = useState<string | null>(null);
+  // the tab the open job shows (a thread id; 0 = its own pi): another job
+  // starts on its own pi, the palette can ask for a thread
+  const [openThread, setOpenThread] = useState(0);
+  const setOpenKey = useCallback((key: string | null) => {
+    setOpenKeyRaw((was) => {
+      if (key !== was) setOpenThread(0);
+      return key;
+    });
+  }, []);
   const [newJob, setNewJob] = useState(false);
   const [watchPrompt, setWatchPrompt] = useState(false);
+  const [palette, setPalette] = useState(false);
   const { mutate } = board;
 
   const actions = useMemo<BoardActions>(
@@ -69,46 +80,67 @@ export function App() {
     [mutate],
   );
 
-  const closeOverlay = useCallback(() => setOpenKey(null), []);
-  const openJob = useCallback((slug: string) => setOpenKey(slug), []);
+  const closeOverlay = useCallback(() => setOpenKey(null), [setOpenKey]);
+  const openJob = useCallback((slug: string) => setOpenKey(slug), [setOpenKey]);
   const overlayOpen = openKey !== null || newJob || watchPrompt;
-  const closeOverlays = useCallback(() => {
-    setOpenKey(null);
-    setNewJob(false);
-    setWatchPrompt(false);
-  }, []);
+  const openPalette = useCallback(() => setPalette(true), []);
+  const closePalette = useCallback(() => setPalette(false), []);
+  // a pick lands on the pane: the job, on the tab asked for, over whatever
+  // was open
+  const onPick = useCallback(
+    (pick: PalettePick) => {
+      setNewJob(false);
+      setWatchPrompt(false);
+      setOpenKey(pick.key);
+      setOpenThread(pick.thread);
+    },
+    [setOpenKey],
+  );
 
+  // ⌘K: the palette, from anywhere (ctrl-K too, unless a pane has it); ⌘N: a
+  // new job
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "n" && e.key !== "N") return;
-      if (e.altKey || e.shiftKey || (!e.metaKey && !(e.ctrlKey && !overlayOpen))) return;
+      if (e.altKey || e.shiftKey) return;
+      const key = e.key.toLowerCase();
+      if (key !== "n" && key !== "k") return;
+      if (!e.metaKey && !(e.ctrlKey && !overlayOpen)) return;
       e.preventDefault();
+      if (key === "k") {
+        setPalette(true);
+        return;
+      }
+      setPalette(false);
       setOpenKey(null);
       setNewJob(true);
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [overlayOpen]);
+  }, [overlayOpen, setOpenKey]);
 
   return (
     <>
       <Chrome board={board.board} error={board.error} lastError={board.lastError} />
-      <DragProvider
-        board={board}
-        onOpenJob={openJob}
-        onToast={showToast}
-        visibleKeys={search.active ? search.visibleKeys : undefined}
-        renderOverlay={(job) => (job ? <GhostJobCard job={job} /> : null)}
-      >
-        <BoardView board={board} search={search} actions={actions} overlayOpen={overlayOpen} onSearchShortcut={closeOverlays} />
+      <DragProvider board={board} onOpenJob={openJob} onToast={showToast} renderOverlay={(job) => (job ? <GhostJobCard job={job} /> : null)}>
+        <BoardView board={board} actions={actions} onSearch={openPalette} />
       </DragProvider>
       <JobOverlay
         openKey={openKey}
+        thread={openThread}
+        onThread={setOpenThread}
         board={board}
         mutate={mutate}
         onClose={closeOverlay}
         onRenamed={setOpenKey}
         onToast={showToast}
+      />
+      <CommandPalette
+        open={palette}
+        jobs={board.board?.jobs ?? NO_JOBS}
+        lanes={board.lanes}
+        onPick={onPick}
+        onOpenDir={actions.onOpenDir}
+        onClose={closePalette}
       />
       <NewJobOverlay
         open={newJob}

@@ -1,74 +1,22 @@
-import { useEffect, useRef } from "react";
-
-import type { JobSearchModel } from "../../hooks/useJobSearch.ts";
-
 export interface BoardBarProps {
-  search: JobSearchModel;
-  /** while one is open, ctrl-K belongs to the pane: only ⌘K takes the search */
-  overlayOpen?: boolean;
-  onShortcut?: () => void;
+  /** the jobs on the board (the archive drawer's aside) */
+  total: number;
+  /** open the ⌘K palette */
+  onSearch: () => void;
 }
 
-export function BoardBar({ search, overlayOpen, onShortcut }: BoardBarProps) {
-  const { query, setQuery, matched, total, active } = search;
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "k" && e.key !== "K") return;
-      if (!e.metaKey && !(e.ctrlKey && !overlayOpen)) return;
-      e.preventDefault();
-      onShortcut?.();
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [overlayOpen, onShortcut]);
-
+/** The strip above the columns: the way into the palette, and the count. */
+export function BoardBar({ total, onSearch }: BoardBarProps) {
   return (
     <div className="boardbar" id="boardbar">
-      <span className="bb-search">
-        <input
-          ref={inputRef}
-          className="bb-input"
-          id="job-search"
-          type="text"
-          placeholder="search jobs…"
-          aria-label="search jobs"
-          autoComplete="off"
-          spellCheck={false}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key !== "Escape") return;
-            e.stopPropagation();
-            setQuery("");
-          }}
-        />
-        {active ? (
-          <button
-            className="bb-clear"
-            id="job-search-clear"
-            type="button"
-            title="clear the search"
-            aria-label="clear the search"
-            onClick={() => setQuery("")}
-          >
-            ✕
-          </button>
-        ) : null}
-      </span>
-      {active ? null : <span className="bb-hint">⌘K</span>}
-      <span className="bb-read">
-        {active ? (
-          <>
-            <b>{matched}</b> of {total} jobs
-          </>
-        ) : (
-          `${total} jobs`
-        )}
-      </span>
+      <button className="bb-search" id="job-search" type="button" title="jump to a pane — ⌘K" onClick={onSearch}>
+        <span className="bb-glyph" aria-hidden="true">
+          ⌕
+        </span>
+        search
+        <span className="bb-hint">⌘K</span>
+      </button>
+      <span className="bb-read">{`${total} jobs`}</span>
     </div>
   );
 }

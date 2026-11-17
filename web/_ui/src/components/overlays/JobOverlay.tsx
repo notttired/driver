@@ -50,6 +50,10 @@ type RegisterFlush = (fn: Flush | null) => void;
 export interface JobOverlayProps {
   /** board key (jobKey()) of the open job, null when closed */
   openKey: string | null;
+  /** the tab shown: a thread id, 0 for the job's own pi (the app's, so the
+   *  palette can open a job on a thread) */
+  thread: number;
+  onThread: (id: number) => void;
   board: BoardModel;
   mutate: Mutate;
   onClose: () => void;
@@ -67,7 +71,7 @@ export interface JobOverlayProps {
  * is a fresh mount — while the rename and fork controls and the auto-close
  * rule live up here where they survive that remount.
  */
-export function JobOverlay({ openKey, board, mutate, onClose, onRenamed, onToast }: JobOverlayProps) {
+export function JobOverlay({ openKey, thread, onThread, board, mutate, onClose, onRenamed, onToast }: JobOverlayProps) {
   const open = openKey !== null;
   const slug = openKey === null ? null : slugOfKey(openKey);
   const archived = openKey?.startsWith(ARCHIVE_KEY_PREFIX) ?? false;
@@ -133,6 +137,8 @@ export function JobOverlay({ openKey, board, mutate, onClose, onRenamed, onToast
           slug={slug}
           archived={archived}
           job={job}
+          thread={thread}
+          onThread={onThread}
           board={board}
           mutate={mutate}
           onClose={onClose}
@@ -152,6 +158,8 @@ interface JobPanelProps {
   slug: string;
   archived: boolean;
   job: WebJob | undefined;
+  thread: number;
+  onThread: (id: number) => void;
   board: BoardModel;
   mutate: Mutate;
   onClose: () => void;
@@ -167,6 +175,8 @@ function JobPanel({
   slug,
   archived,
   job,
+  thread,
+  onThread,
   board,
   mutate,
   onClose,
@@ -259,16 +269,16 @@ function JobPanel({
 
   const tok = statusToken(job ?? { state: form?.state ?? "draft" });
   const dir = job?.dir ?? form?.dir ?? "";
-  // the tabs: the job's own pi and its threads; the one shown is remembered
-  // per job (this panel is keyed by slug) and falls back to the job's own
-  // when the thread it was on is closed
+  // the tabs: the job's own pi and its threads; the one shown is the app's
+  // (another job starts on its own pi) and falls back to the job's own when
+  // the thread it was on is closed
   const title = title0(job, form, slug);
   const jobThreads = job?.threads;
   const threads = useMemo<WebThread[]>(
     () => jobThreads ?? [{ id: 0, name: title, live: job?.live ?? false, pi: job?.pi, retryable: job?.retryable }],
     [jobThreads, title, job?.live, job?.pi, job?.retryable],
   );
-  const [thread, setThread] = useState(0);
+  const setThread = onThread;
   // the sidebar: the conversation, or the notes when asked
   const [side, setSide] = useState<SideView>("conversation");
   const sideHead = <SideSwitch view={side} onSwitch={setSide} />;

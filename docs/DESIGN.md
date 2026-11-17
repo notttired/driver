@@ -90,7 +90,20 @@ usage, accounts, self-update) is left out on purpose.
   links, no button: the gesture is the whole feature.
 - Kept from kraken: four columns (draft · working · blocked · done), drag to
   reorder and to transition, archive drawer under DONE, 8-colour job stripe,
-  rename, board search (⌘K), theme + accent, daemon health in the chrome.
+  rename, theme + accent, daemon health in the chrome. kraken's board filter
+  (⌘K narrowing the columns) became the palette (2026-11-17): a popup over
+  everything, Raycast-fashion, listing every pane — each job and each of its
+  threads, archived last — with its column and status, narrowing as you type
+  to what the words are found in. A word counts where it is found (lib/
+  palette.ts): the title or slug most (a prefix more, the whole more still),
+  then thread names, the directory, the column or lane name, the status
+  words, the model, a link, the tool pi is in; a title the word only
+  abbreviates (its initials, or letters in order within one word) counts
+  least, and letters scattered across words do not count. Every word must
+  land somewhere; rows carry the reason when it was not the title (the
+  link, the dir, the model). ⏎ opens the pane — a thread's row opens the job
+  on that tab — ⌘⏎ opens the directory in the editor. The columns are no
+  longer filtered: the board is always the whole board.
 - Lanes: columns of your own (`+` at the end of the board; rename by
   clicking the name, ✕ to remove). A lane is a parking place, not a state: a
   card dragged into one keeps its state and stays put while the state changes;
@@ -583,13 +596,13 @@ Card click → the job overlay: head (name + rename, with `as <slug>` beside a n
 retry / start / stop / done / cancel / reactivate / archive by state), body = the pane
 for every opened job (pi at its prompt, working, blocked, done) or the launch
 form for a not-started one (dir with directory autocomplete, model datalist,
-START), sidebar = notes (autosaved) and the conversation record side by side,
-links (list, add, remove, PR status) beneath.
+START), sidebar = the conversation record with the notes (autosaved) a tab
+away, links (list, add, remove, PR status) beneath.
 The NEW JOB dialog takes a name, dir and model and starts the job itself
 (`/api/job/create`, then `/api/queue`), so the overlay it opens is already on
-the pane. Escape closes; ⌘K focuses search from anywhere, closing whatever
-overlay is open (ctrl-K too while none is, since in the pane it is pi's); the
-search covers the jobs on the board, never the archive. ⌘N opens NEW JOB the
-same way. ⌘-click on a card skips the overlay
+the pane. Escape closes; ⌘K opens the palette from anywhere, over whatever
+is open (ctrl-K too while nothing is, since in the pane it is pi's); Escape
+closes the palette first (its escape layer sits above the job's), a pick
+closes it and lands on the pane. ⌘N opens NEW JOB the same way. ⌘-click on a card skips the overlay
 and posts `/api/job/open` (the directory in the editor); the overlay's dir label
 answers the same gesture.

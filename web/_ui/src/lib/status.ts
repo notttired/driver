@@ -1,4 +1,4 @@
-import type { WebJob } from "./types.ts";
+import type { WebJob, WebThread } from "./types.ts";
 
 export interface StatusToken {
   /** The token itself, glyph included. */
@@ -63,4 +63,12 @@ export function statusToken(job: Pick<WebJob, "state" | "pi">): StatusToken {
     case "done":
       return { text: "✓ done", variant: "done" };
   }
+}
+
+/** A thread's status token: the column its pi alone would put the job in,
+ *  then what it is doing there. */
+export function threadStatusToken(t: Pick<WebThread, "pi">): StatusToken {
+  const state = t.pi?.state;
+  const column = state === "working" || state === "starting" ? "working" : state === "ready" ? "draft" : "blocked";
+  return statusToken({ state: column, pi: t.pi });
 }
