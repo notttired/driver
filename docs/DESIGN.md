@@ -220,6 +220,7 @@ macos/                Driver.app: DriverApp.swift, ServerConfig.swift, project.y
                       Generated-Info.plist, build-without-xcode.sh, AppIcon-1024.png
 Makefile              build · install · install-serve (launchd) · mac · install-mac · dev · test
 docs/                 this file, API.md
+CHANGELOG.md          every change since the fork from kraken, newest first
 ```
 
 ## Names, paths, knobs
