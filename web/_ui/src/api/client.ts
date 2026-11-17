@@ -12,6 +12,7 @@ import type {
   JobForm,
   ModelsResponse,
   OkResponse,
+  OpenThreadResult,
   PinLinkResult,
   RenameResult,
   SaveFormResult,
@@ -113,9 +114,10 @@ export const fetchModels = (signal?: AbortSignal) =>
 
 export const fetchTabs = (signal?: AbortSignal) => getJSON<TabsResponse>("/api/tabs", signal);
 
-/** The record of a job's conversation: your messages and pi's final answers. */
-export const fetchConversation = (slug: string, signal?: AbortSignal) =>
-  getJSON<WebConversation>(`/api/job/conversation?slug=${encodeURIComponent(slug)}`, signal);
+/** The record of a job's conversation: your messages and pi's final answers.
+ *  thread 0 (or absent) is the job's own pi; else that thread's. */
+export const fetchConversation = (slug: string, thread = 0, signal?: AbortSignal) =>
+  getJSON<WebConversation>(`/api/job/conversation?slug=${encodeURIComponent(slug)}${thread ? `&thread=${thread}` : ""}`, signal);
 
 // ------------------------------------------------- job state transitions
 
@@ -161,6 +163,21 @@ export const reorderColumns = (columns: readonly Column[]) =>
 
 /** What WATCH says to pi; "" goes back to the default. */
 export const setWatchPrompt = (text: string) => postJSON<OkResponse>("/api/watch-prompt", { text });
+
+// ---------------------------------------------------------------- threads
+
+const THREAD_ENDPOINT = "/api/job/thread";
+
+/** Open a thread on the job: a copy of thread `from`'s conversation (0 = the
+ *  job's own) with a pi of its own, named `name`. */
+export const openThread = (slug: string, from: number, name: string) =>
+  postJSON<OpenThreadResult>(THREAD_ENDPOINT, { slug, op: "open", from, name }, { timeoutMs: SUBMIT_TIMEOUT_MS });
+export const closeThread = (slug: string, id: number) => postJSON<OkResponse>(THREAD_ENDPOINT, { slug, op: "close", id });
+export const stopThread = (slug: string, id: number) => postJSON<OkResponse>(THREAD_ENDPOINT, { slug, op: "stop", id });
+export const retryThread = (slug: string, id: number) =>
+  postJSON<OkResponse>(THREAD_ENDPOINT, { slug, op: "retry", id }, { timeoutMs: SUBMIT_TIMEOUT_MS });
+export const renameThread = (slug: string, id: number, name: string) =>
+  postJSON<OkResponse>(THREAD_ENDPOINT, { slug, op: "rename", id, name });
 
 // ------------------------------------------------------------------ lanes
 

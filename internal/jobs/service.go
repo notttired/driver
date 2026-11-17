@@ -191,8 +191,8 @@ func (s *Service) Submit(j *store.Job) error {
 		return Refuse("%v", err)
 	}
 	// a fresh transcript: forget the old scan offset and pending PR calls
-	_ = s.Store.DeleteKV(scanOffsetKey(j.ID))
-	_ = s.Store.DeleteKV(scanPendingKey(j.ID))
+	_ = s.Store.DeleteKV(scanOffsetKey(jobKey(j)))
+	_ = s.Store.DeleteKV(scanPendingKey(jobKey(j)))
 	_, err = s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{
 		"tmux": sess, "pi_session": sessionFile, "started_at": time.Now().Unix(),
 		"state": "ready", "outcome": "", "finished_at": int64(0),
@@ -424,6 +424,9 @@ func (s *Service) Done(j *store.Job) error {
 	if err := s.killIfPresent(j); err != nil {
 		return err
 	}
+	if err := s.closeThreads(j); err != nil {
+		return err
+	}
 	_, err := s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{
 		"state": "done", "attention_at": int64(0), "outcome": "accepted", "finished_at": time.Now().Unix(),
 		"lane_id": int64(0), "watching_at": int64(0),
@@ -449,6 +452,9 @@ func (s *Service) Kill(j *store.Job) error {
 		return Refuse("job %s is not started", j.Slug)
 	}
 	if err := s.killIfPresent(j); err != nil {
+		return err
+	}
+	if err := s.dropThreads(j); err != nil {
 		return err
 	}
 	_, err := s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{
@@ -606,6 +612,9 @@ func (s *Service) Rename(j *store.Job, to, name string) (string, error) {
 		}
 		return "", mapStoreErr(err)
 	}
+	if err := s.renameThreadSessions(j, renamed); err != nil {
+		log.Printf("rename %s → %s: thread sessions: %v", j.Slug, to, err)
+	}
 	return to, nil
 }
 
@@ -661,7 +670,7 @@ func (s *Service) Fork(j *store.Job, to, name string) (*store.Job, error) {
 		if ownDir {
 			_ = os.RemoveAll(jobDir)
 		}
-		_ = s.Store.DeleteKV(scanOffsetKey(fork.ID))
+		_ = s.Store.DeleteKV(scanOffsetKey(jobKey(fork)))
 		if derr := s.Store.DeleteJob(fork.ID); derr != nil {
 			log.Printf("fork %s → %s: %v; and the half-made job could not be removed: %v", j.Slug, to, err, derr)
 		}
@@ -685,7 +694,7 @@ func (s *Service) Fork(j *store.Job, to, name string) (*store.Job, error) {
 			// has them now, removals included): the fork's scanner starts at
 			// its end rather than reading it again
 			if fi, err := os.Stat(sessionFile); err == nil {
-				_ = s.Store.SetKV(scanOffsetKey(fork.ID), strconv.FormatInt(fi.Size(), 10))
+				_ = s.Store.SetKV(scanOffsetKey(jobKey(fork)), strconv.FormatInt(fi.Size(), 10))
 			}
 			fields["pi_session"] = sessionFile
 		}
@@ -812,17 +821,8 @@ func (s *Service) AppendNotes(j *store.Job, text string) error {
 // LookupJobDir finds the active job whose session files live in dir: the
 // DRIVER_JOB_DIR its pi was started with, which a rename leaves alone.
 func (s *Service) LookupJobDir(dir string) (*store.Job, error) {
-	all, err := s.Store.ListJobs()
-	if err != nil {
-		return nil, err
-	}
-	dir = filepath.Clean(dir)
-	for _, j := range all {
-		if s.Cfg.JobDir(j) == dir {
-			return j, nil
-		}
-	}
-	return nil, store.ErrNotFound
+	j, _, err := s.LookupThreadDir(dir)
+	return j, err
 }
 
 // AddLink attaches a URL with its detected kind, pinned; a duplicate is a

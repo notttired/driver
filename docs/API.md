@@ -59,6 +59,16 @@ type WebJob = {
   retryable?: boolean;         // blocked, and its pi exited or its last turn failed: /api/retry
   lane?: number;               // the lane the board shows it in (WebLane.id); absent = the column its state names
   watching?: boolean;          // its pi is watching over the shipped work: shown in WATCHING, whatever its state
+  threads?: WebThread[];       // open jobs: the tabs — the job's own pi (id 0, named as the job) first, then every open thread
+};
+
+type WebThread = {
+  id: number;                  // 0: the job's own pi; else the thread's id
+  name: string;
+  live: boolean;
+  pi?: { state: string; tool?: string; reason?: string; error?: string; ts: number };   // as WebJob.pi, for this pi alone
+  retryable?: boolean;         // its pi exited or its last turn failed: /api/job/thread retry
+  started_at?: number;
 };
 
 type WebLane = { id: number; name: string };
@@ -75,6 +85,10 @@ type WebLink = {
   pinned_at?: number;          // you opened it, pinned it or added it by hand (unix seconds); `unpin` clears it
 };
 ```
+
+A job's `state` and `pi` fold its threads together: working while any pi
+works, else blocked when any pi waits (the first such pi's reading is the
+card's), else ready. `retryable` is the job's own pi's.
 
 A job's links come in display order: the pinned ones (`pinned_at`), the last
 pinned first, then the rest, newest first.
@@ -129,6 +143,7 @@ blocked drag — interrupts you sent yourself); it goes off when the job leaves
 | `POST /api/job/lane` | `{"slug", "lane": number}` — park the job in that lane, last; `0` returns it to the end of the column its state names. Either way it leaves WATCHING (pi is not interrupted). No state change; allowed in every state | archived · unknown lane (404) |
 | `POST /api/job/color` | `{"slug", "color"}`; `""` clears; allowed in every state | unknown colour (400) |
 | `POST /api/job/rename` | `{"slug", "to", "name"?}` → `{"ok": true, "slug": "<to>"}`: `to` is the new slug (rules below), `name` the new display name (whitespace-collapsed, ≤ 200 characters; `""` or absent = the job goes by its slug). Either may stay as it is. Allowed in every state; when the slug changes on a live job its tmux session is renamed too | taken · invalid · name too long (400) |
+| `POST /api/job/thread` | `{"slug", "op": "open", "from"?: number, "name"}` → `{"ok": true, "thread": WebThread}`: another pi on the job in a tmux session of its own (`drv-<slug>-<id>-t<thread id>`), resumed on a copy of thread `from`'s conversation as it stands (0 or absent: the job's own); the thread keeps the job's column until its pi reports. `{"slug", "op": "close", "id"}`: its pi is closed (session killed); the thread and its conversation stay with the job and its record stays readable. `{"slug", "op": "stop", "id"}`: Escape into its pane. `{"slug", "op": "retry", "id"}`: as `/api/retry`, for that pi. `{"slug", "op": "rename", "id", "name"}`. Names are whitespace-collapsed, 1–60 characters. Answers after the session is up (the start timeout applies) | job not open (not started, done) · archived · dir gone · pi or tmux not found · tmux failure · empty name · closed thread · nothing to retry / no live session (text) · long name (400) · unknown thread (404) |
 | `POST /api/job/fork` | `{"slug", "to", "name"?}` → the fork's `JobForm`: a copy of the job — dir, model, colour, notes, links, and its conversation (the session file copied under a fresh session id, `parentSession` naming the original's) — as slug `to`, named `name` (same rules as rename), placed in the original's column right after it. A not-started draft's fork is a draft; a done job's fork is done (reactivate it to carry on from where the original stood); an open job's fork (ready, working, blocked) gets its own tmux session and pi resumed on the copied conversation, keeps the original's column until its own pi reports, and answers after that session is up (the start timeout applies). Archived jobs cannot be forked — unarchive first | archived · slug taken · invalid slug · the original's own slug · name too long (400) · for an open job: dir gone · pi or tmux not found · tmux failure (text) |
 | `GET /api/job/notes` | `?slug=<slug>` or `?job_dir=<dir>` → `{"text": string}`. `job_dir` is pi's way in (`DRIVER_JOB_DIR`; the job whose session files live there, whatever it was renamed to); the notes panel polls by slug | unknown job (404) |
 | `POST /api/job/notes` | `{"slug" or "job_dir", "text", "op"?}`; `op` absent or `"replace"`: full replace; `"append"`: `text` added at the end after a blank line (the text alone when the notes are empty). Allowed in every state | > 64000 runes · nothing to add (400) · unknown op (400) |
@@ -181,7 +196,7 @@ subdirectories.
 
 ## Conversation
 
-`GET /api/job/conversation?slug=<slug>` → `WebConversation` — the overlay's
+`GET /api/job/conversation?slug=<slug>[&thread=<id>]` → `WebConversation` — the overlay's
 record of the session: your messages and pi's final answer to each
 (docs/DESIGN.md "Conversation record"). Derived on each request from the job's
 current session file — the one pi is writing; the daemon follows pi to the new
@@ -213,7 +228,7 @@ The open http(s) tabs of the operator's browser (`DRIVER_BROWSER`, default `Goog
 
 ## Terminal
 
-`GET /api/term?slug=<slug>` — websocket upgrade. 404 `{"error":"no such job"}` /
+`GET /api/term?slug=<slug>[&thread=<id>]` — websocket upgrade (`thread`: that thread's pane; absent or 0: the job's own). 404 `{"error":"no such job"}` /
 409 `{"error":"no live session"}` as plain HTTP before upgrading when there is
 nothing to attach to. After upgrade:
 

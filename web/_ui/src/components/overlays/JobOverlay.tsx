@@ -13,9 +13,11 @@ import {
   queueJob,
   reactivateJob,
   retryJob,
+  retryThread,
   seenJob,
   setJobColor,
   stopJob,
+  stopThread,
   unarchiveJob,
   watchJob,
 } from "../../api/client.ts";
@@ -23,7 +25,7 @@ import type { BoardModel } from "../../hooks/useBoard.ts";
 import { ESC_PRIORITY } from "../../hooks/useEscapeStack.ts";
 import { ARCHIVE_KEY_PREFIX, slugOfKey } from "../../lib/jobKey.ts";
 import { isOpened, statusToken } from "../../lib/status.ts";
-import type { JobForm, ModelsResponse, WebJob } from "../../lib/types.ts";
+import type { JobForm, ModelsResponse, WebJob, WebThread } from "../../lib/types.ts";
 import { readLS, writeLS } from "../../hooks/useLocalStorage.ts";
 import { DEFAULT_SPLIT, MAX_SPLIT, MIN_SPLIT, SPLIT_KEY, clampSplit, splitFromPointer } from "../../lib/split.ts";
 import { ConversationPanel } from "./ConversationPanel.tsx";
@@ -34,6 +36,7 @@ import { NotesPanel } from "./NotesPanel.tsx";
 import { Overlay, type Mutate } from "./Overlay.tsx";
 import { RenameButton, RenameRow, useRenameControl, type RenameControlState } from "./RenameControl.tsx";
 import { SwatchStrip } from "./SwatchStrip.tsx";
+import { ThreadTabs } from "./ThreadTabs.tsx";
 
 // xterm is half the bundle; it loads the first time an opened job's pane shows
 const TerminalPane = lazy(() =>
@@ -255,7 +258,21 @@ function JobPanel({
 
   const tok = statusToken(job ?? { state: form?.state ?? "draft" });
   const dir = job?.dir ?? form?.dir ?? "";
-  const live = job?.live ?? false;
+  // the tabs: the job's own pi and its threads; the one shown is remembered
+  // per job (this panel is keyed by slug) and falls back to the job's own
+  // when the thread it was on is closed
+  const title = title0(job, form, slug);
+  const jobThreads = job?.threads;
+  const threads = useMemo<WebThread[]>(
+    () => jobThreads ?? [{ id: 0, name: title, live: job?.live ?? false, pi: job?.pi, retryable: job?.retryable }],
+    [jobThreads, title, job?.live, job?.pi, job?.retryable],
+  );
+  const [thread, setThread] = useState(0);
+  const cur: WebThread = threads.find((t) => t.id === thread) ?? threads[0] ?? { id: 0, name: title, live: false };
+  useEffect(() => {
+    if (thread !== 0 && !threads.some((t) => t.id === thread)) setThread(0);
+  }, [thread, threads]);
+  const live = cur.live;
   // attach whenever a tmux session can exist: opened drafts, working and
   // blocked jobs keep theirs even after pi exits (dead pane, last screen
   // intact); done jobs had theirs killed, so the pane shows the ended banner
@@ -273,7 +290,6 @@ function JobPanel({
     const r = bodyRef.current?.getBoundingClientRect();
     if (r) setSplit(splitFromPointer(e.clientX, r.left, r.width));
   };
-  const title = job?.name || form?.name || job?.display_slug || form?.slug || slug;
   const effState = archived ? "archived" : (job?.state ?? form?.state ?? "draft");
 
   const actions = (() => {
@@ -325,20 +341,20 @@ function JobPanel({
       case "working":
       case "blocked":
         return [
-          ...(job?.retryable
+          ...(cur.retryable
             ? [
-                b("retry", "↻ RETRY", () => retryJob(slug), {
+                b("retry", "↻ RETRY", () => (cur.id ? retryThread(slug, cur.id) : retryJob(slug)), {
                   cls: "btn primary",
                   title:
-                    job.pi?.state === "exited"
+                    cur.pi?.state === "exited"
                       ? "start pi again on this conversation; it continues if it was cut off mid-turn"
                       : "pi gave up on its last turn: tell it to continue",
                 }),
               ]
             : []),
-          b("stop", "■ STOP", () => stopJob(slug), {
+          b("stop", "■ STOP", () => (cur.id ? stopThread(slug, cur.id) : stopJob(slug)), {
             disabled: !live,
-            title: "send Escape to the pane — interrupt what pi is doing",
+            title: "send Escape to this tab's pane — interrupt what its pi is doing",
           }),
           ...watch,
           b("done", "✓ DONE", () => doneJob(slug), { title: "kill the session, mark done" }),
@@ -439,8 +455,18 @@ function JobPanel({
             />
           ) : (
             <>
+              {attach ? (
+                <ThreadTabs
+                  slug={slug}
+                  threads={threads}
+                  current={cur.id}
+                  onSelect={setThread}
+                  onChanged={() => board.refetch()}
+                  onToast={onToast}
+                />
+              ) : null}
               <Suspense fallback={<div className="editor-hint">loading terminal…</div>}>
-                <TerminalPane slug={slug} attach={attach} onOpenLink={openLink} />
+                <TerminalPane key={`${slug}:${cur.id}`} slug={slug} thread={cur.id} attach={attach} onOpenLink={openLink} />
               </Suspense>
             </>
           )}
@@ -483,7 +509,7 @@ function JobPanel({
                   onSaved={() => void board.refetch()}
                   registerFlush={registerNotesFlush}
                 />
-                <ConversationPanel slug={slug} opened={opened} pi={job?.pi} onOpenLink={openLink} />
+                <ConversationPanel key={`${slug}:${cur.id}`} slug={slug} thread={cur.id} opened={opened} pi={cur.pi ?? job?.pi} onOpenLink={openLink} />
               </div>
               <LinksPanel
                 slug={slug}
@@ -499,4 +525,9 @@ function JobPanel({
       </div>
     </>
   );
+}
+
+/** What the overlay calls the job: its name, else its slug. */
+function title0(job: WebJob | undefined, form: JobForm | null, slug: string): string {
+  return job?.name || form?.name || job?.display_slug || form?.slug || slug;
 }

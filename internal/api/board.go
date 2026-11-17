@@ -45,6 +45,7 @@ type webJob struct {
 	Retryable     bool         `json:"retryable,omitempty"`
 	Lane          int64        `json:"lane,omitempty"`
 	Watching      bool         `json:"watching,omitempty"`
+	Threads       []webThread  `json:"threads,omitempty"` // the job's tabs: its own pi first
 }
 
 type webLane struct {
@@ -142,15 +143,25 @@ func (a *API) buildBoard() (*webBoard, error) {
 			sess := jobs.SessionName(j)
 			live := snap.Live(sess)
 			status := a.Svc.Cfg.ReadStatus(j)
-			obs := jobs.Observe(j, live, status, now)
+			own := jobs.Observe(j, live, status, now)
 			retryable := false
-			if state == "blocked" && obs.Pi != nil {
+			if own.State == "blocked" && own.Pi != nil {
 				if conv, err := a.conversations.record(j); err == nil {
 					retryable = jobs.PlanRetry(j, live, status, conv) != jobs.RetryNone
 					if msg, failed := conv.Failed(); failed {
-						obs.Pi.Error = cmp.Or(msg, "error")
+						own.Pi.Error = cmp.Or(msg, "error")
 					}
 				}
+			}
+			var threads []webThread
+			obs := own
+			if jobs.Opened(j) && j.State != "done" {
+				var all []jobs.Observation
+				threads, all, err = a.threadsOf(j, webThread{ID: 0, Name: j.DisplayName(), Live: live, Pi: own.Pi, Retryable: retryable, StartedAt: j.StartedAt}, own, now)
+				if err != nil {
+					return nil, err
+				}
+				obs = jobs.Combine(all)
 			}
 			out = append(out, webJob{
 				Slug: j.Slug, Name: j.Name, Dir: j.Dir, Model: j.Model, Color: j.Color,
@@ -158,7 +169,7 @@ func (a *API) buildBoard() (*webBoard, error) {
 				HasNotes: j.Notes != "", Links: webLinksFrom(links[j.ID]),
 				StartedAt: j.StartedAt, FinishedAt: j.FinishedAt, MTime: j.UpdatedAt,
 				Reactivatable: j.State == "done", Attention: j.AttentionAt != 0, Retryable: retryable,
-				Lane: j.LaneID, Watching: j.WatchingAt != 0,
+				Lane: j.LaneID, Watching: j.WatchingAt != 0, Threads: threads,
 			})
 		}
 	}

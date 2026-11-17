@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WebConversation } from "../../lib/types.ts";
 
 const { fetchConversation } = vi.hoisted(() => ({
-  fetchConversation: vi.fn<(slug: string, signal?: AbortSignal) => Promise<WebConversation>>(),
+  fetchConversation: vi.fn<(slug: string, thread?: number, signal?: AbortSignal) => Promise<WebConversation>>(),
 }));
 vi.mock("../../api/client.ts", () => ({ fetchConversation }));
 
@@ -38,7 +38,7 @@ describe("ConversationPanel", () => {
     expect(screen.getByText("working…")).toBeInTheDocument();
     expect(screen.getByText("3 turns")).toBeInTheDocument();
     expect(screen.getAllByText("you")).toHaveLength(3);
-    expect(fetchConversation).toHaveBeenCalledWith("demo", expect.anything());
+    expect(fetchConversation).toHaveBeenCalledWith("demo", 0, expect.anything());
   });
 
   it("tells the overlay which link you opened, in your rows and in pi's", async () => {

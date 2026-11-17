@@ -771,6 +771,54 @@ body.splitting .term-pane, body.splitting .job-side { pointer-events: none; }
   .job-side { border-top: 1px solid var(--border); }
 }
 
+/* thread tabs: one per pi on the job, above the pane */
+.thread-tabs { display: flex; flex-direction: column; gap: 0; flex: none; }
+.thread-row { display: flex; align-items: flex-end; gap: 2px; border-bottom: 1px solid var(--border); min-height: 24px; overflow-x: auto; }
+.thread-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 5px;
+  font: 500 10px/1 var(--mono);
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  margin-bottom: -1px;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 220px;
+}
+.thread-tab:hover { color: var(--fg); background: var(--drop-tint); }
+.thread-tab.selected { color: var(--fg); border-color: var(--border); border-bottom: 1px solid var(--b0); background: var(--b0); }
+.thread-tab.dead .thread-name { text-decoration: line-through; text-decoration-color: var(--stopped); }
+.thread-name { overflow: hidden; text-overflow: ellipsis; }
+.thread-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.thread-dot.status-working { animation: ppulse 1.4s ease-in-out infinite; }
+.thread-close { display: none; margin-left: 2px; font-size: 9px; color: var(--muted); }
+.thread-tab:hover .thread-close, .thread-tab.selected .thread-close { display: inline; }
+.thread-close:hover { color: var(--ac2); }
+.thread-rename {
+  font: 500 10px/1 var(--mono);
+  color: var(--fg);
+  background: var(--b1);
+  border: 1px solid var(--ac);
+  padding: 1px 4px;
+  width: 12ch;
+  outline: none;
+}
+.thread-add {
+  font: 500 12px/1 var(--mono);
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  padding: 3px 8px 5px;
+  cursor: pointer;
+}
+.thread-add:hover { color: var(--fg); background: var(--drop-tint); }
+.thread-new-row { padding: 6px 0 0; }
+
 /* editor form */
 .editor-form { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
 .editor-form label, .f-field {

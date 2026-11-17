@@ -15,11 +15,11 @@ export function activatePaneLink(e: Pick<MouseEvent, "metaKey" | "ctrlKey">, url
   if (isOpenClick(e) && openExternal(url)) onOpen?.(url);
 }
 
-/** `ws(s)://<host>/api/term?slug=…` — same origin, so the vite proxy and the
- *  embedded server both work. */
-export function termSocketUrl(slug: string, loc: Pick<Location, "protocol" | "host"> = window.location): string {
+/** `ws(s)://<host>/api/term?slug=…[&thread=N]` — same origin, so the vite
+ *  proxy and the embedded server both work. thread 0 is the job's own pi. */
+export function termSocketUrl(slug: string, thread = 0, loc: Pick<Location, "protocol" | "host"> = window.location): string {
   const proto = loc.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${loc.host}/api/term?slug=${encodeURIComponent(slug)}`;
+  return `${proto}//${loc.host}/api/term?slug=${encodeURIComponent(slug)}${thread ? `&thread=${thread}` : ""}`;
 }
 
 /** Resolve a `:root` custom property to its computed string (hex primitives
@@ -43,6 +43,8 @@ function readTheme() {
 
 export interface TerminalPaneProps {
   slug: string;
+  /** the tab shown: a thread id, 0 (default) for the job's own pi */
+  thread?: number;
   /** true whenever a tmux session can exist — an opened draft (pi at its
    *  prompt), working and blocked jobs, whose session stays even after pi
    *  exits (dead pane, last screen); false for done jobs, whose session was
@@ -61,7 +63,7 @@ interface Ended {
  * fit, `exit` in right before the server closes). A 404/409 before the
  * upgrade closes the socket at once, which lands in the same banner.
  */
-export function TerminalPane({ slug, attach, onOpenLink }: TerminalPaneProps) {
+export function TerminalPane({ slug, thread = 0, attach, onOpenLink }: TerminalPaneProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const onOpenLinkRef = useRef(onOpenLink);
   onOpenLinkRef.current = onOpenLink;
@@ -91,7 +93,7 @@ export function TerminalPane({ slug, attach, onOpenLink }: TerminalPaneProps) {
     term.loadAddon(new WebLinksAddon(activate));
     term.open(host);
 
-    const ws = new WebSocket(termSocketUrl(slug));
+    const ws = new WebSocket(termSocketUrl(slug, thread));
     ws.binaryType = "arraybuffer";
     const encoder = new TextEncoder();
     let closed = false;
@@ -184,7 +186,7 @@ export function TerminalPane({ slug, attach, onOpenLink }: TerminalPaneProps) {
       }
       term.dispose();
     };
-  }, [slug, attach]);
+  }, [slug, thread, attach]);
 
   return (
     <div className={"term-pane" + (ended ? " ended" : "") + (connected ? " connected" : "")} data-no-drag>

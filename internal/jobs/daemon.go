@@ -38,10 +38,11 @@ type Daemon struct {
 	status atomic.Pointer[Status]
 
 	tickN        int
-	blockedSince map[int64]int    // job id → tick the current hold began
-	lastReason   map[int64]string // job id → last blocked reason seen
-	elsewhere    map[int64]string // job id → a session path pi reported outside the job dir, logged once
-	goneAtStart  map[int64]bool
+	blockedSince map[int64]int     // job id → tick the current hold began
+	lastReason   map[int64]string  // job id → last blocked reason seen
+	elsewhere    map[string]string // scan key → a session path pi reported outside its dir, logged once
+	goneAtStart  map[string]bool   // scan key → its pi was not live on the first tick
+	threadState  map[int64]string  // thread id → the state last observed
 	scanner      *sessionScanner
 	prBackoff    map[string]time.Time // PR url → last failed gh call
 	ghMissing    bool
@@ -54,8 +55,9 @@ func NewDaemon(svc *Service) *Daemon {
 		svc:          svc,
 		blockedSince: map[int64]int{},
 		lastReason:   map[int64]string{},
-		elsewhere:    map[int64]string{},
-		goneAtStart:  map[int64]bool{},
+		elsewhere:    map[string]string{},
+		goneAtStart:  map[string]bool{},
+		threadState:  map[int64]string{},
 		scanner:      newSessionScanner(svc.Store),
 		prBackoff:    map[string]time.Time{},
 	}
@@ -121,23 +123,64 @@ func (d *Daemon) tick() (live int, firstErr error) {
 	snap := d.svc.Tmux.Snapshot()
 	now := time.Now().Unix()
 	seen := map[int64]bool{}
+	seenKeys := map[string]bool{}
+	seenThreads := map[int64]bool{}
 	for _, j := range jobs {
 		if j.State != "ready" && j.State != "working" && j.State != "blocked" {
 			continue
 		}
 		seen[j.ID] = true
+		seenKeys[jobKey(j)] = true
 		sess := SessionName(j)
 		isLive := snap.Live(sess)
 		if isLive {
 			live++
 		} else if d.tickN == 1 {
-			d.goneAtStart[j.ID] = true
+			d.goneAtStart[jobKey(j)] = true
 		}
 		st := d.svc.Cfg.ReadStatus(j)
 		if st != nil {
 			note(d.followSession(j, st.Session))
 		}
-		obs := Observe(j, isLive, st, now)
+		own := Observe(j, isLive, st, now)
+		all := []Observation{own}
+		threads, err := d.svc.OpenThreads(j)
+		if err != nil {
+			note(err)
+		}
+		var turned []threadTurn
+		for _, t := range threads {
+			seenKeys[threadKey(j, t)] = true
+			seenThreads[t.ID] = true
+			tsess := ThreadSessionName(j, t)
+			tlive := snap.Live(tsess)
+			if tlive {
+				live++
+			} else if d.tickN == 1 {
+				d.goneAtStart[threadKey(j, t)] = true
+			}
+			tst := d.svc.Cfg.ReadThreadStatus(j, t)
+			if tst != nil {
+				note(d.followThreadSession(j, t, tst.Session))
+			}
+			tobs := ObserveThread(j.State, t.StartedAt, tlive, tst, now)
+			if was := d.threadState[t.ID]; tobs.State == "blocked" && was != "" && was != "blocked" && tobs.Pi.Reason != "aborted" {
+				turned = append(turned, threadTurn{t, tobs.Pi.Reason})
+			}
+			d.threadState[t.ID] = tobs.State
+			all = append(all, tobs)
+			if d.goneAtStart[threadKey(j, t)] && d.tickN > 1 {
+				delete(d.goneAtStart, threadKey(j, t))
+				if !tlive {
+					if err := d.svc.RetryThread(j, t); err != nil {
+						log.Printf("%s · %s: not brought back: %v", j.Slug, t.Name, err)
+					} else {
+						log.Printf("%s · %s: brought back — its pi was gone when driver started", j.Slug, t.Name)
+					}
+				}
+			}
+		}
+		obs := Combine(all)
 		state, hold := holdBlocked(j.State, obs.State, d.blockedSince[j.ID], d.tickN)
 		if hold == 0 {
 			delete(d.blockedSince, j.ID)
@@ -148,6 +191,7 @@ func (d *Daemon) tick() (live int, firstErr error) {
 		if obs.Pi != nil {
 			reason = obs.Pi.Reason
 		}
+		wroteBlocked := false
 		if state != j.State {
 			tr := classify(j.State, state, reason)
 			fields := map[string]any{"state": state}
@@ -170,6 +214,7 @@ func (d *Daemon) tick() (live int, firstErr error) {
 				}
 			}
 			if state == "blocked" {
+				wroteBlocked = true
 				d.notify(fmt.Sprintf("driver ⚑ %s — %s", j.DisplayName(), reason))
 			}
 			j.State, j.Rev = state, rev
@@ -178,13 +223,20 @@ func (d *Daemon) tick() (live int, firstErr error) {
 			// worth a notification (design: "or its pi exits")
 			d.notify(fmt.Sprintf("driver ⚑ %s — exited", j.DisplayName()))
 		}
+		if !wroteBlocked {
+			// a thread that stopped for you while the job stays working (or
+			// was blocked already) is its own news
+			for _, tt := range turned {
+				d.notify(fmt.Sprintf("driver ⚑ %s · %s — %s", j.DisplayName(), tt.thread.Name, tt.reason))
+			}
+		}
 		if state == "blocked" {
 			d.lastReason[j.ID] = reason
 		} else {
 			delete(d.lastReason, j.ID)
 		}
-		if d.goneAtStart[j.ID] && (isLive || j.State == "blocked") {
-			delete(d.goneAtStart, j.ID)
+		if d.goneAtStart[jobKey(j)] && (isLive || j.State == "blocked") {
+			delete(d.goneAtStart, jobKey(j))
 			if !isLive {
 				if err := d.svc.Retry(j); err != nil {
 					log.Printf("%s: not brought back: %v", j.Slug, err)
@@ -209,19 +261,34 @@ func (d *Daemon) tick() (live int, firstErr error) {
 			delete(d.lastReason, id)
 		}
 	}
-	for id := range d.elsewhere {
-		if !seen[id] {
-			delete(d.elsewhere, id)
+	for key := range d.elsewhere {
+		if !seenKeys[key] {
+			delete(d.elsewhere, key)
 		}
 	}
-	for id := range d.goneAtStart {
-		if !seen[id] {
-			delete(d.goneAtStart, id)
+	for key := range d.goneAtStart {
+		if !seenKeys[key] {
+			delete(d.goneAtStart, key)
+		}
+	}
+	for id := range d.threadState {
+		if !seenThreads[id] {
+			delete(d.threadState, id)
 		}
 	}
 	for _, j := range jobs {
 		if j.PiSession != "" {
 			note(d.scanner.scan(j))
+		}
+		threads, err := d.svc.Store.ListThreads(j.ID)
+		if err != nil {
+			note(err)
+			continue
+		}
+		for _, t := range threads {
+			if t.PiSession != "" {
+				note(d.scanner.scanThread(j, t))
+			}
 		}
 	}
 	// gh round trips (up to 3 × 10s) must not stall the heartbeat: refresh in
@@ -235,6 +302,12 @@ func (d *Daemon) tick() (live int, firstErr error) {
 		}()
 	}
 	return live, firstErr
+}
+
+// threadTurn is a thread that stopped for the operator this tick.
+type threadTurn struct {
+	thread *store.Thread
+	reason string
 }
 
 // transition is what a stored-state change means for the board beyond the
@@ -392,37 +465,71 @@ func mapPRState(state string, draft bool) string {
 // directory) and is logged once; a path pi has not written yet (a /new
 // before its first message) is left for a later tick.
 func (d *Daemon) followSession(j *store.Job, session string) error {
-	if session == "" {
+	moved, err := d.follow(jobKey(j), j.Slug, j.PiSession, d.svc.Cfg.JobDir(j), session, func(path string) error {
+		rev, err := d.svc.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{"pi_session": path})
+		if err != nil {
+			return err
+		}
+		j.PiSession, j.Rev = path, rev
 		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("%s: follow session %s: %w", j.Slug, filepath.Base(session), err)
+	}
+	if moved {
+		return d.scanner.forget(jobKey(j))
+	}
+	return nil
+}
+
+// followThreadSession is followSession for a thread's pi.
+func (d *Daemon) followThreadSession(j *store.Job, t *store.Thread, session string) error {
+	moved, err := d.follow(threadKey(j, t), j.Slug+" · "+t.Name, t.PiSession, d.svc.Cfg.ThreadDir(j, t), session, func(path string) error {
+		if err := d.svc.Store.UpdateThreadFields(t.ID, map[string]any{"pi_session": path}); err != nil {
+			return err
+		}
+		t.PiSession = path
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("%s · %s: follow session %s: %w", j.Slug, t.Name, filepath.Base(session), err)
+	}
+	if moved {
+		return d.scanner.forget(threadKey(j, t))
+	}
+	return nil
+}
+
+func (d *Daemon) follow(key, who, current, dir, session string, move func(path string) error) (bool, error) {
+	if session == "" {
+		return false, nil
 	}
 	path := filepath.Clean(session)
-	if path == j.PiSession {
-		return nil
+	if path == current {
+		return false, nil
 	}
-	if filepath.Dir(path) != d.svc.Cfg.JobDir(j) {
-		if d.elsewhere[j.ID] != path {
-			d.elsewhere[j.ID] = path
-			log.Printf("%s: pi is on %s, outside the job dir: not followed", j.Slug, path)
+	if filepath.Dir(path) != dir {
+		if d.elsewhere[key] != path {
+			d.elsewhere[key] = path
+			log.Printf("%s: pi is on %s, outside its dir: not followed", who, path)
 		}
-		return nil
+		return false, nil
 	}
 	fi, err := os.Stat(path)
 	if err != nil || !fi.Mode().IsRegular() {
-		return nil
+		return false, nil
 	}
 	was := "nothing"
-	if j.PiSession != "" {
-		if old, err := os.Stat(j.PiSession); err == nil && os.SameFile(old, fi) {
-			return nil // the same file under another spelling
+	if current != "" {
+		if old, err := os.Stat(current); err == nil && os.SameFile(old, fi) {
+			return false, nil // the same file under another spelling
 		}
-		was = filepath.Base(j.PiSession)
+		was = filepath.Base(current)
 	}
-	rev, err := d.svc.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{"pi_session": path})
-	if err != nil {
-		return fmt.Errorf("%s: follow session %s: %w", j.Slug, filepath.Base(path), err)
+	if err := move(path); err != nil {
+		return false, err
 	}
-	log.Printf("%s: pi moved to %s (was %s)", j.Slug, filepath.Base(path), was)
-	j.PiSession, j.Rev = path, rev
-	delete(d.elsewhere, j.ID)
-	return d.scanner.forget(j.ID)
+	log.Printf("%s: pi moved to %s (was %s)", who, filepath.Base(path), was)
+	delete(d.elsewhere, key)
+	return true, nil
 }

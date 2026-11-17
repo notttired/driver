@@ -40,25 +40,33 @@ func Observe(j *store.Job, live bool, st *pi.Status, now int64) Observation {
 	case "done":
 		return Observation{State: "done"}
 	}
+	return ObserveThread(j.State, j.StartedAt, live, st, now)
+}
+
+// ObserveThread derives one pi's state — the job's own or a thread's — from
+// the job's stored state (ready, working or blocked: the column a pi that
+// has not reported yet keeps), the pi's tmux liveness, its status.json and
+// the clock.
+func ObserveThread(stored string, startedAt int64, live bool, st *pi.Status, now int64) Observation {
 	if !live {
-		ts := j.StartedAt
+		ts := startedAt
 		if st != nil && st.TS > ts {
 			ts = st.TS
 		}
 		return Observation{State: "blocked", Pi: &PiInfo{State: "exited", Reason: "exited", TS: ts}}
 	}
 	if st == nil {
-		if now-j.StartedAt < startingGrace {
-			// a just-opened job keeps its column (ready stays in DRAFT, a
-			// blocked job's fork in BLOCKED) while pi boots and the extension
-			// writes its first status
+		if now-startedAt < startingGrace {
+			// a just-opened pi keeps its column (ready stays in DRAFT, a
+			// blocked job's fork or thread in BLOCKED) while it boots and the
+			// extension writes its first status
 			state := "working"
-			if j.State == "ready" || j.State == "blocked" {
-				state = j.State
+			if stored == "ready" || stored == "blocked" {
+				state = stored
 			}
-			return Observation{State: state, Pi: &PiInfo{State: "starting", TS: j.StartedAt}}
+			return Observation{State: state, Pi: &PiInfo{State: "starting", TS: startedAt}}
 		}
-		return Observation{State: "blocked", Pi: &PiInfo{State: "silent", Reason: "silent", TS: j.StartedAt}}
+		return Observation{State: "blocked", Pi: &PiInfo{State: "silent", Reason: "silent", TS: startedAt}}
 	}
 	info := &PiInfo{State: st.State, Tool: st.Tool, TS: st.TS}
 	switch st.State {
@@ -71,6 +79,20 @@ func Observe(j *store.Job, live bool, st *pi.Status, now int64) Observation {
 	// anything unknown all need the operator
 	info.Reason = st.State
 	return Observation{State: "blocked", Pi: info}
+}
+
+// Combine folds the observations of a job's threads into the job's: working
+// while any thread works, else blocked when any thread waits, else ready.
+// The first thread in that state speaks for the job (its pi on the card).
+func Combine(obs []Observation) Observation {
+	for _, want := range []string{"working", "blocked", "ready"} {
+		for _, o := range obs {
+			if o.State == want {
+				return o
+			}
+		}
+	}
+	return obs[0]
 }
 
 // holdBlocked confirms a working job's blocked reading over two consecutive
@@ -92,8 +114,15 @@ func holdBlocked(persisted, derived string, firstTick, tickN int) (string, int) 
 }
 
 // ReadStatus reads a job's status.json; nil when absent or unreadable.
-func (c Config) ReadStatus(j *store.Job) *pi.Status {
-	st, found, err := pi.ReadStatus(filepath.Join(c.JobDir(j), "status.json"))
+func (c Config) ReadStatus(j *store.Job) *pi.Status { return readStatus(c.JobDir(j)) }
+
+// ReadThreadStatus reads a thread's status.json.
+func (c Config) ReadThreadStatus(j *store.Job, t *store.Thread) *pi.Status {
+	return readStatus(c.ThreadDir(j, t))
+}
+
+func readStatus(dir string) *pi.Status {
+	st, found, err := pi.ReadStatus(filepath.Join(dir, "status.json"))
 	if err != nil || !found {
 		return nil
 	}
@@ -113,6 +142,18 @@ func PlanRetry(j *store.Job, live bool, st *pi.Status, conv pi.Conversation) Ret
 	if j.Archived() || j.State != "blocked" {
 		return RetryNone
 	}
+	return planRetry(live, st, conv)
+}
+
+// PlanThreadRetry reports whether RETRY has something to do for a thread
+// known to be waiting.
+func PlanThreadRetry(live bool, st *pi.Status, conv pi.Conversation) bool {
+	return planRetry(live, st, conv) != RetryNone
+}
+
+// planRetry is PlanRetry for a pi known to be waiting: what RETRY would do
+// for it.
+func planRetry(live bool, st *pi.Status, conv pi.Conversation) RetryPlan {
 	_, failed := conv.Failed()
 	if !live {
 		if failed || conv.Pending {

@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"path/filepath"
 	"strings"
 
 	"driver/internal/store"
@@ -26,6 +27,17 @@ func ShellQuote(s string) string {
 // pi's session name is the job's display name (the name the operator typed,
 // else the slug), so pi's footer reads as the board does.
 func (c Config) LaunchCommand(j *store.Job, piBin, jobDir, sessionFile string, prompt ...string) string {
+	return c.launchCommand(j, j.DisplayName(), piBin, jobDir, sessionFile, prompt...)
+}
+
+// ThreadLaunchCommand is LaunchCommand for one of the job's threads: the
+// same job, slug, model and flags; its own job dir (the thread's, where its
+// status.json goes) and session file; named "<job> · <thread>".
+func (c Config) ThreadLaunchCommand(j *store.Job, t *store.Thread, piBin, sessionFile string, prompt ...string) string {
+	return c.launchCommand(j, j.DisplayName()+" · "+t.Name, piBin, filepath.Dir(sessionFile), sessionFile, prompt...)
+}
+
+func (c Config) launchCommand(j *store.Job, name, piBin, jobDir, sessionFile string, prompt ...string) string {
 	words := []string{
 		"env",
 		"DRIVER_JOB_DIR=" + ShellQuote(jobDir),
@@ -33,7 +45,7 @@ func (c Config) LaunchCommand(j *store.Job, piBin, jobDir, sessionFile string, p
 		"DRIVER_SERVE=" + ShellQuote(c.ServeURL()),
 		ShellQuote(piBin),
 		"--session", ShellQuote(sessionFile),
-		"--name", ShellQuote(j.DisplayName()),
+		"--name", ShellQuote(name),
 	}
 	if j.Model != "" {
 		words = append(words, "--model", ShellQuote(j.Model))

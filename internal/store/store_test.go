@@ -814,3 +814,67 @@ func TestMigrateV8(t *testing.T) {
 		t.Fatalf("lanes: %v %v", lanes, err)
 	}
 }
+
+func TestThreads(t *testing.T) {
+	s := open(t)
+	j := &Job{Slug: "multi", Dir: "/tmp"}
+	if _, err := s.CreateJob(j); err != nil {
+		t.Fatal(err)
+	}
+	other := &Job{Slug: "other", Dir: "/tmp"}
+	if _, err := s.CreateJob(other); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.ListThreads(j.ID); err != nil || len(got) != 0 {
+		t.Fatalf("no threads yet: %v %v", got, err)
+	}
+	a := &Thread{JobID: j.ID, Name: "CI", PiSession: "/x/t1/session.jsonl", Tmux: "drv-multi-1-t1", StartedAt: 5}
+	if _, err := s.CreateThread(a); err != nil || a.ID == 0 || a.CreatedAt == 0 {
+		t.Fatalf("create: %v %+v", err, a)
+	}
+	b := &Thread{JobID: j.ID, Name: "Docs"}
+	if _, err := s.CreateThread(b); err != nil || b.ID <= a.ID {
+		t.Fatalf("second thread: %v %+v", err, b)
+	}
+	if _, err := s.CreateThread(&Thread{JobID: other.ID, Name: "elsewhere"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ListThreads(j.ID)
+	if err != nil || len(got) != 2 || got[0].ID != a.ID || got[1].ID != b.ID || got[0].Name != "CI" || got[0].Tmux != "drv-multi-1-t1" {
+		t.Fatalf("list in creation order, this job's only: %v %+v", err, got)
+	}
+	if one, err := s.GetThread(a.ID); err != nil || one.JobID != j.ID || one.PiSession != a.PiSession {
+		t.Fatalf("get: %v %+v", err, one)
+	}
+	if _, err := s.GetThread(999); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown thread: %v", err)
+	}
+	if err := s.UpdateThreadFields(a.ID, map[string]any{"closed_at": int64(9), "name": "CI (old)"}); err != nil {
+		t.Fatal(err)
+	}
+	if one, _ := s.GetThread(a.ID); one.ClosedAt != 9 || one.Name != "CI (old)" || !one.Closed() {
+		t.Fatalf("after update: %+v", one)
+	}
+	if err := s.UpdateThreadFields(a.ID, map[string]any{"job_id": int64(2)}); err == nil {
+		t.Fatal("job_id is not updatable")
+	}
+	if err := s.UpdateThreadFields(999, map[string]any{"name": "x"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("update unknown: %v", err)
+	}
+	if err := s.DeleteThreads(j.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.ListThreads(j.ID); len(got) != 0 {
+		t.Fatalf("after delete: %+v", got)
+	}
+	if got, _ := s.ListThreads(other.ID); len(got) != 1 {
+		t.Fatalf("the other job's thread stays: %+v", got)
+	}
+	// a deleted job takes its threads along
+	if err := s.DeleteJob(other.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.ListThreads(other.ID); len(got) != 0 {
+		t.Fatalf("cascade: %+v", got)
+	}
+}

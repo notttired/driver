@@ -13,6 +13,8 @@ export const CONVERSATION_POLL_MS = 3000;
 
 export interface ConversationPanelProps {
   slug: string;
+  /** the tab shown: a thread id, 0 (default) for the job's own pi */
+  thread?: number;
   /** the job has (or had) a pi session; nothing to read before that */
   opened: boolean;
   /** the board's word on pi, for the row of a turn still in progress */
@@ -29,11 +31,11 @@ export interface ConversationPanelProps {
  * yours stay as typed. Polled while the overlay is open; the list keeps to
  * its end until you scroll up.
  */
-export function ConversationPanel({ slug, opened, pi, onOpenLink }: ConversationPanelProps) {
+export function ConversationPanel({ slug, thread = 0, opened, pi, onOpenLink }: ConversationPanelProps) {
   const last = useRef<WebConversation | null>(null);
   const { data, error } = usePoll<WebConversation>(
     async (signal) => {
-      const next = await fetchConversation(slug, signal);
+      const next = await fetchConversation(slug, thread, signal);
       // an unchanged rev is an unchanged record: hand back the old object so
       // nothing re-renders
       if (last.current && last.current.rev === next.rev) return last.current;

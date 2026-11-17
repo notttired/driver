@@ -130,6 +130,20 @@ A done job's pi is relaunched on its conversation with the prompt. The prompt
 is yours to edit: `✎` in the WATCHING head opens it (RESET brings the default
 back). Cards cannot be dragged into WATCHING; dragging one out just moves it,
 pi carries on.
+**Threads.** The tabs above the pane are the job's pis: the job's own first,
+then every thread you opened. `+` opens a thread — another pi with the same
+tools, in the same directory, starting from a copy of the conversation in the
+tab you are on, under a name you type — so one thread can carry on with the
+task while you ask another something else. Each tab has its own pane and its
+own record (the CONVERSATION panel follows the tab); STOP and RETRY act on
+the tab you are on. The card is working while any thread works, and needs
+you when every thread has stopped; a thread that stops while another works
+sends its own notification. ✕ on a thread's tab closes its pi — what it said
+stays with the job — and a double-click renames it. Threads share one
+checkout, so a thread that changes code should work in a git worktree of its
+own; DONE and CANCEL close every thread. `tmux attach -t drv-<slug>-<id>-t<n>`
+reaches a thread's pane from a terminal.
+
 **Retry** is for blocked jobs that did not stop for you: a dropped network
 leaves pi up on a failed turn (the card reads `✗ Connection error` and the
 like), a logout kills pi (`✕ exited`). `↻ retry N` in the BLOCKED head (or

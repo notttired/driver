@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -47,7 +48,7 @@ func webConversationFrom(c pi.Conversation, rev string) *webConversation {
 // comparing it.
 type conversationCache struct {
 	mu    sync.Mutex
-	byJob map[int64]cachedConversation
+	byKey map[string]cachedConversation // "<job id>" or "<job id>/t<thread id>"
 }
 
 type cachedConversation struct {
@@ -59,49 +60,61 @@ type cachedConversation struct {
 }
 
 func newConversationCache() *conversationCache {
-	return &conversationCache{byJob: map[int64]cachedConversation{}}
+	return &conversationCache{byKey: map[string]cachedConversation{}}
 }
 
 // get returns j's record. A job without a session file — not started, or
 // its file gone — has an empty one.
 func (c *conversationCache) get(j *store.Job) (*webConversation, error) {
-	hit, err := c.load(j)
+	hit, err := c.load(strconv.FormatInt(j.ID, 10), j.PiSession)
 	return hit.conv, err
 }
 
 func (c *conversationCache) record(j *store.Job) (pi.Conversation, error) {
-	hit, err := c.load(j)
+	hit, err := c.load(strconv.FormatInt(j.ID, 10), j.PiSession)
 	return hit.raw, err
 }
 
-func (c *conversationCache) load(j *store.Job) (cachedConversation, error) {
+// getOf and recordOf are get and record for any session file under a key
+// of its own — a thread's.
+func (c *conversationCache) getOf(key, path string) (*webConversation, error) {
+	hit, err := c.load(key, path)
+	return hit.conv, err
+}
+
+func (c *conversationCache) recordOf(key, path string) (pi.Conversation, error) {
+	hit, err := c.load(key, path)
+	return hit.raw, err
+}
+
+func (c *conversationCache) load(key, path string) (cachedConversation, error) {
 	empty := cachedConversation{conv: webConversationFrom(pi.Conversation{}, "")}
-	if j.PiSession == "" {
+	if path == "" {
 		return empty, nil
 	}
-	st, err := os.Stat(j.PiSession)
+	st, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return empty, nil
 		}
-		return cachedConversation{}, fmt.Errorf("stat %s: %w", j.PiSession, err)
+		return cachedConversation{}, fmt.Errorf("stat %s: %w", path, err)
 	}
 	c.mu.Lock()
-	hit, ok := c.byJob[j.ID]
+	hit, ok := c.byKey[key]
 	c.mu.Unlock()
-	if ok && hit.path == j.PiSession && hit.size == st.Size() && hit.mod.Equal(st.ModTime()) {
+	if ok && hit.path == path && hit.size == st.Size() && hit.mod.Equal(st.ModTime()) {
 		return hit, nil
 	}
 	// pi may append between the stat and the read; the record is then ahead
 	// of the stamp it is filed under, and the next request re-reads — fine
-	conv, err := pi.ReadConversation(j.PiSession)
+	conv, err := pi.ReadConversation(path)
 	if err != nil {
 		return cachedConversation{}, err
 	}
-	hit = cachedConversation{path: j.PiSession, size: st.Size(), mod: st.ModTime(), raw: conv,
+	hit = cachedConversation{path: path, size: st.Size(), mod: st.ModTime(), raw: conv,
 		conv: webConversationFrom(conv, fmt.Sprintf("%d-%d", st.Size(), st.ModTime().UnixNano()))}
 	c.mu.Lock()
-	c.byJob[j.ID] = hit
+	c.byKey[key] = hit
 	c.mu.Unlock()
 	return hit, nil
 }
@@ -116,7 +129,17 @@ func (a *API) jobConversation(w http.ResponseWriter, r *http.Request) {
 		writeFailure(w, "conversation", err)
 		return
 	}
-	conv, err := a.conversations.get(j)
+	t, err := a.threadParam(j, r)
+	if err != nil {
+		writeThreadFailure(w, err)
+		return
+	}
+	var conv *webConversation
+	if t != nil {
+		conv, err = a.conversations.getOf(threadKey(j, t), t.PiSession)
+	} else {
+		conv, err = a.conversations.get(j)
+	}
 	if err != nil {
 		writeFailure(w, "conversation", err)
 		return

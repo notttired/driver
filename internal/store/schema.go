@@ -8,7 +8,7 @@ import (
 
 // migrations is the append-only list of schema steps; migrations[i] brings a
 // database at user_version i to i+1. Never edit a shipped step — append.
-var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8, schemaV9}
+var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8, schemaV9, schemaV10}
 
 // schemaV1 creates the four tables the design calls for. Every column a Go
 // scan reads into a plain string/int64 is NOT NULL with a same-typed default;
@@ -235,4 +235,18 @@ ALTER TABLE jobs ADD COLUMN lane_id INTEGER NOT NULL DEFAULT 0;
 
 const schemaV9 = `
 ALTER TABLE jobs ADD COLUMN watching_at INTEGER NOT NULL DEFAULT 0;
+`
+
+const schemaV10 = `
+CREATE TABLE threads (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	job_id     INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+	name       TEXT NOT NULL DEFAULT '',
+	pi_session TEXT NOT NULL DEFAULT '',
+	tmux       TEXT NOT NULL DEFAULT '',
+	started_at INTEGER NOT NULL DEFAULT 0,
+	created_at INTEGER NOT NULL DEFAULT 0,
+	closed_at  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX threads_job ON threads(job_id);
 `

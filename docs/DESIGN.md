@@ -111,6 +111,28 @@ usage, accounts, self-update) is left out on purpose.
   takes it out, last in DONE) or a drag. Nothing is dropped into WATCHING; a
   card dragged out goes home or into a lane like any parked card, and pi
   carries on.
+- Threads (2026-11-17): a job can carry more than one pi. The tabs above
+  the pane are its pis — the job's own first, then every thread opened with
+  `+`: a copy of the conversation in the current tab (`pi.ForkSession`, as
+  the job fork does) with a pi of its own resumed on it, in a tmux session of
+  its own (`drv-<slug>-<id>-t<n>`: windows in one session would share the
+  session's current window across every attached client, so the board's pane
+  and a `tmux attach` would fight over the tab shown), in the job's dir,
+  under a name typed in the tab row. Every thread is a full agent with the
+  same tools; they share one checkout, so the operator's rule is a git
+  worktree per thread that changes code. The card folds its threads
+  together: working while any works, else blocked when any waits (the first
+  such pi speaks for the card), with the one-tick hold and the ring as ever;
+  a thread that stops while the card stays working sends its own
+  notification (`<job> · <thread> — <reason>`). Each tab has its own pane
+  (`/api/term?thread=`), its own record (`/api/job/conversation?thread=`),
+  STOP and RETRY. ✕ closes a thread's pi; the row and its conversation stay
+  (what it said is still part of the job: the tab goes, the record remains
+  readable). DONE closes every thread, CANCEL drops them; the job's own pi
+  is the one fork, watch, reactivate and rename work on, and a job fork
+  copies the job's own pi only. The daemon follows a thread's session file,
+  scans it for links (scan key `<job id>/t<thread id>`) and brings it back
+  at start as it does the job's. v10 adds `threads`.
 - Every column, state columns, WATCHING and lanes alike, is dragged by its head into
   any order; the order is saved in the daemon (kv `board-columns`). `«` in a
   head folds the column to a strip (name, count; still a drop target) and the
@@ -148,10 +170,10 @@ docs/                 this file, API.md
 | home | `~/.driver` (`DRIVER_HOME`) |
 | database | `~/.driver/driver.db` (`DRIVER_DB_PATH`), WAL |
 | env file | `~/.driver/env` — `KEY=VALUE` lines, `#` comments; loaded by `driver serve` and the Makefile |
-| job dir | `~/.driver/jobs/<slug>-<id>/` with `session.jsonl` (and any session file pi moves to — "State derivation"), `status.json` |
+| job dir | `~/.driver/jobs/<slug>-<id>/` with `session.jsonl` (and any session file pi moves to — "State derivation"), `status.json`; a thread's files in `t<thread id>/` beneath |
 | log | `~/.driver/driver.log` (launchd stdout/stderr) |
 | port | `7781` (`-p`, `DRIVER_PORT`); loopback only |
-| tmux session | `drv-<slug>-<id>`, session option `@driver-job=<slug>` |
+| tmux session | `drv-<slug>-<id>`, session option `@driver-job=<slug>`; a thread's `drv-<slug>-<id>-t<thread id>` |
 | launchd label | `dev.notttired.driver` (`DRIVER_LABEL`) |
 | app bundle id | `dev.notttired.DriverMac`, product `Driver` |
 | operator name | `DRIVER_OPERATOR` else `$USER` |
@@ -195,7 +217,14 @@ existing session once more (attaching is idempotent). v4 added `jobs.name`. v5
 added `jobs.attention_at`: when the daemon moved the job into blocked on its own
 and it has not been opened since (0 otherwise). v8 added `lanes(id, name,
 position, created_at)` and `jobs.lane_id` (0 = none). v9 added
-`jobs.watching_at` (when WATCH was pressed; 0 = not watching).
+`jobs.watching_at` (when WATCH was pressed; 0 = not watching). v10 added
+`threads(id, job_id, name, pi_session, tmux, started_at, created_at,
+closed_at)`, cascading with its job: the job's further pis ("Threads"
+above; the job row carries the first). `closed_at` set = its pi was closed;
+the row and its session file stay. A thread's files live in
+`<job dir>/t<id>/` (`session.jsonl`, `status.json`), which is the
+`DRIVER_JOB_DIR` its pi runs with; `LookupThreadDir` resolves either kind of
+dir to its job (and thread).
 
 `board_order("column", position, job_id)` holds the manual order per column
 exactly as kraken's does; the board emits each column's jobs in that order,
@@ -334,6 +363,10 @@ else (stored ready | working | blocked):
   no status.json yet                 → the stored ready/blocked, else working (pi "starting") if started_at < 120s ago,
                                        else blocked ("silent")
 ```
+
+A job with threads derives each pi this way (`ObserveThread`, the stored
+state being the job's) and folds them (`Combine`): working if any, else
+blocked if any, else ready; the first pi in the winning state is the card's.
 
 A `blocked` derived for a working job must be observed on two consecutive ticks
 before it is written (kraken's one-tick hold: it hides one-tick misreads and the

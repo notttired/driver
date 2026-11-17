@@ -670,7 +670,7 @@ func TestPRScanner(t *testing.T) {
 	if ls, _ := st.ListLinks(j.ID); len(ls) != 0 {
 		t.Fatalf("a non-create result must not attach: %+v", ls)
 	}
-	if v, _ := st.GetKV(scanPendingKey(j.ID)); v != `["c1"]` {
+	if v, _ := st.GetKV(scanPendingKey(jobKey(j))); v != `["c1"]` {
 		t.Fatalf("pending = %q", v)
 	}
 	// restart: a fresh scanner reloads pending from kv, then the result lands
@@ -685,10 +685,10 @@ func TestPRScanner(t *testing.T) {
 	if len(ls) != 1 || ls[0].URL != "https://github.com/o/r/pull/12" || ls[0].Kind != "github_pr" || ls[0].Mentions != 1 || ls[0].Yours {
 		t.Fatalf("links = %+v", ls)
 	}
-	if _, err := st.GetKV(scanPendingKey(j.ID)); err == nil {
+	if _, err := st.GetKV(scanPendingKey(jobKey(j))); err == nil {
 		t.Fatal("pending must be cleared")
 	}
-	off, _ := st.GetKV(scanOffsetKey(j.ID))
+	off, _ := st.GetKV(scanOffsetKey(jobKey(j)))
 	info, _ := os.Stat(sess)
 	if off == "" || off == "0" || off == strconv.FormatInt(info.Size(), 10) {
 		t.Fatalf("offset %q must stop before the partial line (size %d)", off, info.Size())
@@ -748,7 +748,7 @@ func TestConversationLinkScanner(t *testing.T) {
 		t.Fatalf("\n got %q\nwant %q", got, want)
 	}
 	// rescanning attaches nothing twice and counts nothing twice
-	st.DeleteKV(scanOffsetKey(j.ID))
+	st.DeleteKV(scanOffsetKey(jobKey(j)))
 	if err := sc.scan(j); err != nil {
 		t.Fatal(err)
 	}
@@ -823,8 +823,8 @@ func TestLinkArrival(t *testing.T) {
 	st.AddLink(before.ID, "url", "https://x.io/new")
 	st.AddLink(before.ID, "url", "https://x.io/old")
 	st.SetKV(scanGenerationKey, scanGeneration)
-	st.SetKV(scanOffsetKey(before.ID), strconv.Itoa(len(body)))
-	st.SetKV(scanMentionsKey(before.ID), "0")
+	st.SetKV(scanOffsetKey(jobKey(before)), strconv.Itoa(len(body)))
+	st.SetKV(scanMentionsKey(jobKey(before)), "0")
 	if err := newSessionScanner(st).scan(before); err != nil {
 		t.Fatal(err)
 	}
@@ -856,8 +856,8 @@ func TestMentionBackfill(t *testing.T) {
 	st.AddLink(j.ID, "url", "https://x.io/kept")
 	st.AddLink(j.ID, "github_pr", "https://github.com/o/r/pull/3")
 	st.SetKV(scanGenerationKey, scanGeneration)
-	st.SetKV(scanOffsetKey(j.ID), strconv.Itoa(len(body)))
-	st.SetKV(scanMentionsKey(j.ID), "0")
+	st.SetKV(scanOffsetKey(jobKey(j)), strconv.Itoa(len(body)))
+	st.SetKV(scanMentionsKey(jobKey(j)), "0")
 
 	read := func() []string {
 		ls, _ := st.ListLinks(j.ID)
@@ -875,7 +875,7 @@ func TestMentionBackfill(t *testing.T) {
 	if got := read(); strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("\n got %q\nwant %q", got, want)
 	}
-	if v, err := st.GetKV(scanMentionsKey(j.ID)); !errors.Is(err, store.ErrNotFound) {
+	if v, err := st.GetKV(scanMentionsKey(jobKey(j))); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("the backfill mark must go once it caught up: %q %v", v, err)
 	}
 	if err := newSessionScanner(st).scan(j); err != nil {
@@ -1189,7 +1189,7 @@ func TestFork(t *testing.T) {
 	if back, _ := os.ReadFile(sessionFile); string(back) != transcript {
 		t.Error("the original transcript changed")
 	}
-	if off, err := st.GetKV(scanOffsetKey(f2.ID)); err != nil || off != strconv.Itoa(len(copied)) {
+	if off, err := st.GetKV(scanOffsetKey(jobKey(f2))); err != nil || off != strconv.Itoa(len(copied)) {
 		t.Errorf("fork scan offset %q %v (file is %d bytes)", off, err, len(copied))
 	}
 	order, _ = st.GetBoardOrder()
@@ -1361,7 +1361,7 @@ func TestFollowSession(t *testing.T) {
 	if err := d.scanner.scan(j); err != nil { // the launch file: a link and a saved offset
 		t.Fatal(err)
 	}
-	if off, err := st.GetKV(scanOffsetKey(j.ID)); err != nil || off == "0" {
+	if off, err := st.GetKV(scanOffsetKey(jobKey(j))); err != nil || off == "0" {
 		t.Fatalf("offset after the first scan: %q %v", off, err)
 	}
 	rev := j.Rev
@@ -1380,8 +1380,8 @@ func TestFollowSession(t *testing.T) {
 			t.Fatalf("follow %q moved the job: %+v", p, j)
 		}
 	}
-	if d.elsewhere[j.ID] != outside {
-		t.Errorf("the outside path is remembered so it is logged once: %q", d.elsewhere[j.ID])
+	if d.elsewhere[jobKey(j)] != outside {
+		t.Errorf("the outside path is remembered so it is logged once: %q", d.elsewhere[jobKey(j)])
 	}
 	if got, _ := st.GetJobBySlug("mover"); got.PiSession != launched || got.Rev != rev {
 		t.Fatalf("stored job moved: %+v", got)
@@ -1404,16 +1404,16 @@ func TestFollowSession(t *testing.T) {
 	if got, _ := st.GetJobBySlug("mover"); got.PiSession != moved || got.Rev != j.Rev {
 		t.Fatalf("stored job after the move: %+v (in memory rev %d)", got, j.Rev)
 	}
-	if v, err := st.GetKV(scanOffsetKey(j.ID)); err == nil {
+	if v, err := st.GetKV(scanOffsetKey(jobKey(j))); err == nil {
 		t.Fatalf("the scan offset must be forgotten, still %q", v)
 	}
-	if _, ok := d.elsewhere[j.ID]; ok {
+	if _, ok := d.elsewhere[jobKey(j)]; ok {
 		t.Error("the outside note goes once the job moved")
 	}
 	if err := d.scanner.scan(j); err != nil {
 		t.Fatal(err)
 	}
-	if off, _ := st.GetKV(scanOffsetKey(j.ID)); off != strconv.Itoa(len(body)) {
+	if off, _ := st.GetKV(scanOffsetKey(jobKey(j))); off != strconv.Itoa(len(body)) {
 		t.Fatalf("offset after rescanning the new file: %q (file is %d bytes)", off, len(body))
 	}
 	for _, u := range []string{"https://example.com/first", "https://example.com/moved"} {

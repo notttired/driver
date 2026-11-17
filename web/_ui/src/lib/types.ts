@@ -72,6 +72,20 @@ export interface WebJob {
   lane?: number;
   /** its pi is watching over the shipped work: the board shows it in WATCHING */
   watching?: boolean;
+  /** the job's tabs: its own pi (id 0, named as the job) first, then every open thread */
+  threads?: WebThread[];
+}
+
+/** One tab of an open job: a pi of its own, with its state as the daemon
+ *  reads it. id 0 is the job's own pi; the rest are threads. */
+export interface WebThread {
+  id: number;
+  name: string;
+  live: boolean;
+  pi?: WebPi;
+  retryable?: boolean;
+  /** unix seconds */
+  started_at?: number;
 }
 
 export interface WebLane {
@@ -193,6 +207,10 @@ export interface PinLinkResult extends OkResponse {
 
 export interface AddLaneResult extends OkResponse {
   lane: WebLane;
+}
+
+export interface OpenThreadResult extends OkResponse {
+  thread: WebThread;
 }
 
 export interface DirsResponse {

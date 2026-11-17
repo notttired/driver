@@ -12,9 +12,14 @@ import (
 	"driver/internal/store"
 )
 
-func scanOffsetKey(jobID int64) string   { return fmt.Sprintf("scan:%d", jobID) }
-func scanPendingKey(jobID int64) string  { return fmt.Sprintf("scan-pending:%d", jobID) }
-func scanMentionsKey(jobID int64) string { return fmt.Sprintf("scan-mentions:%d", jobID) }
+// A scan key names one session file the scanner follows: a job's own
+// ("<job id>") or a thread's ("<job id>/t<thread id>").
+func jobKey(j *store.Job) string                     { return strconv.FormatInt(j.ID, 10) }
+func threadKey(j *store.Job, t *store.Thread) string { return fmt.Sprintf("%d/t%d", j.ID, t.ID) }
+
+func scanOffsetKey(key string) string   { return "scan:" + key }
+func scanPendingKey(key string) string  { return "scan-pending:" + key }
+func scanMentionsKey(key string) string { return "scan-mentions:" + key }
 
 // scanGeneration names what the scanner looks for. Bump it when that grows:
 // a scanner meeting a different value in kv forgets every saved offset, so
@@ -47,17 +52,17 @@ type scanStore interface {
 // it as JSON (scan-pending:<id>) so a restart loses nothing.
 type sessionScanner struct {
 	st       scanStore
-	pending  map[int64]map[string]bool // job id → tool call ids awaiting a result
-	backfill map[int64]map[string]bool
+	pending  map[string]map[string]bool // scan key → tool call ids awaiting a result
+	backfill map[string]map[string]bool
 	checked  bool // scanGeneration compared with kv once
 }
 
 func newSessionScanner(st scanStore) *sessionScanner {
-	return &sessionScanner{st: st, pending: map[int64]map[string]bool{}, backfill: map[int64]map[string]bool{}}
+	return &sessionScanner{st: st, pending: map[string]map[string]bool{}, backfill: map[string]map[string]bool{}}
 }
 
-func (p *sessionScanner) offset(jobID int64) int64 {
-	v, err := p.st.GetKV(scanOffsetKey(jobID))
+func (p *sessionScanner) offset(key string) int64 {
+	v, err := p.st.GetKV(scanOffsetKey(key))
 	if err != nil {
 		return 0
 	}
@@ -66,12 +71,12 @@ func (p *sessionScanner) offset(jobID int64) int64 {
 }
 
 // pendingFor returns the job's pending set, loading it from kv on first use.
-func (p *sessionScanner) pendingFor(jobID int64) map[string]bool {
-	if m, ok := p.pending[jobID]; ok {
+func (p *sessionScanner) pendingFor(key string) map[string]bool {
+	if m, ok := p.pending[key]; ok {
 		return m
 	}
 	m := map[string]bool{}
-	if v, err := p.st.GetKV(scanPendingKey(jobID)); err == nil {
+	if v, err := p.st.GetKV(scanPendingKey(key)); err == nil {
 		var ids []string
 		if json.Unmarshal([]byte(v), &ids) == nil {
 			for _, id := range ids {
@@ -79,13 +84,13 @@ func (p *sessionScanner) pendingFor(jobID int64) map[string]bool {
 			}
 		}
 	}
-	p.pending[jobID] = m
+	p.pending[key] = m
 	return m
 }
 
-func (p *sessionScanner) savePending(jobID int64, m map[string]bool) error {
+func (p *sessionScanner) savePending(key string, m map[string]bool) error {
 	if len(m) == 0 {
-		return p.st.DeleteKV(scanPendingKey(jobID))
+		return p.st.DeleteKV(scanPendingKey(key))
 	}
 	ids := make([]string, 0, len(m))
 	for id := range m {
@@ -93,7 +98,7 @@ func (p *sessionScanner) savePending(jobID int64, m map[string]bool) error {
 	}
 	sort.Strings(ids)
 	data, _ := json.Marshal(ids)
-	return p.st.SetKV(scanPendingKey(jobID), string(data))
+	return p.st.SetKV(scanPendingKey(key), string(data))
 }
 
 // checkGeneration, once per process, forgets every saved offset when the
@@ -111,7 +116,7 @@ func (p *sessionScanner) checkGeneration() error {
 			return err
 		}
 	}
-	p.pending = map[int64]map[string]bool{}
+	p.pending = map[string]map[string]bool{}
 	if err := p.st.SetKV(scanGenerationKey, scanGeneration); err != nil {
 		return err
 	}
@@ -120,7 +125,7 @@ func (p *sessionScanner) checkGeneration() error {
 	return nil
 }
 
-// scan reads what pi appended to j's session since the saved offset.
+// scan reads what pi appended to j's own session since the saved offset.
 func (p *sessionScanner) scan(j *store.Job) error {
 	if err := p.checkGeneration(); err != nil {
 		return err
@@ -128,15 +133,27 @@ func (p *sessionScanner) scan(j *store.Job) error {
 	if err := p.countMentions(j); err != nil {
 		return err
 	}
-	offset := p.offset(j.ID)
-	lines, next, err := pi.ReadNewLines(j.PiSession, offset)
+	return p.scanFile(j, jobKey(j), j.PiSession)
+}
+
+// scanThread reads what a thread's pi appended to its session.
+func (p *sessionScanner) scanThread(j *store.Job, t *store.Thread) error {
+	if err := p.checkGeneration(); err != nil {
+		return err
+	}
+	return p.scanFile(j, threadKey(j, t), t.PiSession)
+}
+
+func (p *sessionScanner) scanFile(j *store.Job, key, path string) error {
+	offset := p.offset(key)
+	lines, next, err := pi.ReadNewLines(path, offset)
 	if err != nil {
 		return fmt.Errorf("%s: scan: %w", j.Slug, err)
 	}
 	if next == offset && len(lines) == 0 {
 		return nil
 	}
-	pending := p.pendingFor(j.ID)
+	pending := p.pendingFor(key)
 	if next < offset {
 		// the file was replaced or truncated: start over
 		for k := range pending {
@@ -150,10 +167,10 @@ func (p *sessionScanner) scan(j *store.Job) error {
 			}
 		}
 	}
-	if err := p.savePending(j.ID, pending); err != nil {
+	if err := p.savePending(key, pending); err != nil {
 		return err
 	}
-	return p.st.SetKV(scanOffsetKey(j.ID), strconv.FormatInt(next, 10))
+	return p.st.SetKV(scanOffsetKey(key), strconv.FormatInt(next, 10))
 }
 
 type sighting struct {
@@ -193,23 +210,24 @@ func sightingsIn(line []byte, pending map[string]bool) []sighting {
 }
 
 func (p *sessionScanner) countMentions(j *store.Job) error {
-	v, err := p.st.GetKV(scanMentionsKey(j.ID))
+	key := jobKey(j)
+	v, err := p.st.GetKV(scanMentionsKey(key))
 	if err != nil {
 		return nil
 	}
 	from, _ := strconv.ParseInt(v, 10, 64)
-	upTo := p.offset(j.ID)
+	upTo := p.offset(key)
 	next := from
 	if from < upTo {
 		var lines [][]byte
 		if lines, next, err = pi.ReadNewLines(j.PiSession, from); err != nil {
 			return fmt.Errorf("%s: count mentions: %w", j.Slug, err)
 		}
-		if p.backfill[j.ID] == nil {
-			p.backfill[j.ID] = map[string]bool{}
+		if p.backfill[key] == nil {
+			p.backfill[key] = map[string]bool{}
 		}
 		for _, line := range lines {
-			for _, s := range sightingsIn(line, p.backfill[j.ID]) {
+			for _, s := range sightingsIn(line, p.backfill[key]) {
 				l, err := p.st.LinkByURL(j.ID, s.url)
 				if errors.Is(err, store.ErrNotFound) {
 					continue
@@ -227,21 +245,21 @@ func (p *sessionScanner) countMentions(j *store.Job) error {
 		}
 	}
 	if next > from && next < upTo {
-		return p.st.SetKV(scanMentionsKey(j.ID), strconv.FormatInt(next, 10))
+		return p.st.SetKV(scanMentionsKey(key), strconv.FormatInt(next, 10))
 	}
-	delete(p.backfill, j.ID)
-	return p.st.DeleteKV(scanMentionsKey(j.ID))
+	delete(p.backfill, key)
+	return p.st.DeleteKV(scanMentionsKey(key))
 }
 
-// forget drops j's saved offset and pending PR calls: the next scan reads
-// the job's session from its start — for a job whose pi moved to another
-// file (daemon.followSession).
-func (p *sessionScanner) forget(jobID int64) error {
-	delete(p.pending, jobID)
-	if err := p.st.DeleteKV(scanOffsetKey(jobID)); err != nil {
+// forget drops a session's saved offset and pending PR calls: the next scan
+// reads it from its start — for a pi that moved to another file
+// (daemon.followSession).
+func (p *sessionScanner) forget(key string) error {
+	delete(p.pending, key)
+	if err := p.st.DeleteKV(scanOffsetKey(key)); err != nil {
 		return err
 	}
-	return p.st.DeleteKV(scanPendingKey(jobID))
+	return p.st.DeleteKV(scanPendingKey(key))
 }
 
 // attach adds the sighted URL to j's links — a URL already there is left
