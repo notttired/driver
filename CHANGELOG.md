@@ -8,6 +8,10 @@ behind each, [docs/API.md](docs/API.md) the wire contract.
 
 ## 2026-11-17
 
+- **A thread opened mid-turn starts from the finished work** (`ce4abab`). The
+  copy ends at the source's last final answer; the prompt under way and its
+  tool calls stay behind, and the thread hears that turn's answer later as
+  context, with its question.
 - **⌘T opens a thread with the default name** (`916d936`): from the current
   tab, named "thread N", no box to fill; rename it later if you like.
 - **Closing a thread asks nothing** (`cf96c3a`). ✕ and ⌘W close a thread at
