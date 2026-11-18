@@ -181,14 +181,18 @@ func TestThreads(t *testing.T) {
 		t.Fatalf("every thread waiting: blocked, with the ring: %+v", got)
 	}
 
-	// a second thread, forked from the first one's conversation
-	os.WriteFile(th.PiSession, []byte(threadHeader+threadUser+threadAnswer+`{"type":"message","id":"u2","parentId":"a1","message":{"role":"user","content":"More."}}`+"\n"), 0o644)
+	// a second thread, forked from the first one's conversation — which is
+	// mid-turn: the copy stops at the finished work, the prompt under way
+	// and the tool call stay behind
+	os.WriteFile(th.PiSession, []byte(threadHeader+threadUser+threadAnswer+
+		`{"type":"message","id":"u2","parentId":"a1","message":{"role":"user","content":"More."}}`+"\n"+
+		`{"type":"message","id":"a2","parentId":"u2","message":{"role":"assistant","content":[{"type":"toolCall","id":"c1","name":"bash","arguments":{"command":"make"}}],"stopReason":"toolUse"}}`+"\n"), 0o644)
 	th2, err := svc.OpenThread(got, th.ID, "Docs")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(readFile(th2.PiSession), `"id":"u2"`) || !strings.Contains(readFile(th2.PiSession), `"parentSession":"`+th.PiSession+`"`) {
-		t.Fatalf("the second thread copies the thread it was opened from:\n%s", readFile(th2.PiSession))
+	if copied := readFile(th2.PiSession); strings.Contains(copied, `"id":"u2"`) || strings.Contains(copied, `"id":"a2"`) || !strings.Contains(copied, `"id":"a1"`) || !strings.Contains(copied, `"parentSession":"`+th.PiSession+`"`) {
+		t.Fatalf("the second thread copies the thread it was opened from, up to its finished work:\n%s", copied)
 	}
 	t2dir := filepath.Dir(th2.PiSession)
 	waitFor(t, "the second thread's pi to start", func() bool { return readFile(filepath.Join(t2dir, "argv")) != "" })

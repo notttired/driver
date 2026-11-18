@@ -120,3 +120,73 @@ func TestNewSessionID(t *testing.T) {
 		}
 	}
 }
+
+func TestForkSessionFinished(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	header := `{"type":"session","version":3,"id":"0199f2a0-0000-7000-8000-000000000001","timestamp":"2026-10-01T10:00:00.000Z","cwd":"/work"}`
+	finished := []string{
+		`{"type":"message","id":"u1","parentId":null,"message":{"role":"user","content":"Fix the build."}}`,
+		`{"type":"message","id":"a1","parentId":"u1","message":{"role":"assistant","content":[{"type":"toolCall","id":"c1","name":"bash","arguments":{"command":"make"}}],"stopReason":"toolUse"}}`,
+		`{"type":"message","id":"r1","parentId":"a1","message":{"role":"toolResult","toolCallId":"c1","toolName":"bash","content":[{"type":"text","text":"ok"}]}}`,
+		`{"type":"message","id":"a2","parentId":"r1","message":{"role":"assistant","content":[{"type":"text","text":"Fixed."}],"stopReason":"stop"}}`,
+	}
+	pending := []string{
+		`{"type":"custom_message","id":"x1","parentId":"a2","customType":"driver-peers","content":"context","display":true}`,
+		`{"type":"message","id":"u2","parentId":"x1","message":{"role":"user","content":"Now the tests."}}`,
+		`{"type":"message","id":"a3","parentId":"u2","message":{"role":"assistant","content":[{"type":"toolCall","id":"c2","name":"bash","arguments":{"command":"make test"}}],"stopReason":"toolUse"}}`,
+		`{"type":"message","id":"r2","parentId":"a3","message":{"role":"toolResult","toolCallId":"c2","toolName":"bash","content":[{"type":"text","text":"running…"}]}}`,
+	}
+	write := func(name string, lines ...string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	body := func(p string) []string {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+		return lines[1:] // past the fork's own header
+	}
+
+	// mid-turn: the copy ends at the last final answer; the unanswered prompt,
+	// the context that came with it and the tool calls under way stay behind
+	src := write("working.jsonl", append(append([]string{header}, finished...), pending...)...)
+	dst := filepath.Join(dir, "t1.jsonl")
+	if err := ForkSessionFinished(src, dst, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := body(dst); strings.Join(got, "\n") != strings.Join(finished, "\n") {
+		t.Fatalf("cut at the last answer:\n%s", strings.Join(got, "\n"))
+	}
+	if conv, _ := ReadConversation(dst); conv.Pending || len(conv.Messages) != 2 {
+		t.Fatalf("the copy reads as finished work: %+v", conv)
+	}
+
+	// nothing under way: the copy is the whole file
+	src = write("idle.jsonl", append([]string{header}, finished...)...)
+	dst = filepath.Join(dir, "t2.jsonl")
+	if err := ForkSessionFinished(src, dst, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := body(dst); strings.Join(got, "\n") != strings.Join(finished, "\n") {
+		t.Fatalf("whole copy:\n%s", strings.Join(got, "\n"))
+	}
+
+	// a first turn still under way: nothing finished, so the copy is bare
+	src = write("fresh.jsonl", header, pending[1], pending[2])
+	dst = filepath.Join(dir, "t3.jsonl")
+	if err := ForkSessionFinished(src, dst, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := body(dst); len(got) != 0 {
+		t.Fatalf("bare copy:\n%q", got)
+	}
+	if h, _ := os.ReadFile(dst); !strings.Contains(string(h), `"parentSession":"`+src+`"`) {
+		t.Fatalf("the fork header stands: %s", h)
+	}
+}

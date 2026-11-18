@@ -136,8 +136,9 @@ pi carries on.
 **Threads.** The tabs above the pane are the job's pis: the job's own first,
 then every thread you opened. `+` opens a thread — another pi with the same
 tools, in the same directory, starting from a copy of the conversation in the
-tab you are on, under a name you type (⌘T opens one named "thread N" without
-asking) — so one thread can carry on with the
+tab you are on up to its finished work (a turn still under way stays behind;
+the thread hears its answer later as context), under a name you type (⌘T
+opens one named "thread N" without asking) — so one thread can carry on with the
 task while you ask another something else. Each tab has its own pane and its
 own record (the CONVERSATION panel follows the tab); STOP and RETRY act on
 the tab you are on, ⌘⇧] / ⌘⇧[ move to the next / previous tab, and ⌘W closes

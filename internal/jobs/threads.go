@@ -74,9 +74,10 @@ func (s *Service) OpenThreads(j *store.Job) ([]*store.Thread, error) {
 }
 
 // OpenThread adds a thread to an open job: a copy of the conversation of
-// thread `from` (0 = the job's own) as it stands, with its own pi resumed on
-// it in a tmux session of its own. The thread keeps the job's column until
-// its pi reports.
+// thread `from` (0 = the job's own) up to its finished work — a turn still
+// under way stays behind (pi.ForkSessionFinished) — with its own pi resumed
+// on it in a tmux session of its own. The thread keeps the job's column
+// until its pi reports.
 func (s *Service) OpenThread(j *store.Job, from int64, name string) (*store.Thread, error) {
 	name, err := CleanThreadName(name)
 	if err != nil {
@@ -125,7 +126,7 @@ func (s *Service) OpenThread(j *store.Job, from int64, name string) (*store.Thre
 	}
 	sessionFile := filepath.Join(tdir, "session.jsonl")
 	if fi, err := os.Stat(src); err == nil && fi.Mode().IsRegular() {
-		if err := pi.ForkSession(src, sessionFile, time.Now()); err != nil {
+		if err := pi.ForkSessionFinished(src, sessionFile, time.Now()); err != nil {
 			return undo(err)
 		}
 		// the copied conversation's links are the job's already: the

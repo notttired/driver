@@ -127,8 +127,13 @@ usage, accounts, self-update) is left out on purpose.
   carries on.
 - Threads (2026-11-17): a job can carry more than one pi. The tabs above
   the pane are its pis — the job's own first, then every thread opened with
-  `+`: a copy of the conversation in the current tab (`pi.ForkSession`, as
-  the job fork does) with a pi of its own resumed on it, in a tmux session of
+  `+`: a copy of the conversation in the current tab up to its finished work
+  (`pi.ForkSessionFinished`: when the branch's last turn has no final answer
+  yet, the copy ends at the last answer, so a thread opened mid-turn starts
+  from settled ground rather than an unanswered prompt and tool calls in
+  flight — it hears that turn's answer later, with its question, as peer
+  context; the job fork still copies whole) with a pi of its own resumed on
+  it, in a tmux session of
   its own (`drv-<slug>-<id>-t<n>`: windows in one session would share the
   session's current window across every attached client, so the board's pane
   and a `tmux attach` would fight over the tab shown), in the job's dir,
