@@ -465,7 +465,7 @@ func mapPRState(state string, draft bool) string {
 // directory) and is logged once; a path pi has not written yet (a /new
 // before its first message) is left for a later tick.
 func (d *Daemon) followSession(j *store.Job, session string) error {
-	moved, err := d.follow(jobKey(j), j.Slug, j.PiSession, d.svc.Cfg.JobDir(j), session, func(path string) error {
+	moved, err := d.follow(jobKey(j), j.Slug, j.PiSession, d.svc.Cfg.OwnDir(j), session, func(path string) error {
 		rev, err := d.svc.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{"pi_session": path})
 		if err != nil {
 			return err

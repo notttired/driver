@@ -12,6 +12,7 @@ import { Toast, showToast } from "./components/overlays/Toast.tsx";
 import { closeThreadNow } from "./components/overlays/ThreadTabs.tsx";
 import { CommandPalette, type PalettePick } from "./components/palette/CommandPalette.tsx";
 import { useBoard } from "./hooks/useBoard.ts";
+import { readLS, writeLS } from "./hooks/useLocalStorage.ts";
 import { slugOfKey } from "./lib/jobKey.ts";
 
 const NO_JOBS: never[] = [];
@@ -19,15 +20,23 @@ const NO_JOBS: never[] = [];
 export function App() {
   const board = useBoard();
   const [openKey, setOpenKeyRaw] = useState<string | null>(null);
-  // the tab the open job shows (a thread id; 0 = its own pi): another job
-  // starts on its own pi, the palette can ask for a thread
-  const [openThread, setOpenThread] = useState(0);
+  // the tab the open job shows (a thread id; 0 = its own pi): each job
+  // remembers the tab it was left on (this browser's memory, like the
+  // folded columns); the palette can ask for a thread
+  const [openThread, setOpenThreadRaw] = useState(0);
   const setOpenKey = useCallback((key: string | null) => {
     setOpenKeyRaw((was) => {
-      if (key !== was) setOpenThread(0);
+      if (key !== was) setOpenThreadRaw(key === null ? 0 : rememberedThread(key));
       return key;
     });
   }, []);
+  const setOpenThread = useCallback(
+    (id: number) => {
+      setOpenThreadRaw(id);
+      if (openKey !== null) rememberThread(openKey, id);
+    },
+    [openKey],
+  );
   const [newJob, setNewJob] = useState(false);
   const [watchPrompt, setWatchPrompt] = useState(false);
   const [palette, setPalette] = useState(false);
@@ -94,7 +103,8 @@ export function App() {
       setNewJob(false);
       setWatchPrompt(false);
       setOpenKey(pick.key);
-      setOpenThread(pick.thread);
+      setOpenThreadRaw(pick.thread);
+      rememberThread(pick.key, pick.thread);
     },
     [setOpenKey],
   );
@@ -125,7 +135,10 @@ export function App() {
       else if (watchPrompt) setWatchPrompt(false);
       else if (newJob) setNewJob(false);
       else if (openKey !== null) {
-        const t = openThread ? byKey.get(openKey)?.threads?.find((x) => x.id === openThread) : undefined;
+        // the tab in view goes — the first too, while another is open; the
+        // last tab stays and the overlay closes instead
+        const tabs = byKey.get(openKey)?.threads ?? [];
+        const t = tabs.length > 1 ? tabs.find((x) => x.id === openThread) : undefined;
         if (t) {
           closeThreadNow(slugOfKey(openKey), t, { current: openThread, onSelect: setOpenThread, onChanged: () => board.refetch(), onToast: showToast });
         } else setOpenKey(null);
@@ -133,7 +146,7 @@ export function App() {
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [overlayOpen, setOpenKey, palette, watchPrompt, newJob, openKey, openThread, byKey, board]);
+  }, [overlayOpen, setOpenKey, setOpenThread, palette, watchPrompt, newJob, openKey, openThread, byKey, board]);
 
   return (
     <>
@@ -180,4 +193,16 @@ export function App() {
       <Toast />
     </>
   );
+}
+
+/** The tab a job was last left on, per board key, in this browser. */
+const THREAD_KEY_PREFIX = "driver.thread:";
+
+function rememberedThread(key: string): number {
+  const v = Number(readLS(THREAD_KEY_PREFIX + key) ?? 0);
+  return Number.isInteger(v) && v > 0 ? v : 0;
+}
+
+function rememberThread(key: string, id: number): void {
+  writeLS(THREAD_KEY_PREFIX + key, id ? String(id) : null);
 }

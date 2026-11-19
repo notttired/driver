@@ -332,10 +332,9 @@ describe("BoardView (DOM smoke test)", () => {
     closeKey();
     expect(screen.queryByRole("combobox")).toBeNull();
 
-    // a job on its own tab: the overlay closes
-    fireEvent.click(screen.getByText("threaded").closest(".card")!);
+    // a job with one tab, on it: the overlay closes, the tab stays
+    fireEvent.click(screen.getByText("flaky-ci").closest(".card")!);
     await waitFor(() => expect(overlay).not.toHaveAttribute("hidden"));
-    await within(overlay).findByRole("tab", { name: /CI/ });
     closeKey();
     await waitFor(() => expect(overlay).toHaveAttribute("hidden"));
     expect(bodies.some((b) => b.path === "/api/job/thread")).toBe(false);
@@ -348,6 +347,54 @@ describe("BoardView (DOM smoke test)", () => {
     await waitFor(() => expect(bodies.filter((b) => b.path === "/api/job/thread")).toEqual([{ path: "/api/job/thread", slug: "threaded", op: "close", id: 5 }]));
     expect(confirm).not.toHaveBeenCalled();
     expect(overlay).not.toHaveAttribute("hidden");
+
+    // on the first tab with another open: the first tab closes (the next
+    // takes its place), the overlay stays
+    fireEvent.click(within(overlay).getByRole("tab", { name: /^threaded/ }));
+    closeKey();
+    await waitFor(() => expect(bodies.filter((b) => b.path === "/api/job/thread")).toHaveLength(2));
+    expect(bodies.at(-1)).toEqual({ path: "/api/job/thread", slug: "threaded", op: "close", id: 0 });
+    expect(overlay).not.toHaveAttribute("hidden");
+  });
+
+  it("remembers the tab you were on per job, and opens there next time", async () => {
+    const board = fixtureBoard();
+    const NOW2 = Math.floor(Date.now() / 1000);
+    board.jobs.push(
+      makeJob({
+        slug: "threaded",
+        state: "working",
+        live: true,
+        pi: { state: "working", ts: NOW2 },
+        threads: [
+          { id: 0, name: "threaded", live: true, pi: { state: "working", ts: NOW2 } },
+          { id: 5, name: "CI", live: true, pi: { state: "idle", reason: "idle", ts: NOW2 } },
+        ],
+      }),
+    );
+    installFetch(board);
+    render(<App />);
+    const overlay = document.getElementById("job-overlay")!;
+    fireEvent.click((await screen.findByText("threaded")).closest(".card")!);
+    await waitFor(() => expect(overlay).not.toHaveAttribute("hidden"));
+    fireEvent.click(await within(overlay).findByRole("tab", { name: /CI/ }));
+    expect(within(overlay).getByRole("tab", { name: /CI/ })).toHaveAttribute("aria-selected", "true");
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+    await waitFor(() => expect(overlay).toHaveAttribute("hidden"));
+    // another job opens on its own pi
+    fireEvent.click(screen.getByText("flaky-ci").closest(".card")!);
+    await waitFor(() => expect(overlay).not.toHaveAttribute("hidden"));
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+    await waitFor(() => expect(overlay).toHaveAttribute("hidden"));
+    // back to the threaded job: on CI, where it was left
+    fireEvent.click(screen.getByText("threaded").closest(".card")!);
+    await waitFor(() => expect(overlay).not.toHaveAttribute("hidden"));
+    await waitFor(() => expect(within(overlay).getByRole("tab", { name: /CI/ })).toHaveAttribute("aria-selected", "true"));
+    expect(window.localStorage.getItem("driver.thread:threaded")).toBe("5");
   });
 
   it("has no retry button when nothing blocked failed, and none in a job that waits on you", async () => {

@@ -338,3 +338,132 @@ func TestThreadKillAndRetryAtStart(t *testing.T) {
 		t.Fatalf("cancel drops the threads: %+v", all)
 	}
 }
+
+func TestCloseOwnThread(t *testing.T) {
+	svc, st, work := threadsFixture(t)
+	j, err := svc.Create("multi", "Multi", work, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Submit(j); err != nil {
+		t.Fatal(err)
+	}
+	j, _ = st.GetJobBySlug("multi")
+	root := filepath.Dir(j.PiSession)
+	waitFor(t, "pi to start", func() bool { return readFile(filepath.Join(root, "argv")) != "" })
+	os.WriteFile(j.PiSession, []byte(threadHeader+threadUser+threadAnswer), 0o644)
+	os.WriteFile(filepath.Join(root, "status.json"), []byte(`{"state":"idle"}`), 0o644)
+	st.UpdateJobFields(j.ID, j.Rev, map[string]any{"state": "blocked"})
+	j, _ = st.GetJobBySlug("multi")
+
+	// the only tab stays
+	if err := svc.CloseOwnThread(j); !IsRefusal(err) {
+		t.Fatalf("the last tab cannot be closed: %v", err)
+	}
+
+	ci, err := svc.OpenThread(j, 0, "CI")
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs, err := svc.OpenThread(j, 0, "Docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "CI's pi to start", func() bool { return readFile(filepath.Join(filepath.Dir(ci.PiSession), "argv")) != "" })
+	os.WriteFile(filepath.Join(filepath.Dir(ci.PiSession), "status.json"), []byte(`{"state":"working"}`), 0o644)
+	ownSess := SessionName(j)
+	st.SetKV(scanOffsetKey(jobKey(j)), "11")
+	st.SetKV(scanOffsetKey(threadKey(j, ci)), "22")
+	if list, _ := svc.ThreadList(j); list[0].Name != "Multi" || list[1].Name != "CI" {
+		t.Fatalf("tabs before: %+v", list)
+	}
+
+	// closing the first tab: its pi goes and it stays as a closed thread;
+	// the next tab becomes the job's own pi, keeping its name, its session
+	// and its files where they are
+	if err := svc.CloseOwnThread(j); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the old own session to go", func() bool { svc.Tmux.Invalidate(); return !svc.Tmux.HasSession(ownSess) })
+	j, _ = st.GetJobBySlug("multi")
+	if j.PiSession != ci.PiSession || j.Tmux != ci.Tmux || j.StartedAt != ci.StartedAt || j.ThreadName != "CI" || OwnName(j) != "CI" {
+		t.Fatalf("the job's own pi after the close: %+v", j)
+	}
+	if !svc.Tmux.HasSession(j.Tmux) || svc.Tmux.PaneDead(j.Tmux) {
+		t.Fatalf("the promoted pi keeps running")
+	}
+	if svc.Cfg.OwnDir(j) != filepath.Dir(ci.PiSession) || svc.Cfg.JobDir(j) != root {
+		t.Fatalf("dirs: own %s, job %s", svc.Cfg.OwnDir(j), svc.Cfg.JobDir(j))
+	}
+	if st := svc.Cfg.ReadStatus(j); st == nil || st.State != "working" {
+		t.Fatalf("the promoted pi's status is the job's: %+v", st)
+	}
+	all, _ := st.ListThreads(j.ID)
+	if len(all) != 2 {
+		t.Fatalf("threads after: %+v", all)
+	}
+	old := all[1]
+	if old.ID <= docs.ID || !old.Closed() || old.Name != "Multi" || old.PiSession != filepath.Join(root, "session.jsonl") {
+		t.Fatalf("the old own pi as a closed thread: %+v", old)
+	}
+	if _, err := st.GetThread(ci.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the promoted thread's row is gone: %v", err)
+	}
+	if v, _ := st.GetKV(scanOffsetKey(jobKey(j))); v != "22" {
+		t.Fatalf("the scanner follows the promoted session: %q", v)
+	}
+	if v, _ := st.GetKV(scanOffsetKey(threadKey(j, old))); v != "11" {
+		t.Fatalf("the scanner keeps the old session's place under its thread: %q", v)
+	}
+	list, _ := svc.ThreadList(j)
+	if len(list) != 3 || list[0].ID != 0 || list[0].Name != "CI" || list[1].Name != "Docs" || list[2].Name != "Multi" || list[2].State != "closed" {
+		t.Fatalf("tabs after: %+v", list)
+	}
+	open, _ := svc.OpenThreads(j)
+	if len(open) != 1 || open[0].ID != docs.ID {
+		t.Fatalf("open threads after: %+v", open)
+	}
+	// every dir still resolves: the promoted pi's to the job, the old one's
+	// to its thread, Docs' to its thread
+	if lj, lt, err := svc.LookupThreadDir(filepath.Dir(ci.PiSession)); err != nil || lj.ID != j.ID || lt != nil {
+		t.Fatalf("the promoted dir: %v %+v", err, lt)
+	}
+	if _, lt, err := svc.LookupThreadDir(root); err != nil || lt == nil || lt.ID != old.ID {
+		t.Fatalf("the old own dir: %v %+v", err, lt)
+	}
+	if _, lt, err := svc.LookupThreadDir(filepath.Dir(docs.PiSession)); err != nil || lt == nil || lt.ID != docs.ID {
+		t.Fatalf("Docs' dir: %v %+v", err, lt)
+	}
+	// a new thread lands beside the others, under the job's root
+	more, err := svc.OpenThread(j, 0, "More")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(filepath.Dir(more.PiSession)) != root {
+		t.Fatalf("a new thread's dir: %s", more.PiSession)
+	}
+	// the old own pi's words stay shared
+	up, err := svc.PeerUpdate(j, docs.ID, nil)
+	if err != nil || !strings.Contains(up.Text, `## Thread "Multi" (closed)`) || !strings.Contains(up.Text, "Multi: Done.") {
+		t.Fatalf("the closed first pi still speaks: %v\n%s", err, up.Text)
+	}
+	// and once more: closing the (promoted) first tab hands over to Docs
+	if err := svc.CloseOwnThread(j); err != nil {
+		t.Fatal(err)
+	}
+	j, _ = st.GetJobBySlug("multi")
+	if j.PiSession != docs.PiSession || OwnName(j) != "Docs" {
+		t.Fatalf("second hand-over: %+v", j)
+	}
+	// a fresh start forgets the inherited name
+	if err := svc.Kill(j); err != nil {
+		t.Fatal(err)
+	}
+	j, _ = st.GetJobBySlug("multi")
+	if err := svc.Submit(j); err != nil {
+		t.Fatal(err)
+	}
+	if j, _ = st.GetJobBySlug("multi"); j.ThreadName != "" || OwnName(j) != "Multi" {
+		t.Fatalf("after a restart: %+v", j)
+	}
+}

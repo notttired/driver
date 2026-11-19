@@ -152,14 +152,36 @@ func (c Config) FreshJobDir(j *store.Job) string {
 	return filepath.Join(c.JobsDir(), fmt.Sprintf("%s-%d", j.Slug, j.ID))
 }
 
-// JobDir is where a job's session.jsonl / status.json live: the
-// directory of its recorded session file (a rename does not move the dir),
-// else the fresh dir.
-func (c Config) JobDir(j *store.Job) string {
+// OwnDir is where the job's own pi keeps its session.jsonl / status.json:
+// the directory of its recorded session file (a rename does not move the
+// dir; a thread promoted to the job's own pi keeps its t<id> dir), else the
+// fresh dir.
+func (c Config) OwnDir(j *store.Job) string {
 	if j.PiSession != "" {
 		return filepath.Dir(j.PiSession)
 	}
 	return c.FreshJobDir(j)
+}
+
+var threadDirRe = regexp.MustCompile(`^t\d+$`)
+
+// JobDir is the job's root dir, which the threads' t<id> dirs sit under:
+// the own pi's dir, or its parent when the own pi lives in a thread's dir.
+func (c Config) JobDir(j *store.Job) string {
+	own := c.OwnDir(j)
+	if threadDirRe.MatchString(filepath.Base(own)) {
+		return filepath.Dir(own)
+	}
+	return own
+}
+
+// OwnName is what the tab of the job's own pi is called: the name it had
+// as a thread, when it was one, else the job's.
+func OwnName(j *store.Job) string {
+	if j.ThreadName != "" {
+		return j.ThreadName
+	}
+	return j.DisplayName()
 }
 
 var prPathRe = regexp.MustCompile(`^/[^/]+/[^/]+/pull/\d+/?$`)

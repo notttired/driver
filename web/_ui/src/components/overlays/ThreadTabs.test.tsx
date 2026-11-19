@@ -76,18 +76,24 @@ describe("ThreadTabs", () => {
     expect(screen.getByPlaceholderText(/name of the thread/i)).toBeInTheDocument();
   });
 
-  it("closes a thread at once, no question asked; the job's own tab cannot be closed", async () => {
+  it("closes a thread at once, no question asked — the first tab too, while another is open", async () => {
     closeThread.mockResolvedValue({ ok: true });
     const onSelect = vi.fn();
     const onChanged = vi.fn();
     const confirm = vi.spyOn(window, "confirm");
     render(<ThreadTabs slug="multi" threads={threads} current={7} onSelect={onSelect} onChanged={onChanged} onToast={() => {}} />);
-    expect(screen.getByRole("tab", { name: /Multi/ }).querySelector(".thread-close")).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: /Docs/ }).querySelector(".thread-close")!);
     await waitFor(() => expect(closeThread).toHaveBeenCalledWith("multi", 7));
     expect(confirm).not.toHaveBeenCalled();
     expect(onSelect).toHaveBeenCalledWith(0);
     expect(onChanged).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: /Multi/ }).querySelector(".thread-close")!);
+    await waitFor(() => expect(closeThread).toHaveBeenCalledWith("multi", 0));
+  });
+
+  it("the last tab has no ✕", () => {
+    render(<ThreadTabs slug="multi" threads={threads.slice(0, 1)} current={0} onSelect={() => {}} onToast={() => {}} />);
+    expect(screen.getByRole("tab", { name: /Multi/ }).querySelector(".thread-close")).toBeNull();
   });
 
   it("renames a thread on double-click", async () => {

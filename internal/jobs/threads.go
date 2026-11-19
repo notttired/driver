@@ -96,7 +96,7 @@ func (s *Service) OpenThread(j *store.Job, from int64, name string) (*store.Thre
 	if err != nil {
 		return nil, err
 	}
-	src := resumeFile(j, s.Cfg.JobDir(j))
+	src := resumeFile(j, s.Cfg.OwnDir(j))
 	if from != 0 {
 		ft, err := s.LookupThread(j, from)
 		if err != nil {
@@ -162,6 +162,56 @@ func (s *Service) CloseThread(j *store.Job, t *store.Thread) error {
 		return Refuse("%v", err)
 	}
 	return s.Store.UpdateThreadFields(t.ID, map[string]any{"closed_at": time.Now().Unix()})
+}
+
+// CloseOwnThread closes the job's own pi — the first tab — and hands its
+// place to the next open thread: that thread's session file, tmux session
+// and start time become the job's (its files stay where they are; its name
+// becomes the tab's), its row goes, and the old own pi stays as a closed
+// thread, so what it said remains part of the job. The last tab cannot be
+// closed.
+func (s *Service) CloseOwnThread(j *store.Job) error {
+	if j.Archived() || j.State == "" || j.State == "done" {
+		return Refuse("job %s is not open (%s)", j.Slug, stage(j))
+	}
+	open, err := s.OpenThreads(j)
+	if err != nil {
+		return err
+	}
+	if len(open) == 0 {
+		return Refuse("job %s has one thread left — it stays", j.Slug)
+	}
+	next := open[0]
+	if err := s.killIfPresent(j); err != nil {
+		return err
+	}
+	now := time.Now().Unix()
+	old := &store.Thread{JobID: j.ID, Name: OwnName(j), PiSession: j.PiSession, Tmux: j.Tmux, StartedAt: j.StartedAt, ClosedAt: now}
+	if _, err := s.Store.CreateThread(old); err != nil {
+		return err
+	}
+	// the scanner's place in each session follows the session
+	s.moveScanKeys(jobKey(j), threadKey(j, old))
+	s.moveScanKeys(threadKey(j, next), jobKey(j))
+	if _, err := s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{
+		"pi_session": next.PiSession, "tmux": next.Tmux, "started_at": next.StartedAt, "thread_name": next.Name,
+	}); err != nil {
+		return mapStoreErr(err)
+	}
+	return s.Store.DeleteThread(next.ID)
+}
+
+// moveScanKeys carries a session's scan offset and pending PR calls from
+// one scan key to another.
+func (s *Service) moveScanKeys(from, to string) {
+	for _, key := range []func(string) string{scanOffsetKey, scanPendingKey} {
+		if v, err := s.Store.GetKV(key(from)); err == nil {
+			_ = s.Store.SetKV(key(to), v)
+		} else {
+			_ = s.Store.DeleteKV(key(to))
+		}
+		_ = s.Store.DeleteKV(key(from))
+	}
 }
 
 // StopThread sends Escape to the thread's pane.
@@ -313,12 +363,14 @@ func (s *Service) LookupThreadDir(dir string) (*store.Job, *store.Thread, error)
 	}
 	dir = filepath.Clean(dir)
 	for _, j := range all {
-		if s.Cfg.JobDir(j) == dir {
+		if s.Cfg.OwnDir(j) == dir {
 			return j, nil, nil
 		}
 	}
 	for _, j := range all {
-		if filepath.Dir(dir) != s.Cfg.JobDir(j) {
+		// a thread's dir is under the job's root — or is the root, for the
+		// job's first pi once another took its place
+		if root := s.Cfg.JobDir(j); dir != root && filepath.Dir(dir) != root {
 			continue
 		}
 		threads, err := s.Store.ListThreads(j.ID)

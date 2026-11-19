@@ -157,7 +157,7 @@ func (a *API) buildBoard() (*webBoard, error) {
 			obs := own
 			if jobs.Opened(j) && j.State != "done" {
 				var all []jobs.Observation
-				threads, all, err = a.threadsOf(j, webThread{ID: 0, Name: j.DisplayName(), Live: live, Pi: own.Pi, Retryable: retryable, StartedAt: j.StartedAt}, own, now)
+				threads, all, err = a.threadsOf(j, webThread{ID: 0, Name: jobs.OwnName(j), Live: live, Pi: own.Pi, Retryable: retryable, StartedAt: j.StartedAt}, own, now)
 				if err != nil {
 					return nil, err
 				}

@@ -97,6 +97,16 @@ func (a *API) jobThread(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "thread": webThread{ID: t.ID, Name: t.Name, Live: live, StartedAt: t.StartedAt}})
 		return
 	}
+	if req.ID == 0 && req.Op == "close" {
+		if err := a.Svc.CloseOwnThread(j); err != nil {
+			log.Printf("thread close %s (own): refused: %v", j.Slug, err)
+			writeThreadFailure(w, err)
+			return
+		}
+		log.Printf("thread close %s (own): the next thread is the job's pi now", j.Slug)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		return
+	}
 	t, err := a.Svc.LookupThread(j, req.ID)
 	if err != nil {
 		writeThreadFailure(w, err)

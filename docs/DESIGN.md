@@ -146,12 +146,26 @@ usage, accounts, self-update) is left out on purpose.
   a thread that stops while the card stays working sends its own
   notification (`<job> · <thread> — <reason>`). Each tab has its own pane
   (`/api/term?thread=`), its own record (`/api/job/conversation?thread=`),
-  STOP and RETRY; ⌘⇧] / ⌘⇧[ step through the tabs, round the end (a
+  STOP and RETRY; the tab a job is left on is remembered per job (this
+  browser's, in localStorage, like the folded columns); ⌘⇧] / ⌘⇧[ step
+  through the tabs, round the end (a
   document listener keyed on the bracket key codes, so the pane — which
   leaves ⌘-combinations to the page — and the sidebar both hear it). ⌘W
   closes what is on top: the palette, a dialog, the thread tab in view
   (at once, as ✕ does — nothing is lost: the row and its conversation stay),
-  else the job overlay; never the board. Driver.app
+  else the job overlay; never the board. The first tab closes like the
+  rest while another is open: every job-level action (watch, fork, retry,
+  reactivate, the record) works on the job's own pi, so closing it means
+  the next open thread takes that place — `CloseOwnThread` kills the own
+  session, keeps the old pi as a closed thread row (its session file where
+  it is, so it still speaks in the peer context), and moves the thread's
+  `pi_session`, `tmux` and `started_at` into the job row with its name as
+  `jobs.thread_name` (v11; `OwnName`: the tab's and pi's name, "" = the
+  job's; a fresh start clears it), the scanner's place in each session
+  following. The promoted pi keeps its `t<id>` dir: `OwnDir` is where the
+  own pi lives (its session file's dir), `JobDir` the job's root — the own
+  dir, or its parent when that is a thread's dir — which the threads' dirs
+  sit under. The last tab cannot be closed (⌘W on it closes the overlay). Driver.app
   drops the File ▸ Close menu item (`CommandGroup(replacing: .saveItem)`)
   so the key reaches the page instead of closing the window — which the
   traffic light still does. ✕ closes a thread's pi; the row and its conversation stay

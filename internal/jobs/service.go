@@ -195,7 +195,7 @@ func (s *Service) Submit(j *store.Job) error {
 	_ = s.Store.DeleteKV(scanPendingKey(jobKey(j)))
 	_, err = s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{
 		"tmux": sess, "pi_session": sessionFile, "started_at": time.Now().Unix(),
-		"state": "ready", "outcome": "", "finished_at": int64(0),
+		"state": "ready", "outcome": "", "finished_at": int64(0), "thread_name": "",
 	})
 	if err != nil {
 		return fmt.Errorf("session %s is up but the state write failed: %w", sess, mapStoreErr(err))
@@ -240,7 +240,7 @@ func (s *Service) relaunch(j *store.Job, prompt ...string) (map[string]any, erro
 	if err := s.clearStaleSession(sess); err != nil {
 		return nil, Refuse("%v", err)
 	}
-	jobDir := s.Cfg.JobDir(j)
+	jobDir := s.Cfg.OwnDir(j)
 	if err := os.MkdirAll(jobDir, 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", jobDir, err)
 	}
@@ -366,7 +366,7 @@ func (s *Service) restart(j *store.Job, resume bool) error {
 	if err := s.clearStaleSession(sess); err != nil {
 		return Refuse("%v", err)
 	}
-	jobDir := s.Cfg.JobDir(j)
+	jobDir := s.Cfg.OwnDir(j)
 	if err := os.MkdirAll(jobDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", jobDir, err)
 	}

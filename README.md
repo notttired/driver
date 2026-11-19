@@ -155,9 +155,11 @@ the tab you are on, ⌘⇧] / ⌘⇧[ move to the next / previous tab, and ⌘W 
 the thread you are on — on the job's own tab it closes the overlay, and it
 never closes Driver's window. The card is working while any thread works, and needs
 you when every thread has stopped; a thread that stops while another works
-sends its own notification. ✕ on a thread's tab closes its pi — what it said
-stays with the job — and a double-click renames it. DONE and CANCEL close
-every thread. `tmux attach -t drv-<slug>-<id>-t<n>` reaches a thread's pane
+sends its own notification. ✕ on a tab (or ⌘W on it) closes its pi — what it
+said stays with the job — the first tab included, in which case the next
+thread takes its place as the job's own pi; the last tab always stays. A
+double-click renames a thread. Each job opens on the tab you left it on.
+DONE and CANCEL close every thread. `tmux attach -t drv-<slug>-<id>-t<n>` reaches a thread's pane
 from a terminal.
 
 The threads hear each other. Every message you send a thread arrives with

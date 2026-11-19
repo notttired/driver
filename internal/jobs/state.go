@@ -114,7 +114,7 @@ func holdBlocked(persisted, derived string, firstTick, tickN int) (string, int) 
 }
 
 // ReadStatus reads a job's status.json; nil when absent or unreadable.
-func (c Config) ReadStatus(j *store.Job) *pi.Status { return readStatus(c.JobDir(j)) }
+func (c Config) ReadStatus(j *store.Job) *pi.Status { return readStatus(c.OwnDir(j)) }
 
 // ReadThreadStatus reads a thread's status.json.
 func (c Config) ReadThreadStatus(j *store.Job, t *store.Thread) *pi.Status {

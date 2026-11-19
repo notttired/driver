@@ -8,7 +8,7 @@ import (
 
 // migrations is the append-only list of schema steps; migrations[i] brings a
 // database at user_version i to i+1. Never edit a shipped step — append.
-var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8, schemaV9, schemaV10}
+var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8, schemaV9, schemaV10, schemaV11}
 
 // schemaV1 creates the four tables the design calls for. Every column a Go
 // scan reads into a plain string/int64 is NOT NULL with a same-typed default;
@@ -249,4 +249,11 @@ CREATE TABLE threads (
 	closed_at  INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX threads_job ON threads(job_id);
+`
+
+// schemaV11 adds jobs.thread_name: what the tab of the job's own pi is
+// called when that pi was a thread before (closing the first tab promotes
+// the next one); "" = the job's display name, as before.
+const schemaV11 = `
+ALTER TABLE jobs ADD COLUMN thread_name TEXT NOT NULL DEFAULT '';
 `

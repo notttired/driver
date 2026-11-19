@@ -37,7 +37,7 @@ const historyResultChars = 2000
 // ThreadList is the job's pis in tab order: its own first, then every
 // thread, closed ones included (what they said is still part of the job).
 func (s *Service) ThreadList(j *store.Job) ([]ThreadInfo, error) {
-	own := ThreadInfo{ID: 0, Name: j.DisplayName(), State: piState(s.Cfg.ReadStatus(j), false), path: j.PiSession}
+	own := ThreadInfo{ID: 0, Name: OwnName(j), State: piState(s.Cfg.ReadStatus(j), false), path: j.PiSession}
 	out := []ThreadInfo{own}
 	threads, err := s.Store.ListThreads(j.ID)
 	if err != nil {

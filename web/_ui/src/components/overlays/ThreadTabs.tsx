@@ -17,8 +17,9 @@ export interface ThreadTabsProps {
   onToast: (message: string) => void;
 }
 
-/** Close a thread's pi, no questions asked: the row and its conversation
- *  stay with the job, so nothing is lost. The tab in view falls back to the
+/** Close a tab's pi, no questions asked: its conversation stays with the
+ *  job, so nothing is lost. The first tab (id 0) closes too — the daemon
+ *  hands its place to the next thread. The tab in view falls back to the
  *  job's own when it was this one; the board refetches. Shared by the tab's
  *  ✕ and ⌘W. */
 export function closeThreadNow(
@@ -46,9 +47,10 @@ export function suggestThreadName(threads: readonly Pick<WebThread, "name">[]): 
 /**
  * The tabs above a job's pane: one per pi — the job's own first, then every
  * open thread — each with a dot for its state. `+` opens a thread from the
- * current tab (a copy of its conversation under a name you type); ✕ on a
- * thread's tab closes its pi (the conversation stays with the job); a
- * double-click renames it.
+ * current tab (a copy of its conversation under a name you type); ✕ closes
+ * a tab's pi (the conversation stays with the job; closing the first tab
+ * hands its place to the next), never the last one; a double-click renames
+ * a thread.
  */
 export function ThreadTabs({ slug, threads, current, onSelect, onChanged, onToast }: ThreadTabsProps) {
   const [adding, setAdding] = useState(false);
@@ -152,7 +154,7 @@ export function ThreadTabs({ slug, threads, current, onSelect, onChanged, onToas
               type="button"
               className={"thread-tab" + (selected ? " selected" : "") + (t.live ? "" : " dead")}
               aria-selected={selected}
-              title={`${t.name} — ${tok.text}${tok.detail ? ` ${tok.detail}` : ""}${t.id ? "\ndouble-click to rename · ✕ closes its pi" : ""}${threads.length > 1 ? "\n⌘⇧] / ⌘⇧[ next / previous tab" : ""}`}
+              title={`${t.name} — ${tok.text}${tok.detail ? ` ${tok.detail}` : ""}${t.id ? "\ndouble-click to rename" : ""}${threads.length > 1 ? " · ✕ or ⌘W closes its pi\n⌘⇧] / ⌘⇧[ next / previous tab" : ""}`}
               onClick={() => onSelect(t.id)}
               onDoubleClick={() => {
                 if (t.id) setRenaming({ id: t.id, value: t.name });
@@ -182,7 +184,7 @@ export function ThreadTabs({ slug, threads, current, onSelect, onChanged, onToas
               ) : (
                 <span className="thread-name">{t.name}</span>
               )}
-              {t.id ? (
+              {threads.length > 1 ? (
                 <span
                   className="thread-close"
                   role="button"

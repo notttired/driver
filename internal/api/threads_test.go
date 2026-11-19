@@ -27,7 +27,7 @@ func TestThreads(t *testing.T) {
 	t.Setenv("TMUX_TMPDIR", sock)
 	t.Setenv("TMUX", "")
 	t.Cleanup(func() {
-		for _, s := range []string{"drv-multi-1", "drv-multi-1-t1", "drv-multi-1-t2"} {
+		for _, s := range []string{"drv-multi-1", "drv-multi-1-t1", "drv-multi-1-t2", "drv-multi-1-t3"} {
 			tmux.KillSession(s)
 		}
 	})
@@ -171,6 +171,27 @@ func TestThreads(t *testing.T) {
 	get("/api/board", &b)
 	if len(b.Jobs[0].Threads) != 1 {
 		t.Fatalf("a closed thread leaves the tabs: %+v", b.Jobs[0].Threads)
+	}
+
+	// the first tab closes too, when another is open: the next one takes
+	// its place and its name comes with it
+	if code, out := post("/api/job/thread", `{"slug":"multi","op":"close","id":0}`); code != http.StatusConflict {
+		t.Fatalf("the last tab stays: %d %v", code, out)
+	}
+	code, out = post("/api/job/thread", `{"slug":"multi","op":"open","name":"Second"}`)
+	if code != http.StatusOK {
+		t.Fatalf("open: %d %v", code, out)
+	}
+	second := int64(out["thread"].(map[string]any)["id"].(float64))
+	if code, out := post("/api/job/thread", `{"slug":"multi","op":"close","id":0}`); code != http.StatusOK {
+		t.Fatalf("close the first tab: %d %v", code, out)
+	}
+	get("/api/board", &b)
+	if len(b.Jobs[0].Threads) != 1 || b.Jobs[0].Threads[0].ID != 0 || b.Jobs[0].Threads[0].Name != "Second" {
+		t.Fatalf("the next tab is the job's own now, under its name: %+v", b.Jobs[0].Threads)
+	}
+	if code := get("/api/job/conversation?slug=multi&thread="+jsonInt(second), nil); code != http.StatusNotFound {
+		t.Fatalf("the promoted thread's old id is gone: %d", code)
 	}
 	if code := get("/api/job/conversation?slug=multi&thread="+jsonInt(id), &conv); code != http.StatusOK || len(conv.Messages) != 1 {
 		t.Fatalf("a closed thread's record is still readable: %d %+v", code, conv)

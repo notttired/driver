@@ -30,9 +30,10 @@ type Job struct {
 	ArchivedAt   int64
 	ArchivedName string
 	Rev          int64
-	AttentionAt  int64 // turned blocked on its own at this time and not opened since; 0 = no ring
-	LaneID       int64 // the lane the board shows it in; 0 = the column its state names
-	WatchingAt   int64 // pi was told to watch over the shipped work at this time; 0 = not watching
+	AttentionAt  int64  // turned blocked on its own at this time and not opened since; 0 = no ring
+	LaneID       int64  // the lane the board shows it in; 0 = the column its state names
+	WatchingAt   int64  // pi was told to watch over the shipped work at this time; 0 = not watching
+	ThreadName   string // the tab name of the job's own pi when it was a thread once; "" = the job's name
 }
 
 // Archived reports whether the job sits in the archive drawer.
@@ -48,7 +49,7 @@ func (j *Job) DisplayName() string {
 }
 
 const jobColumns = `id, slug, name, dir, model, color, spec, notes, state, outcome, pi_session, tmux,
-	started_at, finished_at, created_at, updated_at, archived_at, archived_name, rev, attention_at, lane_id, watching_at`
+	started_at, finished_at, created_at, updated_at, archived_at, archived_name, rev, attention_at, lane_id, watching_at, thread_name`
 
 func scanJob(row interface{ Scan(...any) error }) (*Job, error) {
 	var j Job
@@ -56,7 +57,7 @@ func scanJob(row interface{ Scan(...any) error }) (*Job, error) {
 	var archivedName sql.NullString
 	err := row.Scan(&j.ID, &j.Slug, &j.Name, &j.Dir, &j.Model, &j.Color, &j.Spec, &j.Notes, &j.State, &j.Outcome,
 		&j.PiSession, &j.Tmux, &j.StartedAt, &j.FinishedAt, &j.CreatedAt, &j.UpdatedAt,
-		&archivedAt, &archivedName, &j.Rev, &j.AttentionAt, &j.LaneID, &j.WatchingAt)
+		&archivedAt, &archivedName, &j.Rev, &j.AttentionAt, &j.LaneID, &j.WatchingAt, &j.ThreadName)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +165,7 @@ func (s *Store) queryJobs(query string, args ...any) ([]*Job, error) {
 var jobFieldColumns = map[string]bool{
 	"slug": true, "name": true, "dir": true, "model": true, "color": true, "spec": true, "notes": true,
 	"state": true, "outcome": true, "pi_session": true, "tmux": true,
-	"started_at": true, "finished_at": true, "attention_at": true, "lane_id": true, "watching_at": true,
+	"started_at": true, "finished_at": true, "attention_at": true, "lane_id": true, "watching_at": true, "thread_name": true,
 }
 
 // SetAttention writes attention_at for the active job id without the rev
