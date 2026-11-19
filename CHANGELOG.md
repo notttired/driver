@@ -8,7 +8,7 @@ behind each, [docs/API.md](docs/API.md) the wire contract.
 
 ## 2026-11-19
 
-- **One Full Disk Access grant, kept across installs** (`HEAD`). Every pi a
+- **One Full Disk Access grant, kept across installs** (`32a22b1`). Every pi a
   job runs is driver's child to macOS, so a read of the Desktop, Documents
   or Downloads folder asked in driver's name, and Go's own signature made
   any grant die with the next build. `make install` now re-signs the binary
