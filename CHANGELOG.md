@@ -8,6 +8,12 @@ behind each, [docs/API.md](docs/API.md) the wire contract.
 
 ## 2026-11-19
 
+- **The first tab closes too, and a job opens on the tab you left it on**
+  (`b1985ff`, schema v11). Closing the first tab hands its place to the next
+  thread — that pi becomes the job's own, under its own name, and the old
+  one stays as a closed thread so what it said is still shared. The last
+  tab always stays: ⌘W on it closes the overlay. Each job remembers which
+  tab it was left on.
 - **One Full Disk Access grant, kept across installs** (`32a22b1`). Every pi a
   job runs is driver's child to macOS, so a read of the Desktop, Documents
   or Downloads folder asked in driver's name, and Go's own signature made
