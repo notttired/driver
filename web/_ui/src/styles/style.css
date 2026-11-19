@@ -850,6 +850,27 @@ body.splitting .term-pane, body.splitting .job-side { pointer-events: none; }
 .thread-add:hover { color: var(--fg); background: var(--drop-tint); }
 .thread-new-row { padding: 6px 0 0; }
 
+/* ⚙ settings */
+.panel.settings-panel { width: min(720px, 94vw); }
+.settings-body { display: flex; flex-direction: column; gap: 18px; padding: 14px 18px 18px; overflow: auto; }
+.settings-section h3 { margin: 0 0 6px; font: 600 10px/1 var(--display); letter-spacing: 0.18em; color: var(--muted); text-transform: uppercase; }
+.settings-section p, .settings-section li { margin: 0 0 6px; max-width: 72ch; font: 400 11px/1.6 var(--mono); color: var(--body); }
+.settings-section ol { margin: 0 0 8px; padding-left: 18px; }
+.settings-section b { color: var(--fg); font-weight: 600; }
+.settings-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 6px; }
+.settings-result { font: 400 10px/1.5 var(--mono); color: var(--muted); }
+.settings-result.ok { color: var(--ok); }
+.settings-result.err { color: var(--ac2); }
+.settings-folders { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.settings-folders li { display: flex; gap: 10px; font: 400 10px/1.5 var(--mono); }
+.settings-folder { color: var(--fg); min-width: 9ch; }
+.settings-state { color: var(--muted); }
+.state-ok .settings-state { color: var(--ok); }
+.state-denied .settings-state { color: var(--ac2); }
+.settings-about dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 0; font: 400 10px/1.5 var(--mono); }
+.settings-about dt { color: var(--muted); }
+.settings-about dd { margin: 0; color: var(--fg); overflow-wrap: anywhere; }
+
 /* editor form */
 .editor-form { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
 .editor-form label, .f-field {

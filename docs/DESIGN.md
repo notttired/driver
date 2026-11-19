@@ -212,6 +212,24 @@ usage, accounts, self-update) is left out on purpose.
   operator cleans worktrees up), what it changed at the end of every answer
   (that is all the others see), stop and tell the operator on a
   contradiction, and the tool. Driver never removes worktrees.
+- Paste context and the ⚙ settings (2026-11-19). ⌘⇧V in a job puts the
+  browser's front tab into the pane in view — URL, title and the selected
+  text, else the page's text — as one bracketed paste with nothing sent
+  (`Tmux.PasteOnly`; WATCH's paste with the Enter left off), headed
+  "Context from my browser — <title>" so pi knows where it came from, cut
+  at 20,000 characters. The daemon reads the tab over Apple events
+  (`FrontTabContext`, beside `ListTabs`); the text step runs JavaScript in
+  the tab, which the browser allows only with its "Allow JavaScript from
+  Apple Events" switch on — off, the paste is URL and title. Our own key,
+  not a Raycast script: the board must not depend on another tool being
+  installed; `/api/job/paste` is public all the same, so one can. Slack has
+  no Apple events for what is on screen; its route is a copied message
+  link, which pi's Slack tool reads. The ⚙ in the chrome is where macOS's
+  questions are asked for rather than met mid-task: "ask now" has the daemon
+  read the three protected folders (`ProbeFolders`), so the prompts come up
+  in driver's name there and then; buttons open the Full Disk Access and
+  Automation panes and show the binary in the Finder (`OpenSystemPane`);
+  "test" reads the front tab and says which of the two switches is missing.
 - Every column, state columns, WATCHING and lanes alike, is dragged by its head into
   any order; the order is saved in the daemon (kv `board-columns`). `«` in a
   head folds the column to a strip (name, count; still a drop target) and the

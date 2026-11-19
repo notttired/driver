@@ -5,7 +5,10 @@
 import type {
   AddLaneResult,
   AddLinkResult,
+  BrowserContext,
+  BrowserProbeResult,
   CreateJobBody,
+  FoldersProbeResult,
   DirsResponse,
   ForkJobBody,
   HealthResponse,
@@ -16,6 +19,7 @@ import type {
   PinLinkResult,
   RenameResult,
   SaveFormResult,
+  SettingsInfo,
   WebBoard,
   WebConversation,
   TabsResponse,
@@ -178,6 +182,24 @@ export const retryThread = (slug: string, id: number) =>
   postJSON<OkResponse>(THREAD_ENDPOINT, { slug, op: "retry", id }, { timeoutMs: SUBMIT_TIMEOUT_MS });
 export const renameThread = (slug: string, id: number, name: string) =>
   postJSON<OkResponse>(THREAD_ENDPOINT, { slug, op: "rename", id, name });
+
+/** Put text into a pane's pi editor, nothing sent (thread 0: the job's own pi). */
+export const pasteIntoJob = (slug: string, thread: number, text: string) =>
+  postJSON<OkResponse>("/api/job/paste", { slug, thread, text });
+
+/** The browser's front tab as a paste for pi. */
+export const fetchBrowserContext = (signal?: AbortSignal) => getJSON<BrowserContext>("/api/context/browser", signal);
+
+// --------------------------------------------------------------- settings
+
+export const fetchSettings = (signal?: AbortSignal) => getJSON<SettingsInfo>("/api/settings", signal);
+/** Try reading the protected folders from the daemon: any prompt macOS puts up is driver's, now. */
+export const probeFolders = () => postJSON<FoldersProbeResult>("/api/settings/probe", { what: "folders" }, { timeoutMs: 120_000 });
+/** Try reading the browser's front tab from the daemon. */
+export const probeBrowser = () => postJSON<BrowserProbeResult>("/api/settings/probe", { what: "browser" }, { timeoutMs: 120_000 });
+/** Open System Settings on a Privacy & Security pane, or show the binary in the Finder. */
+export const openSystemPane = (pane: "full-disk-access" | "files" | "automation" | "binary") =>
+  postJSON<OkResponse>("/api/settings/open", { pane });
 
 // ------------------------------------------------------------------ lanes
 

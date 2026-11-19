@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { addLane, deleteJob, openJobDir, pinJobLink, removeLane, renameLane, retryJob, unarchiveJob } from "./api/client.ts";
+import { addLane, deleteJob, fetchBrowserContext, openJobDir, pasteIntoJob, pinJobLink, removeLane, renameLane, retryJob, unarchiveJob } from "./api/client.ts";
 import { BoardView, type BoardActions } from "./components/board/BoardView.tsx";
 import { DragProvider } from "./components/board/DragProvider.tsx";
 import { GhostJobCard } from "./components/board/JobCard.tsx";
 import { Chrome } from "./components/chrome/Chrome.tsx";
 import { JobOverlay } from "./components/overlays/JobOverlay.tsx";
 import { NewJobOverlay } from "./components/overlays/NewJobOverlay.tsx";
+import { SettingsOverlay } from "./components/overlays/SettingsOverlay.tsx";
 import { WatchPromptOverlay } from "./components/overlays/WatchPromptOverlay.tsx";
 import { Toast, showToast } from "./components/overlays/Toast.tsx";
 import { closeThreadNow } from "./components/overlays/ThreadTabs.tsx";
@@ -40,6 +41,7 @@ export function App() {
   const [newJob, setNewJob] = useState(false);
   const [watchPrompt, setWatchPrompt] = useState(false);
   const [palette, setPalette] = useState(false);
+  const [settings, setSettings] = useState(false);
   const { mutate } = board;
 
   const actions = useMemo<BoardActions>(
@@ -93,7 +95,7 @@ export function App() {
 
   const closeOverlay = useCallback(() => setOpenKey(null), [setOpenKey]);
   const openJob = useCallback((slug: string) => setOpenKey(slug), [setOpenKey]);
-  const overlayOpen = openKey !== null || newJob || watchPrompt;
+  const overlayOpen = openKey !== null || newJob || watchPrompt || settings;
   const openPalette = useCallback(() => setPalette(true), []);
   const closePalette = useCallback(() => setPalette(false), []);
   // a pick lands on the pane: the job, on the tab asked for, over whatever
@@ -109,6 +111,18 @@ export function App() {
     [setOpenKey],
   );
 
+  // ⌘⇧V: the browser's front tab, pasted into the tab in view (the job's
+  // own pi or the thread), nothing sent — the question is yours to add
+  const pasteContext = useCallback(() => {
+    if (openKey === null) return;
+    const key = openKey;
+    const slug = slugOfKey(key);
+    const thread = openThread;
+    fetchBrowserContext()
+      .then((ctx) => pasteIntoJob(slug, thread, ctx.prompt).then(() => showToast(`pasted “${ctx.title}” into ${slug}`)))
+      .catch((e: unknown) => showToast(`paste context: ${e instanceof Error ? e.message : String(e)} — see ⚙`));
+  }, [openKey, openThread]);
+
   // ⌘K: the palette, from anywhere (ctrl-K too, unless a pane has it); ⌘N: a
   // new job; ⌘W: close what is on top — the palette, a dialog, the thread tab
   // in view, else the job overlay; the board itself never
@@ -116,7 +130,14 @@ export function App() {
   const byKey = board.byKey;
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.altKey || e.shiftKey) return;
+      if (e.altKey) return;
+      if (e.shiftKey) {
+        if (e.metaKey && !e.ctrlKey && e.code === "KeyV") {
+          e.preventDefault();
+          pasteContext();
+        }
+        return;
+      }
       const key = e.key.toLowerCase();
       if (key !== "n" && key !== "k" && key !== "w") return;
       if (!e.metaKey && !(e.ctrlKey && !overlayOpen)) return;
@@ -132,6 +153,7 @@ export function App() {
         return;
       }
       if (palette) setPalette(false);
+      else if (settings) setSettings(false);
       else if (watchPrompt) setWatchPrompt(false);
       else if (newJob) setNewJob(false);
       else if (openKey !== null) {
@@ -146,11 +168,11 @@ export function App() {
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [overlayOpen, setOpenKey, setOpenThread, palette, watchPrompt, newJob, openKey, openThread, byKey, board]);
+  }, [overlayOpen, setOpenKey, setOpenThread, palette, settings, watchPrompt, newJob, openKey, openThread, byKey, board, pasteContext]);
 
   return (
     <>
-      <Chrome board={board.board} error={board.error} lastError={board.lastError} />
+      <Chrome board={board.board} error={board.error} lastError={board.lastError} onSettings={() => setSettings(true)} />
       <DragProvider board={board} onOpenJob={openJob} onToast={showToast} renderOverlay={(job) => (job ? <GhostJobCard job={job} /> : null)}>
         <BoardView board={board} actions={actions} onSearch={openPalette} />
       </DragProvider>
@@ -183,6 +205,7 @@ export function App() {
           setOpenKey(slug);
         }}
       />
+      <SettingsOverlay open={settings} onClose={() => setSettings(false)} onToast={showToast} />
       <WatchPromptOverlay
         open={watchPrompt}
         onClose={() => setWatchPrompt(false)}

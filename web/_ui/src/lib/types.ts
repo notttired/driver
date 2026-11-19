@@ -244,3 +244,40 @@ export interface TabsResponse {
   running: boolean;
   tabs: BrowserTab[];
 }
+
+/** GET /api/context/browser: the browser's front tab, and how it reads as a paste */
+export interface BrowserContext {
+  url: string;
+  title: string;
+  text: string;
+  selected: boolean;
+  prompt: string;
+}
+
+/** GET /api/settings */
+export interface SettingsInfo {
+  version: string;
+  binary: string;
+  home: string;
+  browser: string;
+  serve: string;
+}
+
+export interface FolderProbe {
+  name: string;
+  state: "ok" | "denied" | "missing" | string;
+}
+
+export interface FoldersProbeResult {
+  folders: FolderProbe[];
+}
+
+export interface BrowserProbeResult {
+  ok: boolean;
+  error?: string;
+  title?: string;
+  url?: string;
+  /** the page's text (or a selection) came through: JavaScript from Apple events is on */
+  text?: boolean;
+  selected?: boolean;
+}

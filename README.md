@@ -49,15 +49,16 @@ make install-mac                      # reads DRIVER_APP_DIR from ~/.driver/env
 open ~/src/github.com/driver-bin/Driver.app   # once; Spotlight and the Dock know it from then on
 ```
 
-**Your Desktop, Documents and Downloads.** Every pi a job runs is driver's
+**Permissions — the ⚙ in the top bar.** Every pi a job runs is driver's
 child in macOS's eyes (the launchd job is the "responsible process"), so the
-first time one reads a protected folder, macOS asks whether *driver* may —
-once per folder, a dialog over whatever you were doing. Grant the installed
-binary **Full Disk Access** once (System Settings › Privacy & Security › Full
-Disk Access › `+`, pick `$DRIVER_BIN_DIR/driver`, `~/.local/bin/driver` by
-default) and it never asks again: `make install` signs the binary under one
-identifier, so the grant survives every later install. Your terminal already
-has this, which is why pi never asks there.
+first time one reads your Desktop, Documents or Downloads, macOS asks whether
+*driver* may — once per folder, a dialog over whatever you were doing. ⚙ ›
+**ask now** has the daemon read each folder so the questions come up there
+and then, in one go; or ⚙ › **open Full Disk Access** and add the binary
+(⚙ › **show the binary** finds it) to cover them all at once. `make install`
+signs the binary under one identifier, so a grant survives every later
+install. Your terminal already has this, which is why pi never asks there.
+The same panel tests and sets up the browser read that ⌘⇧V needs.
 
 `make install` writes `~/.driver/env` on a **first** install only (it never
 rewrites an existing file). The file is `KEY=VALUE` lines with `#` comments,
@@ -186,6 +187,17 @@ that finished and wait on you are left alone. When driver starts — at login,
 after a shutdown or a logout took every pi with it — it retries each job whose
 pi is gone by itself; a pi you quit while driver runs stays quit.
 Archived jobs free their slug and can be unarchived or deleted.
+
+**Paste context — ⌘⇧V.** In a job, ⌘⇧V puts your front Chrome tab into the
+pane you are on: its URL and title, and the text you have selected on it, or
+the whole page's text when nothing is selected (cut at 20,000 characters).
+Nothing is sent — add your question and press Enter. It needs macOS to let
+driver control Chrome (Automation; the first read asks) and, for the page's
+text, Chrome's **View › Developer › Allow JavaScript from Apple Events**;
+without the latter you still get the URL and title. ⚙ › **test** tries it and
+says what is missing. For Slack, copy a message's link in Slack and ⌘V it:
+pi's Slack tool reads the thread. Anything else: copy it, ⌘V it. Scripts can
+use the same door: `POST /api/job/paste`.
 
 **Notes, the record and links.** Notes are yours — autosaved, and pi reads
 or changes them only when you ask it to ("save that to my notes", "what's in

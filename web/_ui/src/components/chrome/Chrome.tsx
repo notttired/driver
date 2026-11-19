@@ -14,9 +14,11 @@ export interface ChromeProps {
   error: Error | undefined;
   /** the latest failed write's server sentence */
   lastError: string | null;
+  /** ⚙: open the settings */
+  onSettings?: () => void;
 }
 
-export function Chrome({ board, error, lastError }: ChromeProps) {
+export function Chrome({ board, error, lastError, onSettings }: ChromeProps) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
@@ -50,6 +52,9 @@ export function Chrome({ board, error, lastError }: ChromeProps) {
       <span className="spacer" />
       <AccentToggle />
       <ThemeToggle />
+      <button className="theme-btn" id="settings-btn" title="settings — permissions, ⌘⇧V paste, this install" onClick={onSettings}>
+        ⚙
+      </button>
       <span className={"stat dim" + (showErr ? " hot" : "")} id="tick-stat" title={lastError ?? undefined}>
         {showErr ? "✕ " + lastError : new Date(now).toLocaleTimeString()}
         {showErr ? null : <i>▊</i>}

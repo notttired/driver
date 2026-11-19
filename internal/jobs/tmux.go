@@ -168,6 +168,16 @@ func (t *Tmux) Paste(sess, text string) error {
 	return err
 }
 
+// PasteOnly is Paste without the Enter: the text lands in the pane's
+// editor and stays there for the operator to finish.
+func (t *Tmux) PasteOnly(sess, text string) error {
+	if _, err := t.run("set-buffer", "-b", "driver-paste", text); err != nil {
+		return err
+	}
+	_, err := t.run("paste-buffer", "-b", "driver-paste", "-d", "-p", "-t", "="+sess+":")
+	return err
+}
+
 // RenameSession renames a session and keeps its @driver-job marker current.
 func (t *Tmux) RenameSession(from, to, slug string) error {
 	if _, err := t.run("rename-session", "-t", "="+from, to); err != nil {

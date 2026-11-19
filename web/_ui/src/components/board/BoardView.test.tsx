@@ -64,6 +64,10 @@ function installFetch(board: WebBoard) {
       }
       case "/api/job/conversation":
         return json({ messages: [], pending: false, rev: "0" });
+      case "/api/context/browser":
+        return json({ url: "https://x.io/p", title: "A page", text: "the words", selected: true, prompt: "Context from my browser (selected text) — A page\nhttps://x.io/p\n\nthe words" });
+      case "/api/settings":
+        return json({ version: "test", binary: "/Users/me/bin/driver", home: "/Users/me/.driver", browser: "Google Chrome", serve: "http://127.0.0.1:7781" });
       case "/api/models":
         return json({ models: [{ provider: "anthropic", id: "claude-sonnet-4-5" }], default: "claude-sonnet-4-5" });
       case "/api/dirs":
@@ -395,6 +399,27 @@ describe("BoardView (DOM smoke test)", () => {
     await waitFor(() => expect(overlay).not.toHaveAttribute("hidden"));
     await waitFor(() => expect(within(overlay).getByRole("tab", { name: /CI/ })).toHaveAttribute("aria-selected", "true"));
     expect(window.localStorage.getItem("driver.thread:threaded")).toBe("5");
+  });
+
+  it("⌘⇧V pastes the browser's front tab into the tab in view; ⚙ opens the settings", async () => {
+    render(<App />);
+    const overlay = document.getElementById("job-overlay")!;
+    // nothing open: nothing pasted
+    await screen.findByText("onboarding-copy");
+    fireEvent.keyDown(document, { key: "V", code: "KeyV", metaKey: true, shiftKey: true });
+    expect(requests.some((r) => r.includes("/api/context/browser"))).toBe(false);
+
+    fireEvent.click(screen.getByText("onboarding-copy").closest(".card")!);
+    await waitFor(() => expect(overlay).not.toHaveAttribute("hidden"));
+    fireEvent.keyDown(document, { key: "V", code: "KeyV", metaKey: true, shiftKey: true });
+    await waitFor(() => expect(bodies.filter((b) => b.path === "/api/job/paste")).toHaveLength(1));
+    expect(bodies.at(-1)).toMatchObject({ path: "/api/job/paste", slug: "onboarding-copy", thread: 0, text: expect.stringContaining("https://x.io/p") });
+    expect(await screen.findByText(/pasted “A page”/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle(/settings/i));
+    const settings = document.getElementById("settings-overlay")!;
+    await waitFor(() => expect(settings).not.toHaveAttribute("hidden"));
+    expect(await within(settings).findByText("/Users/me/bin/driver")).toBeInTheDocument();
   });
 
   it("has no retry button when nothing blocked failed, and none in a job that waits on you", async () => {
