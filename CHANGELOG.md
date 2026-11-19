@@ -8,6 +8,14 @@ behind each, [docs/API.md](docs/API.md) the wire contract.
 
 ## 2026-11-19
 
+- **⌘⇧V pastes your front Chrome tab into the pane; ⚙ settings** (`6e889b1`).
+  URL, title and the selected text (else the page's text) land in the pi
+  editor of the tab you are on, nothing sent. `POST /api/job/paste` is the
+  door for anything else. The new ⚙ in the top bar asks macOS's questions
+  up front: "ask now" reads the protected folders from the daemon so the
+  prompts come there and then, buttons open Full Disk Access and Automation
+  and show the binary, "test" tries the browser read and says what is
+  missing.
 - **The first tab closes too, and a job opens on the tab you left it on**
   (`b1985ff`, schema v11). Closing the first tab hands its place to the next
   thread — that pi becomes the job's own, under its own name, and the old
