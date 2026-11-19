@@ -36,6 +36,9 @@ ifeq ($(DRIVER_LABEL),)
 override DRIVER_LABEL := dev.notttired.driver
 endif
 PLIST := $(HOME)/Library/LaunchAgents/$(DRIVER_LABEL).plist
+# The code-signing identifier the installed binary carries (see install):
+# what Privacy & Security remembers a Full Disk Access grant by.
+DRIVER_CODE_ID := dev.notttired.driver
 
 # Where the binary is INSTALLED — the `driver` file and the program the
 # launchd plist runs. ~/.local/bin unless the knob says otherwise; the knob
@@ -165,6 +168,17 @@ install: build
 	# swaps the directory entry and leaves the running process on its old
 	# inode.
 	cp driver $(DRIVER_BIN_DIR)/driver.tmp
+	# Re-sign (ad hoc) under one identifier with a designated requirement of
+	# that identifier alone. Every pi a job runs is driver's child in macOS's
+	# eyes (the launchd job is the responsible process), so a read of the
+	# Desktop, Documents or Downloads folder is driver asking: Privacy &
+	# Security keys its answer on the binary's designated requirement, and
+	# Go's own ad-hoc signature (identifier a.out) makes that the build's
+	# hash — a Full Disk Access grant would die with every install. With the
+	# identifier as the requirement, one grant holds across builds. Santa
+	# judges by path, so the new signature changes nothing there.
+	codesign --force --sign - --identifier $(DRIVER_CODE_ID) \
+	  --requirements '=designated => identifier "$(DRIVER_CODE_ID)"' $(DRIVER_BIN_DIR)/driver.tmp
 	mv -f $(DRIVER_BIN_DIR)/driver.tmp $(DRIVER_BIN_DIR)/driver
 ifneq ($(filter-out $(HOME)/.local/bin,$(DRIVER_BIN_DIR)),)
 	# The binary lives outside ~/.local/bin (DRIVER_BIN_DIR, preamble): leave

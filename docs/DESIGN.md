@@ -251,6 +251,7 @@ CHANGELOG.md          every change since the fork from kraken, newest first
 | notifications | `DRIVER_NOTIFY=off` disables |
 | editor for ⌘-click | `DRIVER_EDITOR` (a command, dir appended) else `code`, else `open -b com.microsoft.VSCode` |
 | PATH for launchd | `PATH=` line in the env file (pi, tmux, gh, node live outside launchd's PATH) |
+| code-signing identifier | `dev.notttired.driver` (`DRIVER_CODE_ID`): `make install` ad-hoc re-signs the binary under it with a designated requirement of the identifier alone, so a Full Disk Access grant (which Privacy & Security keys on that requirement — Go's own signature, `a.out`, makes it the build's hash) holds across installs. Every pi a job runs is driver's child to TCC (the launchd job is the responsible process), so without the grant a read of the Desktop, Documents or Downloads folder prompts in driver's name |
 
 Kraken (`~/.kraken`, port 7777, `cell-*` sessions, `@kraken-job`) coexists on
 the same Mac; nothing here reads or writes its paths.

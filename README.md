@@ -49,6 +49,16 @@ make install-mac                      # reads DRIVER_APP_DIR from ~/.driver/env
 open ~/src/github.com/driver-bin/Driver.app   # once; Spotlight and the Dock know it from then on
 ```
 
+**Your Desktop, Documents and Downloads.** Every pi a job runs is driver's
+child in macOS's eyes (the launchd job is the "responsible process"), so the
+first time one reads a protected folder, macOS asks whether *driver* may —
+once per folder, a dialog over whatever you were doing. Grant the installed
+binary **Full Disk Access** once (System Settings › Privacy & Security › Full
+Disk Access › `+`, pick `$DRIVER_BIN_DIR/driver`, `~/.local/bin/driver` by
+default) and it never asks again: `make install` signs the binary under one
+identifier, so the grant survives every later install. Your terminal already
+has this, which is why pi never asks there.
+
 `make install` writes `~/.driver/env` on a **first** install only (it never
 rewrites an existing file). The file is `KEY=VALUE` lines with `#` comments,
 read by `driver serve` at start and by `make`; after an edit, `make install-serve`

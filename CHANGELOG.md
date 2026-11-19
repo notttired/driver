@@ -6,6 +6,16 @@ Each entry names its commit; the schema version it moved `driver.db` to is
 given where there was one. [docs/DESIGN.md](docs/DESIGN.md) has the reasoning
 behind each, [docs/API.md](docs/API.md) the wire contract.
 
+## 2026-11-19
+
+- **One Full Disk Access grant, kept across installs** (`HEAD`). Every pi a
+  job runs is driver's child to macOS, so a read of the Desktop, Documents
+  or Downloads folder asked in driver's name, and Go's own signature made
+  any grant die with the next build. `make install` now re-signs the binary
+  under `dev.notttired.driver` with the identifier as its requirement, so
+  granting it Full Disk Access once (System Settings › Privacy & Security)
+  ends the prompts for good. The README says how.
+
 ## 2026-11-17
 
 - **A thread opened mid-turn starts from the finished work** (`ce4abab`). The
