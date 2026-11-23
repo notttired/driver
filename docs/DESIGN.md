@@ -261,14 +261,31 @@ usage, accounts, self-update) is left out on purpose.
   head folds the column to a strip (name, count; still a drop target) and the
   strip expands it; which columns are folded is this browser's to remember
   (localStorage), like the archive drawer.
+- Plans (2026-11-23): graphs for long pieces of work, such as moving ten
+  topics off Monorail, where most of the time goes to waiting — on
+  approvals, on readers, on a flag's traffic to drain, on a freeze — and
+  the state used to live in notes, issues and documents kept in step by
+  hand. A plan is steps (title, note, state, an optional kind and topic)
+  and links ("this step waits on that one"); ready is worked out, never
+  set: a todo step whose every prerequisite is done. Plans stand apart from
+  the board: no step names a job, a thread or a tmux session, and nothing on
+  the board shows a plan. The daemon owns them; the SPA and every pi on the
+  board read and change them through the same routes (`/api/plans`,
+  `/api/plan`, `/api/plan/ops`), so an edit means the same whoever makes
+  it. Changes to steps go in batches made whole or not at all, so a pi
+  building a forty-step plan from an issue never leaves half of one. A loop
+  is refused. Deleting a step hands its links on — each step that waited on
+  it now waits on what it waited on, unless it already does through another
+  — so taking a step out of a chain never breaks the chain.
 
 ## Layout
 
 ```
 cmd/driver/           main.go — `driver serve [-p 7781]`, `driver version`
-internal/store/       SQLite (modernc.org/sqlite, pure Go): schema, jobs, order, links, kv
+internal/store/       SQLite (modernc.org/sqlite, pure Go): schema, jobs, order, links, kv, plans
 internal/jobs/        Job model, submit/stop/done/kill/reactivate/archive, state
-                      derivation, tmux + pi launch, tick loop, notifications, PR scan
+                      derivation, tmux + pi launch, tick loop, notifications, PR scan;
+                      plans.go: the plans' rules (names, step fields, ready)
 internal/pi/          pi session JSONL reader (tail from offset; the conversation record),
                       status.json reader, `pi --list-models` parser, GitHub PR detection
 internal/term/        pty ⇄ websocket bridge around `tmux attach-session`
@@ -383,6 +400,17 @@ reread counts nothing twice. v6 added both and a `scan-mentions:<job id>`
 backfill mark for every job already scanned ("Link detection").
 
 `kv(key, value)` for daemon bookkeeping (session scan offsets, model cache).
+
+v13 added the plans ("Plans" above): `plans(id, name, rev, created_at,
+updated_at)`, names unique without regard to case; `plan_steps(id, plan_id,
+title, note, state, kind, topic, created_at, updated_at)`, cascading with
+its plan, `state` ∈ `todo | wait | blocked | done` (ready is worked out: a
+todo step whose every prerequisite is done); `plan_links(step_id, waits_on)`,
+keyed on the pair and cascading with either step. No plan table names a job,
+a thread or a session, and no job column names a plan. `ApplyPlanOps` makes
+a batch in one transaction against an in-memory copy of the plan's links, so
+the loop check and the hand-on of a deleted step's links see every op before
+them; every batch bumps `plans.rev`.
 
 ## Lifecycle
 
