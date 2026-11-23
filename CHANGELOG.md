@@ -6,6 +6,15 @@ Each entry names its commit; the schema version it moved `driver.db` to is
 given where there was one. [docs/DESIGN.md](docs/DESIGN.md) has the reasoning
 behind each, [docs/API.md](docs/API.md) the wire contract.
 
+## 2026-11-23
+
+- **A thread names its own tab once you tell it what it is for**
+  (`dedb56e`). Say "you're the thread for topic E" and its tab and pi's
+  footer become a few words for that. It never names itself on a guess or
+  from the task you give it, and the first tab keeps the job's name.
+  "thread N" numbers come back as threads close, so a number alone did not
+  say which thread held which work.
+
 ## 2026-11-19
 
 - **⌘⇧V pastes your front Chrome tab into the pane; ⚙ settings** (`6e889b1`).
