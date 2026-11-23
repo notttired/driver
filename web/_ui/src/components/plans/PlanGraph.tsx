@@ -54,13 +54,15 @@ export interface PlanGraphProps {
   selected?: string | null;
   /** width the side panel covers; the camera keeps the selected box clear of it */
   coveredRight?: number;
-  /** extra content on a box, such as its add-next control */
-  renderExtra?: (node: PlanNode) => ReactNode;
+  /** the box's content in place of its title and note (a step being named) */
+  renderBody?: (node: PlanNode) => ReactNode | null;
+  /** + on a step's box: add the step that comes after it */
+  onAddAfter?: (node: PlanNode) => void;
   onBackground?: () => void;
 }
 
 /** The plan as boxes and arrows, fitted to the space it has. */
-export function PlanGraph({ layout, filter, onToggleTopic, onSelectStep, selected, coveredRight = 0, renderExtra, onBackground }: PlanGraphProps) {
+export function PlanGraph({ layout, filter, onToggleTopic, onSelectStep, selected, coveredRight = 0, renderBody, onAddAfter, onBackground }: PlanGraphProps) {
   const target = useMemo(() => new Map(layout.nodes.map((n) => [n.key, { x: n.x, y: n.y }])), [layout]);
   const at = useGlide(target);
   const [hover, setHover] = useState<string | null>(null);
@@ -172,12 +174,29 @@ export function PlanGraph({ layout, filter, onToggleTopic, onSelectStep, selecte
               onMouseLeave={() => setHover((h) => (h === n.key ? null : h))}
               onClick={() => (n.topic !== undefined ? onToggleTopic(n.topic) : onSelectStep?.(n))}
             >
-              <div className="ps-title">
-                <i aria-hidden="true">{STATE_GLYPH[n.state]}</i>
-                <span>{n.title}</span>
-              </div>
-              <div className="ps-sub">{n.sub || "\u00a0"}</div>
-              {renderExtra?.(n)}
+              {renderBody?.(n) ?? (
+                <>
+                  <div className="ps-title">
+                    <i aria-hidden="true">{STATE_GLYPH[n.state]}</i>
+                    <span>{n.title}</span>
+                  </div>
+                  <div className="ps-sub">{n.sub || "\u00a0"}</div>
+                  {onAddAfter && n.step ? (
+                    <button
+                      type="button"
+                      className="ps-add"
+                      aria-label="add the next step"
+                      title="add the step that comes after this one"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAddAfter(n);
+                      }}
+                    >
+                      +
+                    </button>
+                  ) : null}
+                </>
+              )}
             </div>
           );
         })}

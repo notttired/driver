@@ -4,6 +4,8 @@ import { useEffect } from "react";
 // priority) takes the key. Menus dismiss themselves on a CAPTURE-phase
 // listener (useMenuDismiss) and stop propagation, so they always win.
 export const ESC_PRIORITY = {
+  /** the PLANS view's step panel */
+  plan: 10,
   job: 20,
   /** the ⌘K palette sits over every other layer */
   palette: 30,
