@@ -152,9 +152,9 @@ export function ThreadTabs({ slug, threads, current, onSelect, onChanged, onToas
               key={t.id}
               role="tab"
               type="button"
-              className={"thread-tab" + (selected ? " selected" : "") + (t.live ? "" : " dead")}
+              className={"thread-tab" + (selected ? " selected" : "") + (t.live ? "" : " dead") + (t.attention ? " attention" : "")}
               aria-selected={selected}
-              title={`${t.name} — ${tok.text}${tok.detail ? ` ${tok.detail}` : ""}${t.id ? "\ndouble-click to rename" : ""}${threads.length > 1 ? " · ✕ or ⌘W closes its pi\n⌘⇧] / ⌘⇧[ next / previous tab" : ""}`}
+              title={`${t.name} — ${tok.text}${tok.detail ? ` ${tok.detail}` : ""}${t.attention ? ", stopped since you last looked at it" : ""}${t.id ? "\ndouble-click to rename" : ""}${threads.length > 1 ? " · ✕ or ⌘W closes its pi\n⌘⇧] / ⌘⇧[ next / previous tab" : ""}`}
               onClick={() => onSelect(t.id)}
               onDoubleClick={() => {
                 if (t.id) setRenaming({ id: t.id, value: t.name });

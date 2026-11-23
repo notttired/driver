@@ -13,24 +13,25 @@ import (
 // ClosedAt set = its pi was closed; the row and its session file stay, so
 // what it said remains part of the job.
 type Thread struct {
-	ID        int64
-	JobID     int64
-	Name      string
-	PiSession string
-	Tmux      string
-	StartedAt int64
-	CreatedAt int64
-	ClosedAt  int64
+	ID          int64
+	JobID       int64
+	Name        string
+	PiSession   string
+	Tmux        string
+	StartedAt   int64
+	CreatedAt   int64
+	ClosedAt    int64
+	AttentionAt int64
 }
 
 // Closed reports whether the thread's pi was closed.
 func (t *Thread) Closed() bool { return t.ClosedAt != 0 }
 
-const threadColumns = `id, job_id, name, pi_session, tmux, started_at, created_at, closed_at`
+const threadColumns = `id, job_id, name, pi_session, tmux, started_at, created_at, closed_at, attention_at`
 
 func scanThread(row interface{ Scan(...any) error }) (*Thread, error) {
 	var t Thread
-	if err := row.Scan(&t.ID, &t.JobID, &t.Name, &t.PiSession, &t.Tmux, &t.StartedAt, &t.CreatedAt, &t.ClosedAt); err != nil {
+	if err := row.Scan(&t.ID, &t.JobID, &t.Name, &t.PiSession, &t.Tmux, &t.StartedAt, &t.CreatedAt, &t.ClosedAt, &t.AttentionAt); err != nil {
 		return nil, err
 	}
 	return &t, nil
@@ -84,7 +85,7 @@ func (s *Store) ListThreads(jobID int64) ([]*Thread, error) {
 	return out, rows.Err()
 }
 
-var threadFieldColumns = map[string]bool{"name": true, "pi_session": true, "tmux": true, "started_at": true, "closed_at": true}
+var threadFieldColumns = map[string]bool{"name": true, "pi_session": true, "tmux": true, "started_at": true, "closed_at": true, "attention_at": true}
 
 // UpdateThreadFields applies a partial update to thread id.
 func (s *Store) UpdateThreadFields(id int64, fields map[string]any) error {

@@ -60,7 +60,7 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/settings", a.settings)
 	mux.HandleFunc("/api/settings/probe", a.settingsProbe)
 	mux.HandleFunc("/api/settings/open", a.settingsOpen)
-	mux.HandleFunc("/api/job/seen", a.action("seen", func(j jobReq) error { return a.Svc.MarkSeen(j.job) }))
+	mux.HandleFunc("/api/job/seen", a.jobSeen)
 	mux.HandleFunc("/api/job/notes", a.jobNotes)
 	mux.HandleFunc("/api/job/links", a.jobLinks)
 	mux.HandleFunc("/api/job/conversation", a.jobConversation)

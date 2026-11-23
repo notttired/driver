@@ -286,6 +286,123 @@ func TestThreads(t *testing.T) {
 	}
 }
 
+func TestTabRings(t *testing.T) {
+	svc, st, work := threadsFixture(t)
+	d := NewDaemon(svc)
+	tick := func() {
+		t.Helper()
+		svc.Tmux.Invalidate()
+		if _, err := d.tick(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	j, err := svc.Create("multi", "Multi", work, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Submit(j); err != nil {
+		t.Fatal(err)
+	}
+	j, _ = st.GetJobBySlug("multi")
+	jobDir := filepath.Dir(j.PiSession)
+	waitFor(t, "pi to start", func() bool { return readFile(filepath.Join(jobDir, "argv")) != "" })
+	os.WriteFile(j.PiSession, []byte(threadHeader+threadUser+threadAnswer), 0o644)
+	ownStatus := func(state string) {
+		os.WriteFile(filepath.Join(jobDir, "status.json"), []byte(`{"state":"`+state+`"}`), 0o644)
+	}
+	ownStatus("working")
+	th, err := svc.OpenThread(j, 0, "CI")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tdir := filepath.Dir(th.PiSession)
+	waitFor(t, "the thread's pi to start", func() bool { return readFile(filepath.Join(tdir, "argv")) != "" })
+	threadStatus := func(state string) {
+		os.WriteFile(filepath.Join(tdir, "status.json"), []byte(`{"state":"`+state+`"}`), 0o644)
+	}
+	threadStatus("working")
+	rings := func() (own, thread int64, card *store.Job) {
+		t.Helper()
+		card, _ = st.GetJobBySlug("multi")
+		one, _ := st.GetThread(th.ID)
+		return card.OwnAttentionAt, one.AttentionAt, card
+	}
+	tick()
+	tick()
+	if own, thread, card := rings(); own != 0 || thread != 0 || card.State != "working" {
+		t.Fatalf("both working: no rings: own %d thread %d %+v", own, thread, card)
+	}
+
+	threadStatus("idle")
+	tick()
+	if _, thread, _ := rings(); thread != 0 {
+		t.Fatalf("a thread's stop is held for a tick, as the card's is: %d", thread)
+	}
+	tick()
+	if own, thread, card := rings(); own != 0 || thread == 0 || card.State != "working" || card.AttentionAt != 0 {
+		t.Fatalf("a thread that stops while the first tab works rings its own tab: own %d thread %d %+v", own, thread, card)
+	}
+
+	threadStatus("working")
+	tick()
+	if _, thread, _ := rings(); thread != 0 {
+		t.Fatalf("working again: the ring goes: %d", thread)
+	}
+
+	ownStatus("aborted")
+	tick()
+	tick()
+	if own, _, _ := rings(); own != 0 {
+		t.Fatalf("a first tab you stopped gets no ring: %d", own)
+	}
+	ownStatus("working")
+	tick()
+	ownStatus("idle")
+	tick()
+	tick()
+	if own, thread, card := rings(); own == 0 || thread != 0 || card.State != "working" {
+		t.Fatalf("the first tab stopping while a thread works rings the first tab: own %d thread %d %+v", own, thread, card)
+	}
+
+	threadStatus("idle")
+	tick()
+	tick()
+	own, thread, card := rings()
+	if own == 0 || thread == 0 || card.State != "blocked" || card.AttentionAt == 0 {
+		t.Fatalf("both stopped: both tabs ring, and the card: own %d thread %d %+v", own, thread, card)
+	}
+	one, _ := st.GetThread(th.ID)
+	if err := svc.MarkSeen(card, one); err != nil {
+		t.Fatal(err)
+	}
+	if own, thread, card := rings(); own == 0 || thread != 0 || card.AttentionAt != 0 {
+		t.Fatalf("seen on the thread's tab: only its ring and the card's go: own %d thread %d %+v", own, thread, card)
+	}
+	_, _, card = rings()
+	if err := svc.MarkSeen(card, nil); err != nil {
+		t.Fatal(err)
+	}
+	if own, _, _ := rings(); own != 0 {
+		t.Fatalf("seen on the first tab: its ring goes: %d", own)
+	}
+
+	threadStatus("working")
+	tick()
+	threadStatus("idle")
+	tick()
+	tick()
+	_, ringed, card := rings()
+	if ringed == 0 {
+		t.Fatal("the thread rings again")
+	}
+	if err := svc.CloseOwnThread(card); err != nil {
+		t.Fatal(err)
+	}
+	if card, _ := st.GetJobBySlug("multi"); card.OwnAttentionAt != ringed || OwnName(card) != "CI" {
+		t.Fatalf("the thread taking the first tab's place brings its ring: %+v, want %d", card, ringed)
+	}
+}
+
 func TestThreadKillAndRetryAtStart(t *testing.T) {
 	svc, st, work := threadsFixture(t)
 	j, err := svc.Create("k", "", work, "")

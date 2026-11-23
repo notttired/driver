@@ -41,7 +41,7 @@ type webJob struct {
 	MTime         int64        `json:"mtime"`
 	Archived      bool         `json:"archived,omitempty"`
 	Reactivatable bool         `json:"reactivatable,omitempty"`
-	Attention     bool         `json:"attention,omitempty"` // turned blocked on its own, not opened since
+	Attention     bool         `json:"attention,omitempty"` // turned blocked on its own, or a tab stopped, not looked at since
 	Retryable     bool         `json:"retryable,omitempty"`
 	Lane          int64        `json:"lane,omitempty"`
 	Watching      bool         `json:"watching,omitempty"`
@@ -155,20 +155,24 @@ func (a *API) buildBoard() (*webBoard, error) {
 			}
 			var threads []webThread
 			obs := own
+			attention := j.AttentionAt != 0
 			if jobs.Opened(j) && j.State != "done" {
 				var all []jobs.Observation
-				threads, all, err = a.threadsOf(j, webThread{ID: 0, Name: jobs.OwnName(j), Live: live, Pi: own.Pi, Retryable: retryable, StartedAt: j.StartedAt}, own, now)
+				threads, all, err = a.threadsOf(j, webThread{ID: 0, Name: jobs.OwnName(j), Live: live, Pi: own.Pi, Retryable: retryable, StartedAt: j.StartedAt, Attention: j.OwnAttentionAt != 0}, own, now)
 				if err != nil {
 					return nil, err
 				}
 				obs = jobs.Combine(all)
+				for _, t := range threads {
+					attention = attention || t.Attention
+				}
 			}
 			out = append(out, webJob{
 				Slug: j.Slug, Name: j.Name, Dir: j.Dir, Model: j.Model, Color: j.Color,
 				State: state, Outcome: j.Outcome, Live: live, Pi: obs.Pi,
 				HasNotes: j.Notes != "", Links: webLinksFrom(links[j.ID]),
 				StartedAt: j.StartedAt, FinishedAt: j.FinishedAt, MTime: j.UpdatedAt,
-				Reactivatable: j.State == "done", Attention: j.AttentionAt != 0, Retryable: retryable,
+				Reactivatable: j.State == "done", Attention: attention, Retryable: retryable,
 				Lane: j.LaneID, Watching: j.WatchingAt != 0, Threads: threads,
 			})
 		}

@@ -484,6 +484,43 @@ describe("BoardView (DOM smoke test)", () => {
     expect(requests.filter((r) => r === "POST /api/job/seen")).toHaveLength(1);
   });
 
+  it("rings a tab that stopped unseen, and its card while another tab works; looking at the tab posts seen for it", async () => {
+    const board = fixtureBoard();
+    const NOW2 = Math.floor(Date.now() / 1000);
+    board.jobs.push(
+      makeJob({
+        slug: "threaded",
+        state: "working",
+        live: true,
+        pi: { state: "working", ts: NOW2 },
+        attention: true,
+        threads: [
+          { id: 0, name: "threaded", live: true, pi: { state: "working", ts: NOW2 } },
+          { id: 5, name: "CI", live: true, pi: { state: "idle", reason: "idle", ts: NOW2 }, attention: true },
+        ],
+      }),
+    );
+    installFetch(board);
+    render(<App />);
+    const card = (await screen.findByText("threaded")).closest(".card")!;
+    expect(card).toHaveClass("attention");
+    expect(card).toHaveAttribute("title", "a thread stopped since you last looked at it");
+
+    fireEvent.click(card);
+    const overlay = document.getElementById("job-overlay")!;
+    const ci = await within(overlay).findByRole("tab", { name: /CI/ });
+    expect(ci).toHaveClass("attention");
+    expect(within(overlay).getByRole("tab", { name: /^threaded/ })).not.toHaveClass("attention");
+    // on the first tab, which has not stopped: nothing is acknowledged
+    await new Promise((r) => setTimeout(r, 50));
+    expect(bodies.filter((b) => b.path === "/api/job/seen")).toEqual([]);
+
+    fireEvent.click(ci);
+    await waitFor(() => expect(bodies.filter((b) => b.path === "/api/job/seen")).toEqual([{ path: "/api/job/seen", slug: "threaded", thread: 5 }]));
+    await waitFor(() => expect(requests.filter((r) => r === "GET /api/board").length).toBeGreaterThan(1));
+    expect(bodies.filter((b) => b.path === "/api/job/seen")).toHaveLength(1);
+  });
+
   it("shows a custom column after DONE with the cards parked in it, in their own state", async () => {
     const board = fixtureBoard();
     board.lanes = [{ id: 3, name: "later" }, { id: 5, name: "review" }];

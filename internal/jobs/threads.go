@@ -194,7 +194,7 @@ func (s *Service) CloseOwnThread(j *store.Job) error {
 	s.moveScanKeys(jobKey(j), threadKey(j, old))
 	s.moveScanKeys(threadKey(j, next), jobKey(j))
 	if _, err := s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{
-		"pi_session": next.PiSession, "tmux": next.Tmux, "started_at": next.StartedAt, "thread_name": next.Name,
+		"pi_session": next.PiSession, "tmux": next.Tmux, "started_at": next.StartedAt, "thread_name": next.Name, "own_attention_at": next.AttentionAt,
 	}); err != nil {
 		return mapStoreErr(err)
 	}

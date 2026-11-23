@@ -55,7 +55,7 @@ type WebJob = {
   mtime: number;               // updated_at, for the age label
   archived?: boolean;
   reactivatable?: boolean;     // done and not archived
-  attention?: boolean;         // turned blocked on its own and not opened since (the card's ring)
+  attention?: boolean;         // turned blocked on its own and not opened since, or one of its tabs rings (the card's ring)
   retryable?: boolean;         // blocked, and its pi exited or its last turn failed: /api/retry
   lane?: number;               // the lane the board shows it in (WebLane.id); absent = the column its state names
   watching?: boolean;          // its pi is watching over the shipped work: shown in WATCHING, whatever its state
@@ -69,6 +69,7 @@ type WebThread = {
   pi?: { state: string; tool?: string; reason?: string; error?: string; ts: number };   // as WebJob.pi, for this pi alone
   retryable?: boolean;         // its pi exited or its last turn failed: /api/job/thread retry
   started_at?: number;
+  attention?: boolean;         // its pi stopped on its own and the tab has not been looked at since (the tab's ring)
 };
 
 type WebLane = { id: number; name: string };
@@ -120,7 +121,10 @@ WATCHING and lanes alike; `/api/columns` sets it. A new lane goes last.
 `attention` comes on when the daemon writes `blocked` for a job that was not
 blocked and the reason is not `aborted` (Escape in the pane, STOP, the working →
 blocked drag — interrupts you sent yourself); it goes off when the job leaves
-`blocked` or when you open it (`/api/job/seen`).
+`blocked` or when you open it (`/api/job/seen`). A tab's `attention` works
+the same way for its pi alone, with the same one-tick hold as the card's
+state: on when that pi stops on its own, off when it works again or you
+look at the tab. The job's `attention` is also on while any tab's is.
 
 ## Actions (request `{"slug": string}` unless noted)
 
@@ -157,7 +161,7 @@ blocked drag — interrupts you sent yourself); it goes off when the job leaves
 | `GET /api/job/notes` | `?slug=<slug>` or `?job_dir=<dir>` → `{"text": string}`. `job_dir` is pi's way in (`DRIVER_JOB_DIR`; the job whose session files live there, whatever it was renamed to); the notes panel polls by slug | unknown job (404) |
 | `POST /api/job/notes` | `{"slug" or "job_dir", "text", "op"?}`; `op` absent or `"replace"`: full replace; `"append"`: `text` added at the end after a blank line (the text alone when the notes are empty). Allowed in every state | > 64000 runes · nothing to add (400) · unknown op (400) |
 | `POST /api/job/links` | `{"slug", "op": "add", "url"}` → `{"ok": true, "link": WebLink}` (yours, pinned); `{"slug", "op": "remove", "id"}` → `{"ok": true}`; `{"slug", "op": "pin", "url"}` → `{"ok": true, "pinned": boolean}` — the job's link for that URL, in any form of it, is pinned (`false` when the job has no such link; the board posts it for every link you open, wherever you click it, and for the links panel's 📌); `{"slug", "op": "unpin", "id"}` → `{"ok": true}`. The daemon adds links on its own too: every URL in your messages and in pi's replies, and the PR a `gh pr create` prints (docs/DESIGN.md "Link detection") | bad URL (must be http/https) · duplicate url (the same page under another URL too) |
-| `POST /api/job/seen` | you opened the job: clears `attention` (the overlay posts it on open; no rev bump, nothing else changes) | — |
+| `POST /api/job/seen` | `{"slug", "thread"?: number}`: you are looking at that tab (0 or absent: the job's own pi): clears its `attention` and the card's own (the overlay posts it for the tab in view; no rev bump, nothing else changes) | unknown thread (404) |
 | `POST /api/job/open` | open the job's directory in the editor: `DRIVER_EDITOR` with the dir appended, else `code <dir>`, else `open -b com.microsoft.VSCode <dir>` (⌘-click on a card); allowed in every state, no state write | dir missing/not a directory · the editor command failed (its first output line) · it did not return within 15s |
 | `POST /api/pr-attach` | `{"slug", "url"}` — idempotent add of a `github_pr` link, counted as added by hand (used by the daemon's own scanner; kept public for scripts) → `{"ok": true, "attached": boolean}` | not a GitHub PR URL |
 

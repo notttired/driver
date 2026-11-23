@@ -823,6 +823,7 @@ body.splitting .term-pane, body.splitting .job-side { pointer-events: none; }
 .thread-tab:hover { color: var(--fg); background: var(--drop-tint); }
 .thread-tab.selected { color: var(--fg); border-color: var(--border); border-bottom: 1px solid var(--b0); background: var(--b0); }
 .thread-tab.dead .thread-name { text-decoration: line-through; text-decoration-color: var(--stopped); }
+.thread-tab.attention { color: var(--fg); border-color: var(--ac2); animation: attention-ring 2.4s var(--ease) infinite; }
 .thread-name { overflow: hidden; text-overflow: ellipsis; }
 .thread-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
 .thread-dot.status-working { animation: ppulse 1.4s ease-in-out infinite; }

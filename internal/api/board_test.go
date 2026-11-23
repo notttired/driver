@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"driver/internal/jobs"
@@ -96,5 +97,95 @@ func TestBoardRetryable(t *testing.T) {
 		if j.Retryable != want.retryable || state != want.state || errMsg != want.errMsg {
 			t.Errorf("%s: retryable=%v pi=%+v", slug, j.Retryable, j.Pi)
 		}
+	}
+}
+
+func TestBoardTabRings(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	home, work := t.TempDir(), t.TempDir()
+	svc := &jobs.Service{Store: st, Cfg: jobs.Config{Home: home}, Tmux: jobs.NewTmux()}
+	a := New(svc, jobs.NewDaemon(svc), "test")
+	mux := http.NewServeMux()
+	a.Register(mux)
+	call := func(method, path, body string, into any) int {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader(body)))
+		if into != nil {
+			if err := json.Unmarshal(rec.Body.Bytes(), into); err != nil {
+				t.Fatalf("%s: %s: %v", path, rec.Body.String(), err)
+			}
+		}
+		return rec.Code
+	}
+	j, err := svc.Create("multi", "Multi", work, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.UpdateJobFields(j.ID, j.Rev, map[string]any{"state": "working", "started_at": int64(1)})
+	ci := &store.Thread{JobID: j.ID, Name: "CI", StartedAt: 1}
+	st.CreateThread(ci)
+	docs := &store.Thread{JobID: j.ID, Name: "Docs", StartedAt: 1}
+	st.CreateThread(docs)
+
+	tabs := func() (card bool, rings map[int64]bool) {
+		t.Helper()
+		var b webBoard
+		if code := call("GET", "/api/board", "", &b); code != http.StatusOK || len(b.Jobs) != 1 || len(b.Jobs[0].Threads) != 3 {
+			t.Fatalf("board: %d %+v", code, b.Jobs)
+		}
+		rings = map[int64]bool{}
+		for _, tab := range b.Jobs[0].Threads {
+			rings[tab.ID] = tab.Attention
+		}
+		return b.Jobs[0].Attention, rings
+	}
+	if card, rings := tabs(); card || rings[0] || rings[ci.ID] || rings[docs.ID] {
+		t.Fatalf("no rings yet: card %v tabs %v", card, rings)
+	}
+
+	st.UpdateThreadFields(ci.ID, map[string]any{"attention_at": int64(5)})
+	st.UpdateThreadFields(docs.ID, map[string]any{"attention_at": int64(6)})
+	if card, rings := tabs(); !card || rings[0] || !rings[ci.ID] || !rings[docs.ID] {
+		t.Fatalf("a ringing tab rings the card, working or not: card %v tabs %v", card, rings)
+	}
+	if code := call("POST", "/api/job/seen", `{"slug":"multi","thread":`+jsonInt(ci.ID)+`}`, nil); code != http.StatusOK {
+		t.Fatalf("seen on a tab: %d", code)
+	}
+	if card, rings := tabs(); !card || rings[ci.ID] || !rings[docs.ID] {
+		t.Fatalf("seen takes only that tab's ring; the card rings while another does: card %v tabs %v", card, rings)
+	}
+	call("POST", "/api/job/seen", `{"slug":"multi","thread":`+jsonInt(docs.ID)+`}`, nil)
+	if card, rings := tabs(); card || rings[docs.ID] {
+		t.Fatalf("every tab seen: card %v tabs %v", card, rings)
+	}
+
+	j, _ = st.GetJobBySlug("multi")
+	st.UpdateJobFields(j.ID, j.Rev, map[string]any{"own_attention_at": int64(7)})
+	if card, rings := tabs(); !card || !rings[0] {
+		t.Fatalf("the first tab rings: card %v tabs %v", card, rings)
+	}
+	if code := call("POST", "/api/job/seen", `{"slug":"multi"}`, nil); code != http.StatusOK {
+		t.Fatalf("seen on the first tab: %d", code)
+	}
+	if card, rings := tabs(); card || rings[0] {
+		t.Fatalf("seen with no thread is the first tab's: card %v tabs %v", card, rings)
+	}
+
+	j, _ = st.GetJobBySlug("multi")
+	st.UpdateJobFields(j.ID, j.Rev, map[string]any{"attention_at": int64(8)})
+	call("POST", "/api/job/seen", `{"slug":"multi","thread":`+jsonInt(docs.ID)+`}`, nil)
+	if card, _ := tabs(); card {
+		t.Fatal("seen on any tab takes the card's own ring")
+	}
+	if code := call("POST", "/api/job/seen", `{"slug":"multi","thread":99}`, nil); code != http.StatusNotFound {
+		t.Fatalf("seen on an unknown thread: %d", code)
+	}
+	if code := call("POST", "/api/job/seen", `{"slug":"nope"}`, nil); code != http.StatusNotFound {
+		t.Fatalf("seen on an unknown job: %d", code)
 	}
 }

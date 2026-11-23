@@ -65,7 +65,7 @@ export interface WebJob {
   mtime: number;
   archived?: boolean;
   reactivatable?: boolean;
-  /** turned blocked on its own (pi idle, asking, exited, silent) and not opened since: the card wears a ring */
+  /** turned blocked on its own (pi idle, asking, exited, silent) and not opened since, or one of its tabs rings: the card wears a ring */
   attention?: boolean;
   retryable?: boolean;
   /** the lane (a column of your own) the board shows it in; absent = the column its state names */
@@ -86,6 +86,8 @@ export interface WebThread {
   retryable?: boolean;
   /** unix seconds */
   started_at?: number;
+  /** its pi stopped on its own and the tab has not been looked at since: the tab wears a ring */
+  attention?: boolean;
 }
 
 export interface WebLane {

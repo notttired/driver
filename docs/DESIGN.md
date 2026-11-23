@@ -225,6 +225,19 @@ usage, accounts, self-update) is left out on purpose.
   own pi names the first tab: `jobs.thread_name`, the name a thread brings
   when it takes the first tab's place (`OwnName`, `OwnPiName`), so the
   card keeps the job's name and a fresh start clears the tab's.
+- Tab rings (2026-11-23). The card's ring comes on only when the whole
+  card turns blocked, so a thread that stopped while another worked left
+  nothing on the board. Each tab now has a ring of its own
+  (`threads.attention_at`, `jobs.own_attention_at` for the first tab, v12),
+  set and cleared by the tick the way the card's is: each pi's state goes
+  through `holdBlocked` and `classify` on its own (`Daemon.ring`, in
+  memory per scan key; nothing rings on the first reading after a start),
+  on when it stops on its own, off when it works again. The card shows its
+  ring while it has its own or any tab does. The overlay acknowledges the
+  tab in view (`/api/job/seen` with `thread`), which takes the card's own
+  ring too; a tab that is not in view keeps its ring, so the card keeps
+  ringing until every tab that rang has been looked at. A thread taking
+  the first tab's place brings its ring.
 - Paste context and the ⚙ settings (2026-11-19). ⌘⇧V in a job puts the
   browser's front tab into the pane in view — URL, title and the selected
   text, else the page's text — as one bracketed paste with nothing sent
@@ -333,7 +346,8 @@ position, created_at)` and `jobs.lane_id` (0 = none). v9 added
 `threads(id, job_id, name, pi_session, tmux, started_at, created_at,
 closed_at)`, cascading with its job: the job's further pis ("Threads"
 above; the job row carries the first). `closed_at` set = its pi was closed;
-the row and its session file stay. A thread's files live in
+the row and its session file stay. v12 added `jobs.own_attention_at` and
+`threads.attention_at`, the tab rings ("Tab rings" above). A thread's files live in
 `<job dir>/t<id>/` (`session.jsonl`, `status.json`), which is the
 `DRIVER_JOB_DIR` its pi runs with; `LookupThreadDir` resolves either kind of
 dir to its job (and thread).
@@ -643,7 +657,7 @@ Bucketing: archived → drawer; else `lane` names the column when set, else
 `state` does (`''`/`ready`/unknown → draft). Same-column drop → `POST
 /api/reorder {column, slugs}` (full column, optimistic). WORKING and BLOCKED are
 in arrival order (above); a card that turned blocked on its own wears a ring
-until it is opened. Cross-column moves:
+until it is opened, and so does a card while one of its tabs rings. Cross-column moves:
 
 | from → to | action |
 |---|---|

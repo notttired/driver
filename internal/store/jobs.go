@@ -11,29 +11,30 @@ import (
 // working, blocked, done); the display state is the jobs package's concern.
 // ArchivedAt == 0 means not archived. All times are unix seconds.
 type Job struct {
-	ID           int64
-	Slug         string
-	Name         string
-	Dir          string
-	Model        string
-	Color        string
-	Spec         string
-	Notes        string
-	State        string
-	Outcome      string
-	PiSession    string
-	Tmux         string
-	StartedAt    int64
-	FinishedAt   int64
-	CreatedAt    int64
-	UpdatedAt    int64
-	ArchivedAt   int64
-	ArchivedName string
-	Rev          int64
-	AttentionAt  int64  // turned blocked on its own at this time and not opened since; 0 = no ring
-	LaneID       int64  // the lane the board shows it in; 0 = the column its state names
-	WatchingAt   int64  // pi was told to watch over the shipped work at this time; 0 = not watching
-	ThreadName   string // the tab name of the job's own pi when it was a thread once; "" = the job's name
+	ID             int64
+	Slug           string
+	Name           string
+	Dir            string
+	Model          string
+	Color          string
+	Spec           string
+	Notes          string
+	State          string
+	Outcome        string
+	PiSession      string
+	Tmux           string
+	StartedAt      int64
+	FinishedAt     int64
+	CreatedAt      int64
+	UpdatedAt      int64
+	ArchivedAt     int64
+	ArchivedName   string
+	Rev            int64
+	AttentionAt    int64  // turned blocked on its own at this time and not opened since; 0 = no ring
+	LaneID         int64  // the lane the board shows it in; 0 = the column its state names
+	WatchingAt     int64  // pi was told to watch over the shipped work at this time; 0 = not watching
+	ThreadName     string // the tab name of the job's own pi when it was a thread once; "" = the job's name
+	OwnAttentionAt int64
 }
 
 // Archived reports whether the job sits in the archive drawer.
@@ -49,7 +50,7 @@ func (j *Job) DisplayName() string {
 }
 
 const jobColumns = `id, slug, name, dir, model, color, spec, notes, state, outcome, pi_session, tmux,
-	started_at, finished_at, created_at, updated_at, archived_at, archived_name, rev, attention_at, lane_id, watching_at, thread_name`
+	started_at, finished_at, created_at, updated_at, archived_at, archived_name, rev, attention_at, lane_id, watching_at, thread_name, own_attention_at`
 
 func scanJob(row interface{ Scan(...any) error }) (*Job, error) {
 	var j Job
@@ -57,7 +58,7 @@ func scanJob(row interface{ Scan(...any) error }) (*Job, error) {
 	var archivedName sql.NullString
 	err := row.Scan(&j.ID, &j.Slug, &j.Name, &j.Dir, &j.Model, &j.Color, &j.Spec, &j.Notes, &j.State, &j.Outcome,
 		&j.PiSession, &j.Tmux, &j.StartedAt, &j.FinishedAt, &j.CreatedAt, &j.UpdatedAt,
-		&archivedAt, &archivedName, &j.Rev, &j.AttentionAt, &j.LaneID, &j.WatchingAt, &j.ThreadName)
+		&archivedAt, &archivedName, &j.Rev, &j.AttentionAt, &j.LaneID, &j.WatchingAt, &j.ThreadName, &j.OwnAttentionAt)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +166,7 @@ func (s *Store) queryJobs(query string, args ...any) ([]*Job, error) {
 var jobFieldColumns = map[string]bool{
 	"slug": true, "name": true, "dir": true, "model": true, "color": true, "spec": true, "notes": true,
 	"state": true, "outcome": true, "pi_session": true, "tmux": true,
-	"started_at": true, "finished_at": true, "attention_at": true, "lane_id": true, "watching_at": true, "thread_name": true,
+	"started_at": true, "finished_at": true, "attention_at": true, "lane_id": true, "watching_at": true, "thread_name": true, "own_attention_at": true,
 }
 
 // SetAttention writes attention_at for the active job id without the rev
@@ -173,12 +174,20 @@ var jobFieldColumns = map[string]bool{
 // acknowledgement, not an edit anyone could lose, and clearing it must not
 // make the card look freshly touched or trip the tick's next state write.
 func (s *Store) SetAttention(id, at int64) error {
-	res, err := s.db.Exec(`UPDATE jobs SET attention_at = ? WHERE id = ? AND archived_at IS NULL`, at, id)
+	return s.setRing("attention_at", id, at)
+}
+
+func (s *Store) SetOwnAttention(id, at int64) error {
+	return s.setRing("own_attention_at", id, at)
+}
+
+func (s *Store) setRing(column string, id, at int64) error {
+	res, err := s.db.Exec(`UPDATE jobs SET `+column+` = ? WHERE id = ? AND archived_at IS NULL`, at, id)
 	if err != nil {
-		return fmt.Errorf("set attention %d: %w", id, err)
+		return fmt.Errorf("set %s %d: %w", column, id, err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("set attention %d: %w", id, ErrNotFound)
+		return fmt.Errorf("set %s %d: %w", column, id, ErrNotFound)
 	}
 	return nil
 }

@@ -43,6 +43,8 @@ type Daemon struct {
 	elsewhere    map[string]string // scan key → a session path pi reported outside its dir, logged once
 	goneAtStart  map[string]bool   // scan key → its pi was not live on the first tick
 	threadState  map[int64]string  // thread id → the state last observed
+	tabState     map[string]string
+	tabHold      map[string]int
 	scanner      *sessionScanner
 	prBackoff    map[string]time.Time // PR url → last failed gh call
 	ghMissing    bool
@@ -58,6 +60,8 @@ func NewDaemon(svc *Service) *Daemon {
 		elsewhere:    map[string]string{},
 		goneAtStart:  map[string]bool{},
 		threadState:  map[int64]string{},
+		tabState:     map[string]string{},
+		tabHold:      map[string]int{},
 		scanner:      newSessionScanner(svc.Store),
 		prBackoff:    map[string]time.Time{},
 	}
@@ -143,6 +147,7 @@ func (d *Daemon) tick() (live int, firstErr error) {
 			note(d.followSession(j, st.Session))
 		}
 		own := Observe(j, isLive, st, now)
+		note(d.ring(jobKey(j), own, j.OwnAttentionAt, now, func(at int64) error { return d.svc.Store.SetOwnAttention(j.ID, at) }))
 		all := []Observation{own}
 		threads, err := d.svc.OpenThreads(j)
 		if err != nil {
@@ -164,6 +169,9 @@ func (d *Daemon) tick() (live int, firstErr error) {
 				note(d.followThreadSession(j, t, tst.Session))
 			}
 			tobs := ObserveThread(j.State, t.StartedAt, tlive, tst, now)
+			note(d.ring(threadKey(j, t), tobs, t.AttentionAt, now, func(at int64) error {
+				return d.svc.Store.UpdateThreadFields(t.ID, map[string]any{"attention_at": at})
+			}))
 			if was := d.threadState[t.ID]; tobs.State == "blocked" && was != "" && was != "blocked" && tobs.Pi.Reason != "aborted" {
 				turned = append(turned, threadTurn{t, tobs.Pi.Reason})
 			}
@@ -271,6 +279,12 @@ func (d *Daemon) tick() (live int, firstErr error) {
 			delete(d.goneAtStart, key)
 		}
 	}
+	for key := range d.tabState {
+		if !seenKeys[key] {
+			delete(d.tabState, key)
+			delete(d.tabHold, key)
+		}
+	}
 	for id := range d.threadState {
 		if !seenThreads[id] {
 			delete(d.threadState, id)
@@ -302,6 +316,31 @@ func (d *Daemon) tick() (live int, firstErr error) {
 		}()
 	}
 	return live, firstErr
+}
+
+func (d *Daemon) ring(key string, o Observation, ringAt, now int64, set func(int64) error) error {
+	prev := d.tabState[key]
+	held, hold := holdBlocked(prev, o.State, d.tabHold[key], d.tickN)
+	if hold == 0 {
+		delete(d.tabHold, key)
+	} else {
+		d.tabHold[key] = hold
+	}
+	d.tabState[key] = held
+	if prev == "" {
+		return nil
+	}
+	reason := ""
+	if o.Pi != nil {
+		reason = o.Pi.Reason
+	}
+	switch tr := classify(prev, held, reason); {
+	case tr.attention > 0:
+		return set(now)
+	case tr.attention < 0 && ringAt != 0:
+		return set(0)
+	}
+	return nil
 }
 
 // threadTurn is a thread that stopped for the operator this tick.

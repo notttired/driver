@@ -156,7 +156,10 @@ the tab you are on, ⌘⇧] / ⌘⇧[ move to the next / previous tab, and ⌘W 
 the thread you are on — on the job's own tab it closes the overlay, and it
 never closes Driver's window. The card is working while any thread works, and needs
 you when every thread has stopped; a thread that stops while another works
-sends its own notification. ✕ on a tab (or ⌘W on it) closes its pi — what it
+sends its own notification. A tab wears the card's ring when its pi stops on
+its own and you have not looked at it since, and the card rings while any
+of its tabs does, even while another thread works. Looking at a tab takes
+its ring off, so the card's goes once you have seen every tab that rang. ✕ on a tab (or ⌘W on it) closes its pi — what it
 said stays with the job — the first tab included, in which case the next
 thread takes its place as the job's own pi; the last tab always stays. A
 double-click renames a thread. A thread also names itself once you tell it
@@ -237,7 +240,8 @@ states such as "needs you", links, models, the tool pi is in, thread names);
 ↑↓ move, ⏎ opens the pane, ⌘⏎ opens its directory in the editor, Esc
 closes. ⌘N opens NEW JOB. A
 notification arrives when a job turns blocked or its pi exits, and the card
-wears a ring until you open it; WORKING and BLOCKED keep their cards in the
+wears a ring until you open it (with threads, until you have looked at
+every tab that stopped); WORKING and BLOCKED keep their cards in the
 order they arrived. The `⊞ tabs`
 button lists your browser's open tabs; click one to attach it. The first time,
 macOS asks whether driver may control Google Chrome — allow it, or flip it later

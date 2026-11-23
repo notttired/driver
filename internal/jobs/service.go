@@ -195,7 +195,7 @@ func (s *Service) Submit(j *store.Job) error {
 	_ = s.Store.DeleteKV(scanPendingKey(jobKey(j)))
 	_, err = s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{
 		"tmux": sess, "pi_session": sessionFile, "started_at": time.Now().Unix(),
-		"state": "ready", "outcome": "", "finished_at": int64(0), "thread_name": "",
+		"state": "ready", "outcome": "", "finished_at": int64(0), "thread_name": "", "own_attention_at": int64(0),
 	})
 	if err != nil {
 		return fmt.Errorf("session %s is up but the state write failed: %w", sess, mapStoreErr(err))
@@ -272,7 +272,7 @@ func (s *Service) Watch(j *store.Job) error {
 		return Refuse("job %s is already watching", j.Slug)
 	}
 	prompt := s.WatchPrompt()
-	fields := map[string]any{"watching_at": time.Now().Unix(), "lane_id": int64(0), "attention_at": int64(0)}
+	fields := map[string]any{"watching_at": time.Now().Unix(), "lane_id": int64(0), "attention_at": int64(0), "own_attention_at": int64(0)}
 	sess := SessionName(j)
 	if s.Tmux.HasSession(sess) && !s.Tmux.PaneDead(sess) {
 		if err := s.Tmux.Paste(sess, prompt); err != nil {
@@ -383,7 +383,7 @@ func (s *Service) restart(j *store.Job, resume bool) error {
 	}
 	fields := map[string]any{"tmux": sess, "pi_session": sessionFile, "started_at": time.Now().Unix()}
 	if resume {
-		fields["state"], fields["attention_at"] = "working", int64(0)
+		fields["state"], fields["attention_at"], fields["own_attention_at"] = "working", int64(0), int64(0)
 	}
 	if _, err := s.Store.UpdateJobFields(j.ID, j.Rev, fields); err != nil {
 		return fmt.Errorf("session %s is up but the state write failed: %w", sess, mapStoreErr(err))
@@ -428,7 +428,7 @@ func (s *Service) Done(j *store.Job) error {
 		return err
 	}
 	_, err := s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{
-		"state": "done", "attention_at": int64(0), "outcome": "accepted", "finished_at": time.Now().Unix(),
+		"state": "done", "attention_at": int64(0), "own_attention_at": int64(0), "outcome": "accepted", "finished_at": time.Now().Unix(),
 		"lane_id": int64(0), "watching_at": int64(0),
 	})
 	if err != nil {
@@ -458,7 +458,7 @@ func (s *Service) Kill(j *store.Job) error {
 		return err
 	}
 	_, err := s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{
-		"state": "", "attention_at": int64(0), "tmux": "", "started_at": int64(0), "finished_at": int64(0), "outcome": "",
+		"state": "", "attention_at": int64(0), "own_attention_at": int64(0), "tmux": "", "started_at": int64(0), "finished_at": int64(0), "outcome": "",
 	})
 	return mapStoreErr(err)
 }
@@ -771,13 +771,25 @@ func (s *Service) placeAfter(column string, srcID, newID int64) error {
 	return s.Store.SetBoardColumn(column, out)
 }
 
-// MarkSeen takes the attention ring off j: the operator has opened it. A job
-// without the ring is left untouched.
-func (s *Service) MarkSeen(j *store.Job) error {
-	if j.AttentionAt == 0 {
+// MarkSeen takes the attention ring off j and off the tab the operator is
+// looking at (t; nil = the first tab). A ring that is not there is left
+// untouched.
+func (s *Service) MarkSeen(j *store.Job, t *store.Thread) error {
+	if j.AttentionAt != 0 {
+		if err := s.Store.SetAttention(j.ID, 0); err != nil {
+			return err
+		}
+	}
+	if t != nil {
+		if t.AttentionAt == 0 {
+			return nil
+		}
+		return s.Store.UpdateThreadFields(t.ID, map[string]any{"attention_at": int64(0)})
+	}
+	if j.OwnAttentionAt == 0 {
 		return nil
 	}
-	return s.Store.SetAttention(j.ID, 0)
+	return s.Store.SetOwnAttention(j.ID, 0)
 }
 
 func (s *Service) SetColor(j *store.Job, color string) error {

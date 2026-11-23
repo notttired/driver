@@ -21,6 +21,7 @@ type webThread struct {
 	Pi        *jobs.PiInfo `json:"pi,omitempty"`
 	Retryable bool         `json:"retryable,omitempty"`
 	StartedAt int64        `json:"started_at,omitempty"`
+	Attention bool         `json:"attention,omitempty"`
 }
 
 // threadsOf is the job's tabs — its own pi (own, as observed) first, then
@@ -37,7 +38,7 @@ func (a *API) threadsOf(j *store.Job, own webThread, ownObs jobs.Observation, no
 		live := snap.Live(jobs.ThreadSessionName(j, t))
 		status := a.Svc.Cfg.ReadThreadStatus(j, t)
 		obs := jobs.ObserveThread(j.State, t.StartedAt, live, status, now)
-		wt := webThread{ID: t.ID, Name: t.Name, Live: live, Pi: obs.Pi, StartedAt: t.StartedAt}
+		wt := webThread{ID: t.ID, Name: t.Name, Live: live, Pi: obs.Pi, StartedAt: t.StartedAt, Attention: t.AttentionAt != 0}
 		if obs.State == "blocked" {
 			if conv, err := a.conversations.recordOf(threadKey(j, t), t.PiSession); err == nil {
 				wt.Retryable = jobs.PlanThreadRetry(live, status, conv)
@@ -131,6 +132,34 @@ func (a *API) jobThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("thread %s %s %q", req.Op, j.Slug, t.Name)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (a *API) jobSeen(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Slug   string `json:"slug"`
+		Thread int64  `json:"thread"`
+	}
+	if !decodePost(w, r, &req) {
+		return
+	}
+	j, err := a.Svc.Lookup(strings.TrimSpace(req.Slug))
+	if err != nil {
+		writeFailure(w, "seen", err)
+		return
+	}
+	var t *store.Thread
+	if req.Thread != 0 {
+		if t, err = a.Svc.LookupThread(j, req.Thread); err != nil {
+			writeThreadFailure(w, err)
+			return
+		}
+	}
+	if err := a.Svc.MarkSeen(j, t); err != nil {
+		writeFailure(w, "seen", err)
+		return
+	}
+	log.Printf("seen %s (tab %d)", j.Slug, req.Thread)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

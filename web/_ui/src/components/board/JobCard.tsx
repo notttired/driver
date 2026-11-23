@@ -77,7 +77,7 @@ function JobCardView({ job, submitting, drag, ghost, onOpen, onOpenLink }: JobCa
         (ghost ? " dragging-overlay" : "")
       }
       style={style}
-      title={job.attention ? "turned blocked since you last opened it" : undefined}
+      title={job.attention ? (job.state === "working" ? "a thread stopped since you last looked at it" : "turned blocked since you last opened it") : undefined}
       data-slug={job.slug}
       data-col={col}
       onClick={onOpen}

@@ -44,6 +44,16 @@ describe("ThreadTabs", () => {
     expect(tabs[2]!.querySelector(".thread-dot")).toHaveClass("status-exited");
   });
 
+  it("rings a tab that stopped since you last looked at it", () => {
+    const ringed = threads.map((t) => (t.id === 4 ? { ...t, attention: true } : t));
+    render(<ThreadTabs slug="multi" threads={ringed} current={0} onSelect={() => {}} onToast={() => {}} />);
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs[1]).toHaveClass("attention");
+    expect(tabs[1]!.getAttribute("title")).toMatch(/stopped since you last looked at it/);
+    expect(tabs[0]).not.toHaveClass("attention");
+    expect(tabs[2]).not.toHaveClass("attention");
+  });
+
   it("selects a tab on click", () => {
     const onSelect = vi.fn();
     render(<ThreadTabs slug="multi" threads={threads} current={0} onSelect={onSelect} onToast={() => {}} />);
