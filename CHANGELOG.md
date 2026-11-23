@@ -8,6 +8,11 @@ behind each, [docs/API.md](docs/API.md) the wire contract.
 
 ## 2026-11-23
 
+- **Each tab rings when its pi stops and you haven't looked**
+  (`f704b76`, schema v12). A thread that stopped while another worked left
+  nothing on the board. Now its tab wears the card's ring, and so does the
+  card, even in WORKING. Looking at a tab takes its ring off; the card's
+  goes once you have seen every tab that rang.
 - **The first tab names itself too** (`251d946`). Told what it is for, the
   job's own pi was refused a name. Now its tab and pi's footer take it,
   and the card keeps the job's name.
