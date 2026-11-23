@@ -212,6 +212,18 @@ usage, accounts, self-update) is left out on purpose.
   operator cleans worktrees up), what it changed at the end of every answer
   (that is all the others see), stop and tell the operator on a
   contradiction, and the tool. Driver never removes worktrees.
+- Threads name themselves (2026-11-23). "thread N" is reused as threads
+  close, so a number does not say which thread holds which work, and a
+  thread asked an ambiguous question answers for its own work. The rules
+  therefore tell a thread to name its tab once the operator says what the
+  thread is for, in a few words, and only then: never on its own guess or
+  from the task it was given. `driver_threads` `rename` posts
+  `/api/job/threads/rename`, which renames the asking pi's thread as a
+  double-click does and answers the name pi's session takes
+  (`ThreadPiName`, "<job> · <thread>", as at launch), which the extension
+  sets with `pi.setSessionName` so the footer follows the tab. The job's
+  own pi is refused: the first tab carries the job's name, and a
+  double-click does not rename it either.
 - Paste context and the ⚙ settings (2026-11-19). ⌘⇧V in a job puts the
   browser's front tab into the pane in view — URL, title and the selected
   text, else the page's text — as one bracketed paste with nothing sent
@@ -491,8 +503,9 @@ context ("Threads: shared context" above): `before_agent_start` and
 `turn_end` post `/api/job/threads/update` with `job_dir` and the ids the
 branch holds, inject the answer as a `driver-peers` custom message and, when
 the job has other threads, set the `driver_threads` system prompt section;
-`driver_threads` (`action` list | history, `thread`) reads
-`/api/job/threads` and `/api/job/threads/history`. A daemon that does not
+`driver_threads` (`action` list | history | rename, `thread`, `name`) reads
+`/api/job/threads` and `/api/job/threads/history` and posts
+`/api/job/threads/rename`. A daemon that does not
 answer within 5s costs nothing but the update. Its parameters are plain
 JSON Schema and it imports nothing but Node built-ins, so `node --test` loads
 the file outside pi. Type import:

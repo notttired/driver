@@ -1,11 +1,13 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"driver/internal/jobs"
 	"driver/internal/pi"
 	"driver/internal/store"
 )
@@ -100,4 +102,37 @@ func (a *API) jobThreadsHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"text": text})
+}
+
+func (a *API) jobThreadsRename(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		JobDir string `json:"job_dir"`
+		Name   string `json:"name"`
+	}
+	if !decodePost(w, r, &req) {
+		return
+	}
+	j, self, ok := a.threadSelf(w, req.JobDir)
+	if !ok {
+		return
+	}
+	if self == 0 {
+		writeFailure(w, "threads rename", jobs.Refuse("the job's first tab keeps its name, %q", jobs.OwnName(j)))
+		return
+	}
+	t, err := a.Svc.LookupThread(j, self)
+	if err != nil {
+		writeFailure(w, "threads rename", err)
+		return
+	}
+	if err := a.Svc.RenameThread(j, t, req.Name); err != nil {
+		writeFailure(w, "threads rename", err)
+		return
+	}
+	if t, err = a.Svc.LookupThread(j, self); err != nil {
+		writeFailure(w, "threads rename", err)
+		return
+	}
+	log.Printf("thread rename %s %q (by its pi)", j.Slug, t.Name)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "name": t.Name, "pi_name": jobs.ThreadPiName(j, t)})
 }

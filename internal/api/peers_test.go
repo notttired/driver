@@ -116,4 +116,35 @@ func TestPeers(t *testing.T) {
 	if code := call("GET", "/api/job/threads/history?"+q(jobDir)+"&thread=x", "", nil); code != http.StatusBadRequest {
 		t.Fatalf("history with a bad thread: %d", code)
 	}
+
+	var named struct {
+		Name   string `json:"name"`
+		PiName string `json:"pi_name"`
+		Error  string `json:"error"`
+	}
+	if code := call("POST", "/api/job/threads/rename", `{"job_dir":"`+cidir+`","name":"  Topic   E "}`, &named); code != http.StatusOK || named.Name != "Topic E" || named.PiName != "Multi · Topic E" {
+		t.Fatalf("a thread names itself: %d %+v", code, named)
+	}
+	if code := call("GET", "/api/job/threads?"+q(jobDir), "", &list); code != http.StatusOK || list.Threads[1].Name != "Topic E" {
+		t.Fatalf("the tab after the rename: %d %+v", code, list)
+	}
+	named.Error = ""
+	if code := call("POST", "/api/job/threads/rename", `{"job_dir":"`+jobDir+`","name":"Topic H"}`, &named); code != http.StatusConflict || !strings.Contains(named.Error, "first tab") {
+		t.Fatalf("the job's first tab names itself: %d %+v", code, named)
+	}
+	if code := call("GET", "/api/job/threads?"+q(jobDir), "", &list); code != http.StatusOK || list.Threads[0].Name != "Multi" {
+		t.Fatalf("the first tab after a refused rename: %d %+v", code, list)
+	}
+	if code := call("POST", "/api/job/threads/rename", `{"job_dir":"`+cidir+`","name":"  "}`, nil); code != http.StatusConflict {
+		t.Fatalf("an empty name: %d", code)
+	}
+	if code := call("POST", "/api/job/threads/rename", `{"job_dir":"`+cidir+`","name":"`+strings.Repeat("x", jobs.MaxThreadNameLen+1)+`"}`, nil); code != http.StatusBadRequest {
+		t.Fatalf("a long name: %d", code)
+	}
+	if code := call("POST", "/api/job/threads/rename", `{"job_dir":"/nowhere","name":"Topic E"}`, nil); code != http.StatusNotFound {
+		t.Fatalf("a rename from an unknown dir: %d", code)
+	}
+	if code := call("GET", "/api/job/threads/rename", "", nil); code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET rename: %d", code)
+	}
 }

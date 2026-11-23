@@ -38,7 +38,11 @@ func (c Config) LaunchCommand(j *store.Job, piBin, jobDir, sessionFile string, p
 // same job, slug, model and flags; its own job dir (the thread's, where its
 // status.json goes) and session file; named "<job> · <thread>".
 func (c Config) ThreadLaunchCommand(j *store.Job, t *store.Thread, piBin, sessionFile string, prompt ...string) string {
-	return c.launchCommand(j, j.DisplayName()+" · "+t.Name, piBin, filepath.Dir(sessionFile), sessionFile, prompt...)
+	return c.launchCommand(j, ThreadPiName(j, t), piBin, filepath.Dir(sessionFile), sessionFile, prompt...)
+}
+
+func ThreadPiName(j *store.Job, t *store.Thread) string {
+	return j.DisplayName() + " · " + t.Name
 }
 
 func (c Config) launchCommand(j *store.Job, name, piBin, jobDir, sessionFile string, prompt ...string) string {

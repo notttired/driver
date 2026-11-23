@@ -111,10 +111,12 @@ const loadAll = (env: Record<string, string | undefined>) => {
   for (const [k, v] of Object.entries(env)) if (v === undefined) delete process.env[k];
   const tools = new Map<string, Tool>();
   const handlers = new Map<string, Handler[]>();
+  const sessionNames: string[] = [];
   try {
     driver({
       on: (name: string, h: Handler) => handlers.set(name, [...(handlers.get(name) ?? []), h]),
       registerTool: (t: Tool) => tools.set(t.name, t),
+      setSessionName: (name: string) => sessionNames.push(name),
     } as never);
   } finally {
     process.env = saved;
@@ -124,7 +126,7 @@ const loadAll = (env: Record<string, string | undefined>) => {
     for (const h of handlers.get(name) ?? []) out = (await h(event, ctx)) ?? out;
     return out as Record<string, unknown> | undefined;
   };
-  return { tools, fire };
+  return { tools, fire, sessionNames };
 };
 
 describe("threads: shared context", () => {
@@ -179,6 +181,7 @@ describe("threads: shared context", () => {
     assert.match(sections.driver_threads ?? "", /one of several threads/);
     assert.match(sections.driver_threads ?? "", /git worktree/);
     assert.match(sections.driver_threads ?? "", /stop and tell the user/);
+    assert.match(sections.driver_threads ?? "", /When the user tells you what this thread is for, name your tab/);
   });
 
   it("adds nothing when there is nothing new, and no rules when the job has one pi", async () => {
@@ -246,5 +249,24 @@ describe("threads: shared context", () => {
     await assert.rejects(tool.execute("c3", { action: "history" }), { message: "history needs a thread id" });
     reply = () => ({ status: 404, body: { error: "no such thread" } });
     await assert.rejects(tool.execute("c4", { action: "history", thread: 9 }), { message: "no such thread" });
+  });
+
+  it("lets a thread name its own tab, and pi's session with it", async () => {
+    reply = () => ({ status: 200, body: { ok: true, name: "Topic E", pi_name: "Multi · Topic E" } });
+    const { tools, sessionNames } = loadAll({ DRIVER_JOB_DIR: jobDir, DRIVER_SERVE: serve });
+    const tool = tools.get("driver_threads")!;
+    assert.equal(text(await tool.execute("c1", { action: "rename", name: "Topic E" })), 'Your tab is now named "Topic E".');
+    assert.deepEqual(seen, [{ method: "POST", url: "/api/job/threads/rename", body: { job_dir: jobDir, name: "Topic E" } }]);
+    assert.deepEqual(sessionNames, ["Multi · Topic E"]);
+  });
+
+  it("renames nothing without a name, or when the daemon refuses", async () => {
+    const { tools, sessionNames } = loadAll({ DRIVER_JOB_DIR: jobDir, DRIVER_SERVE: serve });
+    const tool = tools.get("driver_threads")!;
+    await assert.rejects(tool.execute("c1", { action: "rename" }), { message: "rename needs a name" });
+    assert.deepEqual(seen, []);
+    reply = () => ({ status: 409, body: { error: 'the job\'s first tab keeps its name, "Multi"' } });
+    await assert.rejects(tool.execute("c2", { action: "rename", name: "Topic H" }), { message: 'the job\'s first tab keeps its name, "Multi"' });
+    assert.deepEqual(sessionNames, []);
   });
 });

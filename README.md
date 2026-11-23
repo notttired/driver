@@ -159,7 +159,11 @@ you when every thread has stopped; a thread that stops while another works
 sends its own notification. ✕ on a tab (or ⌘W on it) closes its pi — what it
 said stays with the job — the first tab included, in which case the next
 thread takes its place as the job's own pi; the last tab always stays. A
-double-click renames a thread. Each job opens on the tab you left it on.
+double-click renames a thread. A thread also names itself once you tell it
+what it is for ("you're the thread for topic E"): its tab and pi's footer
+turn into a few words for that purpose. It never names itself on a guess or
+from the task you give it, and the first tab keeps the job's name. Each job
+opens on the tab you left it on.
 DONE and CANCEL close every thread. `tmux attach -t drv-<slug>-<id>-t<n>` reaches a thread's pane
 from a terminal.
 
@@ -174,8 +178,8 @@ closed thread's answers stay part of it. Each thread is told the rules of
 the house: make a git worktree of its own before its first change to files
 or git, say what it changed in every answer, and stop and tell you when
 another thread's work contradicts its own. Its `driver_threads` tool lists
-the threads and reads any thread's whole history — tool calls and all —
-when the final answers are not enough. Driver does not remove worktrees;
+the threads, reads any thread's whole history — tool calls and all —
+when the final answers are not enough, and names its own tab. Driver does not remove worktrees;
 clean them up when you like.
 
 **Retry** is for blocked jobs that did not stop for you: a dropped network
