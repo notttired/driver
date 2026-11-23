@@ -280,6 +280,19 @@ usage, accounts, self-update) is left out on purpose.
   starts — each job's own and each thread's — has the `driver_plans` tool
   over every plan (list, read, make, rename, remove, edit in a batch), to
   use when the operator asks; the tool sends nothing that names its job.
+  PLANS (the switch beside the search in the board bar; this browser
+  remembers which view is up, and which plan) is a tab per plan and the
+  plan in view as a graph (`lib/planLayout.ts`): a step's column is its
+  longest chain back, a starting point that holds others up sits right
+  before the first of them, the steps of a topic share a band (topics in the
+  order they first appear, the rest last), and in a column a step goes near
+  what it waits on while one whose next step is columns away goes last, so
+  its long arrow runs clear. Boxes glide to their new places when the plan
+  changes; the graph always fits the space. A topic's name folds it into one
+  box (its counts); the box unfolds it; which are folded is this browser's
+  to remember, per plan. Hovering a box lights what it waits on and what
+  waits on it; All / Ready / Waiting / Blocked dims the rest. The view polls
+  the plan every 3s, so a pi's edits show up as they happen.
 
 ## Layout
 
@@ -296,7 +309,8 @@ internal/api/         HTTP handlers (see docs/API.md); the board payload
 internal/util/        env file loader, small helpers
 web/embed.go          //go:embed all:_ui/dist
 web/serve.go          static files + /api mux on 127.0.0.1:<port>
-web/_ui/              Vite + React + TypeScript SPA (kraken's board, trimmed) + xterm.js + react-markdown
+web/_ui/              Vite + React + TypeScript SPA (kraken's board, trimmed) + xterm.js + react-markdown;
+                      components/plans/: the PLANS view
 ext/driver.ts         the pi extension (status.json writer, the driver_notes and driver_plans
                       tools, the threads' shared context); embedded
                       in the binary and written to ~/.driver/ext/driver.ts on every serve start;

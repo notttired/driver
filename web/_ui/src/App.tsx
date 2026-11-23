@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { addLane, deleteJob, fetchBrowserContext, openJobDir, pasteIntoJob, pinJobLink, removeLane, renameLane, retryJob, unarchiveJob } from "./api/client.ts";
+import { BoardBar, type View } from "./components/board/BoardBar.tsx";
 import { BoardView, type BoardActions } from "./components/board/BoardView.tsx";
 import { DragProvider } from "./components/board/DragProvider.tsx";
 import { GhostJobCard } from "./components/board/JobCard.tsx";
@@ -12,6 +13,7 @@ import { WatchPromptOverlay } from "./components/overlays/WatchPromptOverlay.tsx
 import { Toast, showToast } from "./components/overlays/Toast.tsx";
 import { closeThreadNow } from "./components/overlays/ThreadTabs.tsx";
 import { CommandPalette, type PalettePick } from "./components/palette/CommandPalette.tsx";
+import { PlansView } from "./components/plans/PlansView.tsx";
 import { useBoard } from "./hooks/useBoard.ts";
 import { readLS, writeLS } from "./hooks/useLocalStorage.ts";
 import { slugOfKey } from "./lib/jobKey.ts";
@@ -38,6 +40,12 @@ export function App() {
     },
     [openKey],
   );
+  // the board's columns or the plans; this browser remembers which
+  const [view, setViewRaw] = useState<View>(() => (readLS(VIEW_KEY) === "plans" ? "plans" : "board"));
+  const setView = useCallback((v: View) => {
+    setViewRaw(v);
+    writeLS(VIEW_KEY, v === "board" ? null : v);
+  }, []);
   const [newJob, setNewJob] = useState(false);
   const [watchPrompt, setWatchPrompt] = useState(false);
   const [palette, setPalette] = useState(false);
@@ -173,9 +181,16 @@ export function App() {
   return (
     <>
       <Chrome board={board.board} error={board.error} lastError={board.lastError} onSettings={() => setSettings(true)} />
-      <DragProvider board={board} onOpenJob={openJob} onToast={showToast} renderOverlay={(job) => (job ? <GhostJobCard job={job} /> : null)}>
-        <BoardView board={board} actions={actions} onSearch={openPalette} />
-      </DragProvider>
+      {view === "board" ? (
+        <DragProvider board={board} onOpenJob={openJob} onToast={showToast} renderOverlay={(job) => (job ? <GhostJobCard job={job} /> : null)}>
+          <BoardView board={board} actions={actions} onSearch={openPalette} view={view} onView={setView} />
+        </DragProvider>
+      ) : (
+        <>
+          <BoardBar total={(board.board?.jobs ?? []).filter((j) => !j.archived).length} onSearch={openPalette} view={view} onView={setView} />
+          <PlansView />
+        </>
+      )}
       <JobOverlay
         openKey={openKey}
         thread={openThread}
@@ -217,6 +232,8 @@ export function App() {
     </>
   );
 }
+
+const VIEW_KEY = "driver.view";
 
 /** The tab a job was last left on, per board key, in this browser. */
 const THREAD_KEY_PREFIX = "driver.thread:";

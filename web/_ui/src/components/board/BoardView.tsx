@@ -4,7 +4,7 @@ import { WATCHING, isStateColumn, laneId } from "../../lib/columns.ts";
 import { jobKey } from "../../lib/jobKey.ts";
 import type { WebJob } from "../../lib/types.ts";
 import { ArchiveDrawer } from "./ArchiveDrawer.tsx";
-import { BoardBar } from "./BoardBar.tsx";
+import { BoardBar, type View } from "./BoardBar.tsx";
 import { BoardColumn } from "./Column.tsx";
 import { SortableColumns, useColumns } from "./DragProvider.tsx";
 import { JobCard } from "./JobCard.tsx";
@@ -37,16 +37,18 @@ export interface BoardViewProps {
   actions: BoardActions;
   /** open the ⌘K palette */
   onSearch: () => void;
+  view: View;
+  onView: (view: View) => void;
 }
 
-export function BoardView({ board, actions, onSearch }: BoardViewProps) {
+export function BoardView({ board, actions, onSearch, view, onView }: BoardViewProps) {
   const { byColumn, archived } = board;
   const columns = useColumns();
   const { isCollapsed, toggle } = useCollapsedColumns();
   const renderCard = (j: WebJob) => <JobCard key={jobKey(j)} job={j} actions={actions} />;
   return (
     <>
-      <BoardBar total={(board.board?.jobs ?? []).filter((j) => !j.archived).length} onSearch={onSearch} />
+      <BoardBar total={(board.board?.jobs ?? []).filter((j) => !j.archived).length} onSearch={onSearch} view={view} onView={onView} />
       <main className="board" id="board">
         <SortableColumns columns={columns}>
           {columns.map((col) => {
