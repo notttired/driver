@@ -8,6 +8,9 @@ behind each, [docs/API.md](docs/API.md) the wire contract.
 
 ## 2026-11-23
 
+- **The first tab names itself too** (`251d946`). Told what it is for, the
+  job's own pi was refused a name. Now its tab and pi's footer take it,
+  and the card keeps the job's name.
 - **A thread names its own tab once you tell it what it is for**
   (`dedb56e`). Say "you're the thread for topic E" and its tab and pi's
   footer become a few words for that. It never names itself on a guess or
