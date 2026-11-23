@@ -171,6 +171,53 @@ Slug rules: `^[a-z0-9][a-z0-9-]{0,63}$`, unique among non-archived jobs.
 pi startup). The client uses a longer timeout for them; a client-side timeout
 is not a failed start.
 
+## Plans
+
+Graphs of steps for long pieces of work (docs/DESIGN.md "Plans"). A step may
+wait on other steps of its plan; plans name no job and no session, and the
+board and every pi on it read and change them through these routes alike. A
+plan is named by its id (a number, or a string of digits) or by its name,
+matched without regard to case. Refusals here are **409**, an unknown plan or
+step **404** (`"no such plan"`, or the op's sentence), bad input **400**.
+
+```ts
+interface WebPlanSummary {
+  id: number; name: string; rev: number;
+  steps: number;   // all of them
+  done: number; ready: number; waiting: number; blocked: number;
+}
+interface WebPlan { id: number; name: string; rev: number; steps: WebPlanStep[] }
+interface WebPlanStep {
+  id: number; title: string; note: string;
+  state: "todo" | "wait" | "blocked" | "done";
+  ready: boolean;      // todo, and every step it waits on is done
+  kind: string;        // free text: "PR", "ask", "flag"…; "" = none
+  topic: string;       // free text; steps of one topic share a band; "" = none
+  waits_on: number[];  // the steps it waits on
+}
+```
+
+| route | effect | refusals |
+|---|---|---|
+| `GET /api/plans` | → `{"plans": WebPlanSummary[]}`, in the order they were made | — |
+| `POST /api/plans` | `{"op": "add", "name"}` → `{"ok": true, "plan": WebPlanSummary}`: an empty plan; `{"op": "rename", "plan", "name"}` → `{"ok": true}`; `{"op": "remove", "plan"}` → `{"ok": true}`: the plan goes with its steps. Names are whitespace-collapsed, 1–80 characters, unique without regard to case | name taken (409) · empty or long name (400) · unknown plan (404) |
+| `GET /api/plan` | `?plan=<id or name>` → `WebPlan`, its steps in the order they were added. `rev` moves with every change to the plan or its steps | unknown plan (404) |
+| `POST /api/plan/ops` | `{"plan", "ops": PlanOp[]}` → `{"ok": true, "plan": WebPlan, "added": {ref: id}}`: every op, in order, in one transaction — all of them or none (the first that fails rolls the batch back, and the error names it: `"op 3: …"`). 1–500 ops | a link that would make a loop (409) · a step not in the plan (404) · see below (400) |
+
+`PlanOp` (a step is its id, or the `ref` an earlier `add` in the same batch
+gave it; refs live only in their batch):
+
+- `{"op": "add", "ref"?, "title", "note"?, "state"?, "kind"?, "topic"?, "waits_on"?: step[], "unblocks"?: step[]}` — a new step (state `todo` unless given) that waits on `waits_on`, and that each step in `unblocks` now waits on.
+- `{"op": "update", "step", "title"?, "note"?, "state"?, "kind"?, "topic"?}` — only the fields present change.
+- `{"op": "link" | "unlink", "step", "waits_on": step[]}` — the step waits on them from now on, or no longer.
+- `{"op": "delete", "step"}` — the step goes; each step that waited on it now waits on what it waited on, unless it already does through another step.
+
+Titles, kinds and topics are whitespace-collapsed (title 1–200 characters,
+kind ≤ 24, topic ≤ 80); a note is trimmed and keeps its line breaks (≤ 4000).
+`state` is one of `todo`, `wait`, `blocked`, `done` (`waiting` reads as `wait`).
+400s: an unknown op or state, an empty title, a ref used before its add or
+named twice, a ref that is all digits, a link or unlink naming nothing.
+
 ## Job form
 
 `GET /api/job/form?slug=<slug>` → `JobForm`

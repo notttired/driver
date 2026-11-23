@@ -8,7 +8,7 @@ import (
 
 // migrations is the append-only list of schema steps; migrations[i] brings a
 // database at user_version i to i+1. Never edit a shipped step — append.
-var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8, schemaV9, schemaV10, schemaV11, schemaV12}
+var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8, schemaV9, schemaV10, schemaV11, schemaV12, schemaV13}
 
 // schemaV1 creates the four tables the design calls for. Every column a Go
 // scan reads into a plain string/int64 is NOT NULL with a same-typed default;
@@ -261,4 +261,38 @@ ALTER TABLE jobs ADD COLUMN thread_name TEXT NOT NULL DEFAULT '';
 const schemaV12 = `
 ALTER TABLE jobs ADD COLUMN own_attention_at INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE threads ADD COLUMN attention_at INTEGER NOT NULL DEFAULT 0;
+`
+
+// schemaV13 adds plans: graphs of steps for long pieces of work, where a
+// step may wait on others (plan_links: step_id waits on waits_on). They name
+// no job, thread or tmux session — the board and the plans never point at
+// each other. Plan names are unique without regard to case, so a plan can be
+// asked for by name.
+const schemaV13 = `
+CREATE TABLE plans (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	name       TEXT NOT NULL,
+	rev        INTEGER NOT NULL DEFAULT 1,
+	created_at INTEGER NOT NULL DEFAULT 0,
+	updated_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX plans_name ON plans(name COLLATE NOCASE);
+CREATE TABLE plan_steps (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	plan_id    INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+	title      TEXT NOT NULL,
+	note       TEXT NOT NULL DEFAULT '',
+	state      TEXT NOT NULL DEFAULT 'todo' CHECK(state IN ('todo','wait','blocked','done')),
+	kind       TEXT NOT NULL DEFAULT '',
+	topic      TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL DEFAULT 0,
+	updated_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX plan_steps_plan ON plan_steps(plan_id);
+CREATE TABLE plan_links (
+	step_id  INTEGER NOT NULL REFERENCES plan_steps(id) ON DELETE CASCADE,
+	waits_on INTEGER NOT NULL REFERENCES plan_steps(id) ON DELETE CASCADE,
+	PRIMARY KEY (step_id, waits_on)
+);
+CREATE INDEX plan_links_waits_on ON plan_links(waits_on);
 `
