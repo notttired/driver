@@ -283,3 +283,44 @@ export interface BrowserProbeResult {
   text?: boolean;
   selected?: boolean;
 }
+
+// ------------------------------------------------------------------ plans
+
+/** A step's stored state; "ready" is worked out by the daemon (`ready`). */
+export type StepState = "todo" | "wait" | "blocked" | "done";
+
+/** one step of a plan, from GET /api/plan */
+export interface WebPlanStep {
+  id: number;
+  title: string;
+  note: string;
+  state: StepState;
+  /** todo, and every step it waits on is done */
+  ready: boolean;
+  /** free text: "PR", "ask", "flag"…; "" = none */
+  kind: string;
+  /** steps of one topic are drawn together; "" = none */
+  topic: string;
+  /** the steps it waits on */
+  waits_on: number[];
+}
+
+export interface WebPlan {
+  id: number;
+  name: string;
+  /** moves with every change to the plan or its steps */
+  rev: number;
+  steps: WebPlanStep[];
+}
+
+/** a plan in GET /api/plans */
+export interface WebPlanSummary {
+  id: number;
+  name: string;
+  rev: number;
+  steps: number;
+  done: number;
+  ready: number;
+  waiting: number;
+  blocked: number;
+}

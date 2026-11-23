@@ -22,6 +22,8 @@ import type {
   SettingsInfo,
   WebBoard,
   WebConversation,
+  WebPlan,
+  WebPlanSummary,
   TabsResponse,
 } from "../lib/types.ts";
 import type { Column } from "../lib/columns.ts";
@@ -215,6 +217,14 @@ export const LANE_ENDPOINT = "/api/job/lane";
 
 /** Park a job in a lane; 0 returns it to the column its state names. */
 export const setJobLane = (slug: string, lane: number) => postJSON<OkResponse>(LANE_ENDPOINT, { slug, lane });
+
+// ------------------------------------------------------------------ plans
+
+export const fetchPlans = (signal?: AbortSignal) => getJSON<{ plans: WebPlanSummary[] }>("/api/plans", signal);
+
+/** One plan with every step; `plan` is its id or its name. */
+export const fetchPlan = (plan: number | string, signal?: AbortSignal) =>
+  getJSON<WebPlan>(`/api/plan?plan=${encodeURIComponent(String(plan))}`, signal);
 
 // ------------------------------------------------------------ job fields
 
