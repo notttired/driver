@@ -185,6 +185,25 @@ the threads, reads any thread's whole history — tool calls and all —
 when the final answers are not enough, and names its own tab. Driver does not remove worktrees;
 clean them up when you like.
 
+**Plans.** PLANS (beside the search, above the columns) is for long pieces
+of work — moving ten topics off Monorail, a field removal across two repos —
+drawn as a graph: each box is a step, each arrow points from a step to what
+waits on it. Steps are placed by what they wait on, the steps of a topic share
+a band (click a topic's name to fold it into one box), and a box reads
+✓ done, ● ready (everything it waits on is done), ◷ waiting, ✕ blocked or
+○ later. Hover a box to light up its chain; All / Ready / Waiting / Blocked
+dims the rest. `+` beside the tabs makes a plan (double-click a tab to
+rename it, ✕ removes it); **+ STEP** adds a step on its own, the `+` on a
+box adds the step that comes after it. Click a box to change it in the side
+panel — state, name, note, kind, topic, what it waits on and what waits on
+it, DELETE (or ⌫): the steps after a deleted one then wait on what it waited
+on. Plans are kept apart from the board: no step points at a job or a tmux
+session. Every pi on the board has a `driver_plans` tool over every plan —
+ask any of them to read one, build one from an issue, or update one after a
+reply comes in — and the view shows their changes as they make them. A pi
+started before plans existed gets the tool when it next starts (RETRY or
+reactivate).
+
 **Retry** is for blocked jobs that did not stop for you: a dropped network
 leaves pi up on a failed turn (the card reads `✗ Connection error` and the
 like), a logout kills pi (`✕ exited`). `↻ retry N` in the BLOCKED head (or

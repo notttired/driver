@@ -292,7 +292,19 @@ usage, accounts, self-update) is left out on purpose.
   box (its counts); the box unfolds it; which are folded is this browser's
   to remember, per plan. Hovering a box lights what it waits on and what
   waits on it; All / Ready / Waiting / Blocked dims the rest. The view polls
-  the plan every 3s, so a pi's edits show up as they happen.
+  the plan every 3s, so a pi's edits show up as they happen. Editing goes
+  through the same `/api/plan/ops` the tool uses: `+` beside the tabs makes
+  a plan (a double-click renames, ✕ removes after a confirm), **+ STEP**
+  opens a box to name on its own and the `+` on a box one that waits on it
+  (Enter saves, Escape drops it); a click on a box opens its panel — state
+  (Later · Waiting · Blocked · Done; ready is not a button, it follows),
+  title, note, kind and topic (saved 600ms after the last keystroke, the
+  box showing what you type at once, and what a pi changes meanwhile landing
+  in every field you are not typing in), what it waits on and what waits on
+  it (✕ drops an arrow, "+ link a step" offers only the steps that would not
+  make a loop), DELETE (⌫ too, unless you are typing). The panel covers the
+  graph's right side; the camera slides the selected box clear of it rather
+  than shrinking the graph.
 
 ## Layout
 

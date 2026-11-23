@@ -324,3 +324,27 @@ export interface WebPlanSummary {
   waiting: number;
   blocked: number;
 }
+
+/** One change in a POST /api/plan/ops batch; a step is its id or the ref an
+ *  earlier add in the same batch gave it. */
+export interface PlanOp {
+  op: "add" | "update" | "link" | "unlink" | "delete";
+  ref?: string;
+  step?: number | string;
+  title?: string;
+  note?: string;
+  state?: StepState;
+  kind?: string;
+  topic?: string;
+  waits_on?: (number | string)[];
+  unblocks?: (number | string)[];
+}
+
+export interface PlanOpsResult extends OkResponse {
+  plan: WebPlan;
+  added: Record<string, number>;
+}
+
+export interface AddPlanResult extends OkResponse {
+  plan: WebPlanSummary;
+}

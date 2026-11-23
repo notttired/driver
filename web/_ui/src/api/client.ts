@@ -22,6 +22,9 @@ import type {
   SettingsInfo,
   WebBoard,
   WebConversation,
+  AddPlanResult,
+  PlanOp,
+  PlanOpsResult,
   WebPlan,
   WebPlanSummary,
   TabsResponse,
@@ -225,6 +228,14 @@ export const fetchPlans = (signal?: AbortSignal) => getJSON<{ plans: WebPlanSumm
 /** One plan with every step; `plan` is its id or its name. */
 export const fetchPlan = (plan: number | string, signal?: AbortSignal) =>
   getJSON<WebPlan>(`/api/plan?plan=${encodeURIComponent(String(plan))}`, signal);
+
+export const addPlan = (name: string) => postJSON<AddPlanResult>("/api/plans", { op: "add", name });
+export const renamePlan = (plan: number, name: string) => postJSON<OkResponse>("/api/plans", { op: "rename", plan, name });
+/** The plan goes, with its steps. */
+export const removePlan = (plan: number) => postJSON<OkResponse>("/api/plans", { op: "remove", plan });
+
+/** Change a plan's steps: every op or none. */
+export const applyPlanOps = (plan: number, ops: PlanOp[]) => postJSON<PlanOpsResult>("/api/plan/ops", { plan, ops });
 
 // ------------------------------------------------------------ job fields
 

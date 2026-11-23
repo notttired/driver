@@ -1216,6 +1216,74 @@ button.link-pin:hover { filter: none; opacity: 1; }
 .plan-step.me { background: var(--raised); outline: 1px solid var(--fg); outline-offset: -1px; }
 .plan-step.sel { outline: 2px solid var(--fg); outline-offset: -2px; }
 
+/* ---------- plans: editing ---------- */
+.plan-pane { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.plan-tab-wrap { display: inline-flex; align-items: center; }
+.plan-remove { background: transparent; border: 0; color: var(--muted); font: 400 10px/1 var(--mono); padding: 2px 4px; opacity: 0.6; }
+.plan-remove:hover { color: var(--ac2); opacity: 1; }
+.plan-new { background: transparent; border: 0; color: var(--muted); font: 600 13px/1 var(--display); padding: 4px 8px; }
+.plan-new:hover { color: var(--fg); }
+.plan-name { background: var(--b0); border: 1px solid var(--ac); outline: none; color: var(--fg); font: 600 10px/1 var(--display); letter-spacing: 0.12em; padding: 5px 8px; width: 200px; }
+.plan-add-step { margin-left: 8px; background: transparent; border: 1px dashed var(--border-strong); color: var(--muted); font: 600 9px/1 var(--display); letter-spacing: 0.14em; padding: 6px 10px; }
+.plan-add-step:hover:not(:disabled) { color: var(--fg); border-color: var(--ac); border-style: solid; }
+.ps-add { position: absolute; right: -10px; top: 50%; margin-top: -9px; width: 18px; height: 18px; display: grid; place-items: center; padding: 0; border: 0; background: var(--ac); color: var(--b0); font: 700 13px/1 var(--mono); opacity: 0; transition: opacity 120ms; }
+.plan-step:hover .ps-add { opacity: 1; }
+.ps-name { flex: 1; min-width: 0; background: transparent; border: 0; border-bottom: 1px solid var(--ac); outline: none; color: var(--fg); font: 600 10.5px/1.3 var(--mono); padding: 0; }
+.plan-step:has(.ps-name) { border-color: var(--ac); box-shadow: 0 0 0 1px var(--ac), var(--glow); }
+
+.step-panel {
+  position: absolute;
+  top: 10px;
+  right: 0;
+  bottom: 0;
+  width: 376px;
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--ac) 5%, var(--b0));
+  border: 1px solid var(--border-strong);
+  box-shadow: -18px 0 50px rgba(0, 0, 0, 0.45);
+  animation: panel-in 140ms steps(3, end);
+  z-index: 3;
+}
+.step-panel::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--ac), var(--ac2) 60%, transparent); pointer-events: none; }
+.sp-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--ac) 8%, var(--b1)); }
+.sp-title { flex: 1; min-width: 0; background: transparent; border: 1px solid transparent; outline: none; color: var(--fg); font: 600 12.5px/1.3 var(--mono); padding: 4px 6px; margin-left: -6px; }
+.sp-title:hover { border-color: var(--border); }
+.sp-title:focus { border-color: var(--ac); background: var(--b0); }
+.sp-close { background: transparent; border: 1px solid var(--border-strong); color: var(--muted); font: 400 10px/1 var(--mono); padding: 4px 7px; }
+.sp-close:hover { color: var(--fg); border-color: var(--ac); }
+.sp-body { padding: 12px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+.sp-body h4 { margin: 0 0 6px; font: 600 8.5px/1 var(--display); letter-spacing: 0.2em; color: var(--muted); }
+.sp-states { display: flex; border: 1px solid var(--border-strong); }
+.sp-states button { --sc: var(--muted); flex: 1; background: transparent; border: 0; padding: 7px 0; font: 500 10px/1 var(--mono); color: var(--muted); }
+.sp-states button + button { border-left: 1px solid var(--border-strong); }
+.sp-states button:hover { color: var(--fg); }
+.sp-states .s-wait { --sc: var(--warn); }
+.sp-states .s-blocked { --sc: var(--ac2); }
+.sp-states .s-done { --sc: var(--ok); }
+.sp-states button.on { color: var(--b0); font-weight: 600; background: var(--sc); }
+.sp-states button.s-todo.on { background: var(--g2); color: var(--fg); }
+.sp-ready { font: 400 9.5px/1.4 var(--mono); color: var(--ac); margin-top: 6px; min-height: 13px; }
+.sp-input { width: 100%; background: transparent; border: 1px solid var(--border); outline: none; color: var(--body); font: 400 10px/1.3 var(--mono); padding: 6px 8px; }
+.sp-input:focus { border-color: var(--ac); }
+.sp-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sp-dep { --sc: var(--muted); display: flex; gap: 8px; align-items: center; padding: 4px 2px; font: 500 10px/1.3 var(--mono); color: var(--fg); }
+.sp-dep.s-done { --sc: var(--ok); } .sp-dep.s-ready { --sc: var(--ac); } .sp-dep.s-wait { --sc: var(--warn); } .sp-dep.s-blocked { --sc: var(--ac2); }
+.sp-dep i { font-style: normal; color: var(--sc); width: 12px; }
+.sp-dep span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-rm { background: transparent; border: 0; color: var(--muted); font: 400 10px/1 var(--mono); padding: 0 4px; opacity: 0.6; }
+.sp-rm:hover { color: var(--ac2); opacity: 1; }
+.sp-link { margin-top: 4px; background: transparent; border: 1px dashed var(--border-strong); color: var(--muted); font: 500 9.5px/1 var(--mono); padding: 5px 8px; }
+.sp-link:hover { color: var(--fg); border-color: var(--ac); }
+.sp-pick { margin-top: 4px; border: 1px solid var(--border-strong); background: var(--b1); max-height: 200px; overflow: auto; }
+.sp-pick button { --sc: var(--muted); display: flex; gap: 8px; width: 100%; text-align: left; background: transparent; border: 0; padding: 6px 8px; font: 500 10px/1.3 var(--mono); color: var(--body); }
+.sp-pick button.s-done { --sc: var(--ok); } .sp-pick button.s-ready { --sc: var(--ac); } .sp-pick button.s-wait { --sc: var(--warn); } .sp-pick button.s-blocked { --sc: var(--ac2); }
+.sp-pick button:hover { background: color-mix(in srgb, var(--ac) 14%, var(--b1)); color: var(--fg); }
+.sp-pick button i { font-style: normal; color: var(--sc); width: 12px; flex: none; }
+.sp-none { padding: 6px 8px; font: 400 9.5px/1.3 var(--mono); color: var(--muted); }
+.sp-delete { align-self: flex-start; background: transparent; border: 1px solid color-mix(in srgb, var(--ac2) 50%, transparent); color: var(--ac2); font: 600 9px/1 var(--display); letter-spacing: 0.14em; padding: 7px 10px; }
+.sp-delete:hover { background: color-mix(in srgb, var(--ac2) 14%, transparent); }
+
 /* ---------- light-mode flattening ---------- */
 :root[data-theme="light"] .btn.primary:hover,
 :root[data-theme="light"] .led,
