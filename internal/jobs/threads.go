@@ -235,6 +235,17 @@ func (s *Service) RenameThread(j *store.Job, t *store.Thread, name string) error
 	return s.Store.UpdateThreadFields(t.ID, map[string]any{"name": name})
 }
 
+func (s *Service) RenameOwnThread(j *store.Job, name string) error {
+	name, err := CleanThreadName(name)
+	if err != nil {
+		return err
+	}
+	if _, err := s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{"thread_name": name}); err != nil {
+		return mapStoreErr(err)
+	}
+	return nil
+}
+
 // RetryThread is Retry for a thread whose pi gave up or died.
 func (s *Service) RetryThread(j *store.Job, t *store.Thread) error {
 	if t.Closed() {

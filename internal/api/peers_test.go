@@ -128,12 +128,23 @@ func TestPeers(t *testing.T) {
 	if code := call("GET", "/api/job/threads?"+q(jobDir), "", &list); code != http.StatusOK || list.Threads[1].Name != "Topic E" {
 		t.Fatalf("the tab after the rename: %d %+v", code, list)
 	}
-	named.Error = ""
-	if code := call("POST", "/api/job/threads/rename", `{"job_dir":"`+jobDir+`","name":"Topic H"}`, &named); code != http.StatusConflict || !strings.Contains(named.Error, "first tab") {
+	if code := call("POST", "/api/job/threads/rename", `{"job_dir":"`+jobDir+`","name":"Topic H"}`, &named); code != http.StatusOK || named.Name != "Topic H" || named.PiName != "Multi · Topic H" {
 		t.Fatalf("the job's first tab names itself: %d %+v", code, named)
 	}
-	if code := call("GET", "/api/job/threads?"+q(jobDir), "", &list); code != http.StatusOK || list.Threads[0].Name != "Multi" {
-		t.Fatalf("the first tab after a refused rename: %d %+v", code, list)
+	if code := call("GET", "/api/job/threads?"+q(cidir), "", &list); code != http.StatusOK || list.Threads[0].Name != "Topic H" || list.Threads[1].Name != "Topic E" {
+		t.Fatalf("the tabs after the first tab's rename: %d %+v", code, list)
+	}
+	var board struct {
+		Jobs []struct {
+			Slug string `json:"slug"`
+			Name string `json:"name"`
+		} `json:"jobs"`
+	}
+	if code := call("GET", "/api/board", "", &board); code != http.StatusOK || len(board.Jobs) != 1 || board.Jobs[0].Name != "Multi" {
+		t.Fatalf("the card after the first tab's rename: %d %+v", code, board)
+	}
+	if code := call("POST", "/api/job/threads/rename", `{"job_dir":"`+jobDir+`","name":" "}`, nil); code != http.StatusConflict {
+		t.Fatalf("an empty name for the first tab: %d", code)
 	}
 	if code := call("POST", "/api/job/threads/rename", `{"job_dir":"`+cidir+`","name":"  "}`, nil); code != http.StatusConflict {
 		t.Fatalf("an empty name: %d", code)

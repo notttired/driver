@@ -182,6 +182,7 @@ describe("threads: shared context", () => {
     assert.match(sections.driver_threads ?? "", /git worktree/);
     assert.match(sections.driver_threads ?? "", /stop and tell the user/);
     assert.match(sections.driver_threads ?? "", /When the user tells you what this thread is for, name your tab/);
+    assert.doesNotMatch(sections.driver_threads ?? "", /first tab keeps/);
   });
 
   it("adds nothing when there is nothing new, and no rules when the job has one pi", async () => {
@@ -265,8 +266,8 @@ describe("threads: shared context", () => {
     const tool = tools.get("driver_threads")!;
     await assert.rejects(tool.execute("c1", { action: "rename" }), { message: "rename needs a name" });
     assert.deepEqual(seen, []);
-    reply = () => ({ status: 409, body: { error: 'the job\'s first tab keeps its name, "Multi"' } });
-    await assert.rejects(tool.execute("c2", { action: "rename", name: "Topic H" }), { message: 'the job\'s first tab keeps its name, "Multi"' });
+    reply = () => ({ status: 409, body: { error: "a thread needs a name" } });
+    await assert.rejects(tool.execute("c2", { action: "rename", name: " " }), { message: "a thread needs a name" });
     assert.deepEqual(sessionNames, []);
   });
 });

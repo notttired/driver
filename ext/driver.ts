@@ -87,7 +87,7 @@ const THREAD_RULES = `You are one of several threads of the same Driver job: eac
 - End every answer with what you changed: worktree and branch, files, commits, pull requests. The other threads see only your final answers, not your tool calls.
 - If anything another thread did or found contradicts your own work or plan, stop and tell the user before going on.
 - driver_threads lists the threads (list), gives any thread's full history (history) and names your own tab (rename).
-- When the user tells you what this thread is for, name your tab for it with driver_threads rename, in a few words (such as "Topic E"). Only then: never name it from your own guess or from the task you are given. The job's first tab keeps the job's name; if Driver refuses, say so.`;
+- When the user tells you what this thread is for, name your tab for it with driver_threads rename, in a few words (such as "Topic E"). Only then: never name it from your own guess or from the task you are given.`;
 
 /** Every entry id this conversation holds — those on the branch (a thread
  *  opened from another shares its entries up to the fork) and those earlier

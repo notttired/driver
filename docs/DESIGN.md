@@ -222,8 +222,9 @@ usage, accounts, self-update) is left out on purpose.
   double-click does and answers the name pi's session takes
   (`ThreadPiName`, "<job> · <thread>", as at launch), which the extension
   sets with `pi.setSessionName` so the footer follows the tab. The job's
-  own pi is refused: the first tab carries the job's name, and a
-  double-click does not rename it either.
+  own pi names the first tab: `jobs.thread_name`, the name a thread brings
+  when it takes the first tab's place (`OwnName`, `OwnPiName`), so the
+  card keeps the job's name and a fresh start clears the tab's.
 - Paste context and the ⚙ settings (2026-11-19). ⌘⇧V in a job puts the
   browser's front tab into the pane in view — URL, title and the selected
   text, else the page's text — as one bracketed paste with nothing sent

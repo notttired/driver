@@ -162,8 +162,8 @@ thread takes its place as the job's own pi; the last tab always stays. A
 double-click renames a thread. A thread also names itself once you tell it
 what it is for ("you're the thread for topic E"): its tab and pi's footer
 turn into a few words for that purpose. It never names itself on a guess or
-from the task you give it, and the first tab keeps the job's name. Each job
-opens on the tab you left it on.
+from the task you give it. The first tab names itself the same way; the
+card keeps the job's name. Each job opens on the tab you left it on.
 DONE and CANCEL close every thread. `tmux attach -t drv-<slug>-<id>-t<n>` reaches a thread's pane
 from a terminal.
 

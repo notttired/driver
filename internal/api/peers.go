@@ -116,23 +116,35 @@ func (a *API) jobThreadsRename(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if self == 0 {
-		writeFailure(w, "threads rename", jobs.Refuse("the job's first tab keeps its name, %q", jobs.OwnName(j)))
-		return
-	}
-	t, err := a.Svc.LookupThread(j, self)
+	name, piName, err := a.renameSelf(j, self, req.Name)
 	if err != nil {
 		writeFailure(w, "threads rename", err)
 		return
 	}
-	if err := a.Svc.RenameThread(j, t, req.Name); err != nil {
-		writeFailure(w, "threads rename", err)
-		return
+	log.Printf("thread rename %s %q (by its pi)", j.Slug, name)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "name": name, "pi_name": piName})
+}
+
+func (a *API) renameSelf(j *store.Job, self int64, name string) (string, string, error) {
+	if self == 0 {
+		if err := a.Svc.RenameOwnThread(j, name); err != nil {
+			return "", "", err
+		}
+		j, err := a.Svc.Store.GetJobByID(j.ID)
+		if err != nil {
+			return "", "", err
+		}
+		return jobs.OwnName(j), jobs.OwnPiName(j), nil
+	}
+	t, err := a.Svc.LookupThread(j, self)
+	if err != nil {
+		return "", "", err
+	}
+	if err := a.Svc.RenameThread(j, t, name); err != nil {
+		return "", "", err
 	}
 	if t, err = a.Svc.LookupThread(j, self); err != nil {
-		writeFailure(w, "threads rename", err)
-		return
+		return "", "", err
 	}
-	log.Printf("thread rename %s %q (by its pi)", j.Slug, t.Name)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "name": t.Name, "pi_name": jobs.ThreadPiName(j, t)})
+	return t.Name, jobs.ThreadPiName(j, t), nil
 }

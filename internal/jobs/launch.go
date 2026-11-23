@@ -27,11 +27,14 @@ func ShellQuote(s string) string {
 // pi's session name is the job's display name (the name the operator typed,
 // else the slug), so pi's footer reads as the board does.
 func (c Config) LaunchCommand(j *store.Job, piBin, jobDir, sessionFile string, prompt ...string) string {
-	name := j.DisplayName()
+	return c.launchCommand(j, OwnPiName(j), piBin, jobDir, sessionFile, prompt...)
+}
+
+func OwnPiName(j *store.Job) string {
 	if j.ThreadName != "" {
-		name += " · " + j.ThreadName
+		return j.DisplayName() + " · " + j.ThreadName
 	}
-	return c.launchCommand(j, name, piBin, jobDir, sessionFile, prompt...)
+	return j.DisplayName()
 }
 
 // ThreadLaunchCommand is LaunchCommand for one of the job's threads: the
