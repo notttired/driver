@@ -271,3 +271,136 @@ describe("threads: shared context", () => {
     assert.deepEqual(sessionNames, []);
   });
 });
+
+describe("driver_plans", () => {
+  const jobDir = join(mkdtempSync(join(tmpdir(), "driver-ext-")), "job-9");
+  let server: Server;
+  let serve: string;
+  let seen: Seen[] = [];
+  let reply: (url: string) => { status: number; body: unknown } = () => ({ status: 200, body: { ok: true } });
+
+  before(async () => {
+    server = createServer(async (req: IncomingMessage, res) => {
+      let raw = "";
+      for await (const chunk of req) raw += chunk;
+      seen.push({ method: req.method ?? "", url: req.url ?? "", body: raw ? JSON.parse(raw) : undefined });
+      const r = reply(req.url ?? "");
+      res.writeHead(r.status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(r.body));
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    serve = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  after(() => server.close());
+  beforeEach(() => {
+    seen = [];
+    reply = () => ({ status: 200, body: { ok: true } });
+  });
+
+  const tool = () => {
+    const t = load({ DRIVER_JOB_DIR: jobDir, DRIVER_SERVE: serve }).get("driver_plans");
+    assert.ok(t, "driver_plans is registered in a driver job");
+    return t;
+  };
+
+  const plan = {
+    id: 2,
+    name: "Field removal",
+    rev: 7,
+    steps: [
+      { id: 1, title: "Abacus #7711", note: "merged", state: "done", ready: false, kind: "PR", topic: "", waits_on: [] },
+      { id: 2, title: "No calls to the field", note: "", state: "done", ready: false, kind: "", topic: "", waits_on: [1] },
+      { id: 3, title: "World PR", note: "regen schema\nspec it's gone", state: "todo", ready: true, kind: "PR", topic: "World", waits_on: [2] },
+      { id: 4, title: "BFCM freeze", note: "until 1 Dec", state: "wait", ready: false, kind: "date", topic: "", waits_on: [] },
+      { id: 5, title: "Land the World PR", note: "", state: "todo", ready: false, kind: "", topic: "World", waits_on: [3, 4] },
+      { id: 6, title: "Flag paused", note: "", state: "blocked", ready: false, kind: "", topic: "", waits_on: [] },
+    ],
+  };
+  const planText = [
+    'Plan "Field removal" (id 2): 6 steps — 2 done, 1 ready, 1 waiting, 1 blocked.',
+    "",
+    "Topic World:",
+    "- 3 · ready · World PR [PR] — regen schema / spec it's gone · waits on 2",
+    "- 5 · later · Land the World PR · waits on 3, 4",
+    "",
+    "No topic:",
+    "- 1 · done · Abacus #7711 [PR] — merged",
+    "- 2 · done · No calls to the field · waits on 1",
+    "- 4 · waiting · BFCM freeze [date] — until 1 Dec",
+    "- 6 · blocked · Flag paused",
+  ].join("\n");
+
+  it("lists every plan with how its steps stand", async () => {
+    reply = () => ({
+      status: 200,
+      body: { plans: [{ id: 1, name: "Monorail sunset", rev: 3, steps: 38, done: 10, ready: 6, waiting: 6, blocked: 3 }, { id: 2, name: "Field removal", rev: 1, steps: 0, done: 0, ready: 0, waiting: 0, blocked: 0 }] },
+    });
+    const out = await tool().execute("c1", { action: "list" });
+    assert.equal(
+      text(out),
+      "Plans:\n- 1: Monorail sunset — 38 steps: 10 done, 6 ready, 6 waiting, 3 blocked\n- 2: Field removal — no steps yet",
+    );
+    assert.deepEqual(seen, [{ method: "GET", url: "/api/plans", body: undefined }]);
+  });
+
+  it("says so when there are no plans", async () => {
+    reply = () => ({ status: 200, body: { plans: [] } });
+    assert.equal(text(await tool().execute("c1", { action: "list" })), "There are no plans yet.");
+  });
+
+  it("reads any plan, by name or id, step by step under its topics", async () => {
+    reply = () => ({ status: 200, body: plan });
+    assert.equal(text(await tool().execute("c1", { action: "get", plan: "Field removal" })), planText);
+    await tool().execute("c2", { action: "get", plan: 2 });
+    assert.deepEqual(seen.map((s) => s.url), [`/api/plan?plan=${encodeURIComponent("Field removal")}`, "/api/plan?plan=2"]);
+  });
+
+  it("makes, renames and removes plans", async () => {
+    reply = () => ({ status: 200, body: { ok: true, plan: { id: 4, name: "Rollout", rev: 1 } } });
+    assert.equal(text(await tool().execute("c1", { action: "create", name: "Rollout" })), 'Made plan "Rollout" (id 4).');
+    reply = () => ({ status: 200, body: { ok: true } });
+    assert.equal(text(await tool().execute("c2", { action: "rename", plan: 4, name: "Rollout v2" })), 'Renamed the plan to "Rollout v2".');
+    assert.equal(text(await tool().execute("c3", { action: "delete", plan: "Rollout v2" })), "Removed the plan and its steps.");
+    assert.deepEqual(seen, [
+      { method: "POST", url: "/api/plans", body: { op: "add", name: "Rollout" } },
+      { method: "POST", url: "/api/plans", body: { op: "rename", plan: 4, name: "Rollout v2" } },
+      { method: "POST", url: "/api/plans", body: { op: "remove", plan: "Rollout v2" } },
+    ]);
+  });
+
+  it("edits a plan in one batch and shows it as it now stands", async () => {
+    reply = () => ({ status: 200, body: { ok: true, plan, added: { tell: 6 } } });
+    const ops = [
+      { op: "add", ref: "tell", title: "Tell Logan", waits_on: [2] },
+      { op: "update", step: 3, state: "todo" },
+    ];
+    const out = await tool().execute("c1", { action: "edit", plan: "Field removal", ops });
+    assert.equal(text(out), `Made 2 changes. New steps: tell = 6.\n\n${planText}`);
+    assert.deepEqual(seen, [{ method: "POST", url: "/api/plan/ops", body: { plan: "Field removal", ops } }]);
+  });
+
+  it("fails with the daemon's reason, having changed nothing", async () => {
+    reply = () => ({ status: 409, body: { error: "op 2: step 1 waiting on 5 would make a loop" } });
+    await assert.rejects(tool().execute("c1", { action: "edit", plan: 2, ops: [{ op: "link", step: 1, waits_on: [5] }] }), {
+      message: "op 2: step 1 waiting on 5 would make a loop",
+    });
+  });
+
+  it("wants what each action needs", async () => {
+    await assert.rejects(tool().execute("c1", { action: "get" }), { message: "get needs a plan (its name or id)" });
+    await assert.rejects(tool().execute("c1", { action: "create" }), { message: "create needs a name" });
+    await assert.rejects(tool().execute("c1", { action: "rename", plan: 1 }), { message: "rename needs a name" });
+    await assert.rejects(tool().execute("c1", { action: "edit", plan: 1 }), { message: "edit needs ops" });
+    await assert.rejects(tool().execute("c1", { action: "edit", plan: 1, ops: [] }), { message: "edit needs ops" });
+    assert.deepEqual(seen, []);
+  });
+
+  it("is for every pi on the board, and only when the user asks", () => {
+    const t = load({ DRIVER_JOB_DIR: jobDir, DRIVER_SERVE: serve }).get("driver_plans") as unknown as { promptGuidelines: string[]; description: string };
+    assert.match(t.promptGuidelines.join("\n"), /only when the user asks/);
+    assert.match(t.promptGuidelines.join("\n"), /any plan/);
+    assert.match(t.description, /not tied to this job/);
+    assert.equal(load({ DRIVER_JOB_DIR: undefined, DRIVER_SERVE: serve }).has("driver_plans"), false);
+    assert.equal(load({ DRIVER_JOB_DIR: jobDir, DRIVER_SERVE: undefined }).has("driver_plans"), false);
+  });
+});
