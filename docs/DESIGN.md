@@ -276,7 +276,10 @@ usage, accounts, self-update) is left out on purpose.
   building a forty-step plan from an issue never leaves half of one. A loop
   is refused. Deleting a step hands its links on — each step that waited on
   it now waits on what it waited on, unless it already does through another
-  — so taking a step out of a chain never breaks the chain.
+  — so taking a step out of a chain never breaks the chain. Every pi Driver
+  starts — each job's own and each thread's — has the `driver_plans` tool
+  over every plan (list, read, make, rename, remove, edit in a batch), to
+  use when the operator asks; the tool sends nothing that names its job.
 
 ## Layout
 
@@ -294,7 +297,8 @@ internal/util/        env file loader, small helpers
 web/embed.go          //go:embed all:_ui/dist
 web/serve.go          static files + /api mux on 127.0.0.1:<port>
 web/_ui/              Vite + React + TypeScript SPA (kraken's board, trimmed) + xterm.js + react-markdown
-ext/driver.ts         the pi extension (status.json writer, the driver_notes tool); embedded
+ext/driver.ts         the pi extension (status.json writer, the driver_notes and driver_plans
+                      tools, the threads' shared context); embedded
                       in the binary and written to ~/.driver/ext/driver.ts on every serve start;
                       ext/driver.test.ts runs under `node --test`
 macos/                Driver.app: DriverApp.swift, ServerConfig.swift, project.yml,
@@ -541,7 +545,14 @@ session branch holds no user message yet — a fresh job at its prompt — else 
 (dialog) / `ui_prompt_end`, `agent_settled` (idle when `ctx.isIdle()`, aborted when
 `e.aborted`), `session_shutdown` (exited). With `DRIVER_SERVE` set it also
 registers `driver_notes` (`action` read | append | replace, `text`), which
-calls `/api/job/notes` with `job_dir` (docs/API.md), and the threads' shared
+calls `/api/job/notes` with `job_dir` (docs/API.md); `driver_plans`
+(`action` list | get | create | rename | delete | edit, `plan`, `name`,
+`ops`) over `/api/plans`, `/api/plan` and `/api/plan/ops`, which sends no
+`job_dir` at all — any plan is any pi's to read and change, when the
+operator asks (its guidelines say so, as `driver_notes`'s do: a prompt
+rule, not a lock), and `get` and every `edit` answer with the plan as text,
+one line per step under its topic (`- <id> · <ready|later|waiting|blocked|done>
+· <title> [kind] — <note> · waits on <ids>`); and the threads' shared
 context ("Threads: shared context" above): `before_agent_start` and
 `turn_end` post `/api/job/threads/update` with `job_dir` and the ids the
 branch holds, inject the answer as a `driver-peers` custom message and, when

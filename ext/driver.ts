@@ -1,10 +1,10 @@
 // ext/driver.ts — the pi extension every driver job loads with `-e`. It tells
 // the daemon what pi is doing by writing <DRIVER_JOB_DIR>/status.json, which
 // the tick loop reads (docs/DESIGN.md "State derivation"), gives pi the
-// driver_notes tool over the operator's notes, and — when the job has more
-// than one pi (threads) — brings each of the user's messages the context of
-// what the other threads said, plus the driver_threads tool over their
-// histories. A no-op unless DRIVER_JOB_DIR is set, so a pi started by hand
+// driver_notes tool over the operator's notes and the driver_plans tool over
+// every plan (docs/DESIGN.md "Plans"), and — when the job has more than one
+// pi (threads) — brings each of the user's messages the context of what the
+// other threads said, plus the driver_threads tool over their histories. A no-op unless DRIVER_JOB_DIR is set, so a pi started by hand
 // with this file loaded does nothing. Nothing long-lived here: no timers, no
 // sockets — one file write per lifecycle event, one daemon call per message
 // of the user's, and never a throw into pi outside a tool's own result.
@@ -63,6 +63,136 @@ const registerNotesTool = (pi: ExtensionAPI, jobDir: string, serve: string) => {
       if (typeof params.text !== "string") throw new Error(`${params.action} needs text`);
       await save(params.action, params.text, signal);
       return reply(params.action === "append" ? "Added to the notes." : "The notes now read as given.");
+    },
+  });
+};
+
+// ---------------------------------------------------------------- plans
+
+type PlanStep = { id: number; title: string; note: string; state: string; ready: boolean; kind: string; topic: string; waits_on: number[] };
+type Plan = { id: number; name: string; rev: number; steps: PlanStep[] };
+type PlanSummary = { id: number; name: string; steps: number; done: number; ready: number; waiting: number; blocked: number };
+type PlansParams = { action: "list" | "get" | "create" | "rename" | "delete" | "edit"; plan?: string | number; name?: string; ops?: unknown[] };
+
+const stepWord = (s: PlanStep) => (s.ready ? "ready" : s.state === "todo" ? "later" : s.state === "wait" ? "waiting" : s.state);
+
+const counts = (p: Pick<PlanSummary, "done" | "ready" | "waiting" | "blocked">) =>
+  `${p.done} done, ${p.ready} ready, ${p.waiting} waiting, ${p.blocked} blocked`;
+
+/** A plan as pi reads it: one line per step, under its topic, topics in the
+ *  order they first appear and the steps without one last. */
+const planText = (p: Plan): string => {
+  const tally = { done: 0, ready: 0, waiting: 0, blocked: 0 };
+  for (const s of p.steps) {
+    if (s.ready) tally.ready++;
+    else if (s.state === "done") tally.done++;
+    else if (s.state === "wait") tally.waiting++;
+    else if (s.state === "blocked") tally.blocked++;
+  }
+  const lines = [`Plan "${p.name}" (id ${p.id}): ${p.steps.length} steps — ${counts(tally)}.`];
+  const topics = new Map<string, PlanStep[]>();
+  for (const s of p.steps) topics.set(s.topic, [...(topics.get(s.topic) ?? []), s]);
+  const order = [...topics.keys()].filter((t) => t !== "");
+  if (topics.has("")) order.push("");
+  for (const t of order) {
+    lines.push("", t ? `Topic ${t}:` : "No topic:");
+    for (const s of topics.get(t)!) {
+      const kind = s.kind ? ` [${s.kind}]` : "";
+      const note = s.note ? ` — ${s.note.split(/\r?\n/).filter(Boolean).join(" / ")}` : "";
+      const waits = s.waits_on.length ? ` · waits on ${s.waits_on.join(", ")}` : "";
+      lines.push(`- ${s.id} · ${stepWord(s)} · ${s.title}${kind}${note}${waits}`);
+    }
+  }
+  return lines.join("\n");
+};
+
+const registerPlansTool = (pi: ExtensionAPI, serve: string) => {
+  const post = <T,>(path: string, body: unknown, signal?: AbortSignal) =>
+    daemonCall<T>(serve, path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, signal);
+  const reply = (text: string) => ({ content: [{ type: "text" as const, text }], details: undefined });
+  const step = { description: "a step: its id (a number), or the ref an earlier add in the same edit gave it" };
+
+  pi.registerTool({
+    name: "driver_plans",
+    label: "Driver plans",
+    description:
+      "Read and change the user's plans in Driver (the PLANS tab): graphs of steps for long pieces of work, where a step may wait on others. " +
+      "Plans are the user's and not tied to this job: any plan can be read or changed from here. " +
+      "action list names every plan; get reads one (plan: its name or id) step by step; create makes one (name); rename (plan, name); delete removes one with its steps; " +
+      "edit changes steps in one batch that is made whole or not at all (plan, ops). " +
+      "ops: {op:add, ref?, title, note?, state?, kind?, topic?, waits_on?, unblocks?} · {op:update, step, title?, note?, state?, kind?, topic?} · " +
+      "{op:link|unlink, step, waits_on} · {op:delete, step} (the steps after it then wait on what it waited on). " +
+      "state is todo, wait, blocked or done; a todo step whose every prerequisite is done reads as ready. Steps with the same topic are drawn together. " +
+      "Only when the user asks.",
+    promptSnippet: "Read or change the user's Driver plans (step graphs in the PLANS tab), any plan, only when they ask",
+    promptGuidelines: [
+      "Use driver_plans only when the user asks you to read, make or change a plan in Driver; never on your own initiative.",
+      "Plans are not tied to this job: when the user asks, you may read or change any plan, whichever job it was made from.",
+      "Read a plan with driver_plans get before you change it, name steps by the ids it shows, and make all the changes for one request in a single edit.",
+      "After an edit, tell the user what you changed.",
+    ],
+    parameters: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list", "get", "create", "rename", "delete", "edit"] },
+        plan: { description: "get, rename, delete, edit: the plan's name or id" },
+        name: { type: "string", description: "create, rename: the plan's name" },
+        ops: {
+          type: "array",
+          description: "edit: the changes, applied in order, all or none",
+          items: {
+            type: "object",
+            properties: {
+              op: { type: "string", enum: ["add", "update", "link", "unlink", "delete"] },
+              ref: { type: "string", description: "add: a name for the new step that later ops in this edit can use, such as \"tell\"" },
+              step: { ...step, description: "update, link, unlink, delete: " + step.description },
+              title: { type: "string" },
+              note: { type: "string", description: "a short line, such as \"asked 18 Nov\"" },
+              state: { type: "string", enum: ["todo", "wait", "blocked", "done"] },
+              kind: { type: "string", description: "optional: PR, ask, flag, date…" },
+              topic: { type: "string", description: "optional: steps with the same topic are drawn together" },
+              waits_on: { type: "array", items: step, description: "add, link, unlink: the steps it waits on" },
+              unblocks: { type: "array", items: step, description: "add: steps that will wait on the new one" },
+            },
+            required: ["op"],
+          },
+        },
+      },
+      required: ["action"],
+      additionalProperties: false,
+    },
+    async execute(_toolCallId: string, params: PlansParams, signal?: AbortSignal) {
+      const { action } = params;
+      if (action === "list") {
+        const { plans } = await daemonCall<{ plans: PlanSummary[] }>(serve, "/api/plans", {}, signal);
+        if (!plans.length) return reply("There are no plans yet.");
+        const rows = plans.map((p) => `- ${p.id}: ${p.name} — ${p.steps ? `${p.steps} steps: ${counts(p)}` : "no steps yet"}`);
+        return reply(["Plans:", ...rows].join("\n"));
+      }
+      if (action === "create") {
+        if (typeof params.name !== "string") throw new Error("create needs a name");
+        const { plan } = await post<{ plan: { id: number; name: string } }>("/api/plans", { op: "add", name: params.name }, signal);
+        return reply(`Made plan "${plan.name}" (id ${plan.id}).`);
+      }
+      if (params.plan === undefined || params.plan === "") throw new Error(`${action} needs a plan (its name or id)`);
+      if (action === "get") {
+        const p = await daemonCall<Plan>(serve, `/api/plan?plan=${encodeURIComponent(String(params.plan))}`, {}, signal);
+        return reply(planText(p));
+      }
+      if (action === "rename") {
+        if (typeof params.name !== "string") throw new Error("rename needs a name");
+        await post("/api/plans", { op: "rename", plan: params.plan, name: params.name }, signal);
+        return reply(`Renamed the plan to "${params.name}".`);
+      }
+      if (action === "delete") {
+        await post("/api/plans", { op: "remove", plan: params.plan }, signal);
+        return reply("Removed the plan and its steps.");
+      }
+      if (!Array.isArray(params.ops) || params.ops.length === 0) throw new Error("edit needs ops");
+      const { plan, added } = await post<{ plan: Plan; added: Record<string, number> }>("/api/plan/ops", { plan: params.plan, ops: params.ops }, signal);
+      const named = Object.entries(added ?? {}).map(([ref, id]) => `${ref} = ${id}`);
+      const head = `Made ${params.ops.length} change${params.ops.length === 1 ? "" : "s"}.${named.length ? ` New steps: ${named.join(", ")}.` : ""}`;
+      return reply(`${head}\n\n${planText(plan)}`);
     },
   });
 };
@@ -202,6 +332,7 @@ export default function (pi: ExtensionAPI) {
   const serve = process.env.DRIVER_SERVE;
   if (serve) {
     registerNotesTool(pi, dir, serve);
+    registerPlansTool(pi, serve);
     registerThreads(pi, dir, serve);
   }
 
