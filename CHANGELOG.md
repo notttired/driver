@@ -6,6 +6,14 @@ Each entry names its commit; the schema version it moved `driver.db` to is
 given where there was one. [docs/DESIGN.md](docs/DESIGN.md) has the reasoning
 behind each, [docs/API.md](docs/API.md) the wire contract.
 
+## 2026-11-25
+
+- **🔍 REVIEW asks for an adversarial review by a second agent** (`5ab58de`).
+  Before WATCH on a working or blocked job. The pi of the tab you are on
+  spawns the `ae-deep-reviewer` subagent on the pull request or the diff
+  and reports its findings with its own view on each, changing no code
+  until you say. No column: the card reads working meanwhile.
+
 ## 2026-11-23
 
 - **Each tab rings when its pi stops and you haven't looked**
