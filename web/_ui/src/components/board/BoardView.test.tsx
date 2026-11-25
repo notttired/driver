@@ -654,6 +654,59 @@ describe("BoardView (DOM smoke test)", () => {
     expect(within(overlay).queryByRole("button", { name: /WATCH/ })).toBeNull();
   });
 
+  it("has REVIEW before WATCH for a job with a pi up, and asks the tab in view for the review", async () => {
+    const board = fixtureBoard();
+    const NOW2 = Math.floor(Date.now() / 1000);
+    board.jobs.push(
+      makeJob({
+        slug: "threaded",
+        state: "blocked",
+        live: true,
+        pi: { state: "idle", reason: "idle", ts: NOW2 },
+        threads: [
+          { id: 0, name: "threaded", live: true, pi: { state: "idle", reason: "idle", ts: NOW2 } },
+          { id: 5, name: "CI", live: true, pi: { state: "idle", reason: "idle", ts: NOW2 } },
+          { id: 7, name: "Docs", live: false, pi: { state: "exited", reason: "exited", ts: NOW2 } },
+        ],
+      }),
+    );
+    installFetch(board);
+    render(<App />);
+    const overlay = document.getElementById("job-overlay")!;
+    const review = () => within(overlay).getByRole("button", { name: /REVIEW/ });
+
+    fireEvent.click((await screen.findByText("threaded")).closest(".card")!);
+    await within(overlay).findByRole("button", { name: /REVIEW/ });
+    const buttons = within(overlay).getAllByRole("button").map((b) => b.textContent ?? "");
+    expect(buttons.indexOf(buttons.find((t) => /REVIEW/.test(t))!)).toBe(buttons.indexOf(buttons.find((t) => /WATCH/.test(t))!) - 1);
+    fireEvent.click(review());
+    await waitFor(() => expect(bodies).toContainEqual({ path: "/api/review", slug: "threaded", thread: 0 }));
+    await waitFor(() => expect(review()).not.toBeDisabled());
+
+    fireEvent.click(within(overlay).getByRole("tab", { name: /CI/ }));
+    fireEvent.click(review());
+    await waitFor(() => expect(bodies).toContainEqual({ path: "/api/review", slug: "threaded", thread: 5 }));
+    await waitFor(() => expect(review()).not.toBeDisabled());
+
+    // a tab whose pi is gone has nobody to ask
+    fireEvent.click(within(overlay).getByRole("tab", { name: /Docs/ }));
+    expect(review()).toBeDisabled();
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+
+    fireEvent.click((await screen.findByText("rate-limits")).closest(".card")!);
+    await within(overlay).findByRole("button", { name: /REACTIVATE/ });
+    expect(within(overlay).queryByRole("button", { name: /REVIEW/ })).toBeNull();
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+
+    fireEvent.click((await screen.findByText("flaky-ci")).closest(".card")!);
+    await within(overlay).findByRole("button", { name: /START/ });
+    expect(within(overlay).queryByRole("button", { name: /REVIEW/ })).toBeNull();
+  });
+
   it("edits the watch prompt from the WATCHING head, and resets it to the default", async () => {
     render(<App />);
     const watching = await findColumn("watching");

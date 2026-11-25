@@ -317,6 +317,22 @@ func (s *Service) SetWatchPrompt(text string) error {
 	return s.Store.SetKV(watchPromptKey, text)
 }
 
+func (s *Service) Review(j *store.Job, t *store.Thread) error {
+	sess := SessionName(j)
+	who := "job " + j.Slug
+	if t != nil {
+		sess = ThreadSessionName(j, t)
+		who = "thread " + strconv.Quote(t.Name)
+	}
+	if !s.Tmux.Available() || !s.Tmux.HasSession(sess) || s.Tmux.PaneDead(sess) {
+		return Refuse("%s has no live pane", who)
+	}
+	if err := s.Tmux.Paste(sess, ReviewPrompt); err != nil {
+		return Refuse("%v", err)
+	}
+	return nil
+}
+
 // resumeFile is the session file pi resumes: the one it was last writing —
 // the launch's session.jsonl, or the one it moved to (a /fork or /new inside
 // pi, followed by the tick).

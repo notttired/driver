@@ -41,6 +41,7 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/archive", a.action("archive", func(j jobReq) error { return a.Svc.Archive(j.job) }))
 	mux.HandleFunc("/api/watch", a.action("watch", func(j jobReq) error { return a.Svc.Watch(j.job) }))
 	mux.HandleFunc("/api/watch-prompt", a.watchPrompt)
+	mux.HandleFunc("/api/review", a.jobReview)
 	mux.HandleFunc("/api/unarchive", a.archivedAction("unarchive", func(j jobReq) error { return a.Svc.Unarchive(j.job) }))
 	mux.HandleFunc("/api/delete", a.archivedAction("delete", func(j jobReq) error { return a.Svc.Delete(j.job) }))
 	mux.HandleFunc("/api/reorder", a.reorder)

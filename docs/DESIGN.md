@@ -238,6 +238,20 @@ usage, accounts, self-update) is left out on purpose.
   ring too; a tab that is not in view keeps its ring, so the card keeps
   ringing until every tab that rang has been looked at. A thread taking
   the first tab's place brings its ring.
+- Review (2026-11-25). REVIEW, before WATCH in the overlay of a working or
+  blocked job, asks the pi of the tab in view for an adversarial review of
+  its own work by a second agent: `/api/review` pastes `ReviewPrompt` into
+  that pane, as WATCH pastes its prompt, and that is all. No column and no
+  stored state: the tick moves the card to working while pi is on it and
+  back when it reports. The prompt names the `ae-deep-reviewer` subagent
+  (the operator's own, in `~/.pi/agent/agents/`, run through pi-subagents)
+  and is the operator's go-ahead to delegate; it asks for the findings
+  with pi's view on each and no code changes, and for pi to stop rather
+  than review in the agent's place when the agent cannot be spawned. The
+  agent is not shipped with driver: every pi a job runs loads the
+  operator's pi setup. The prompt is fixed, not editable like WATCH's,
+  since REVIEW has no column head to edit it from. The button is disabled
+  on a tab whose pi is gone.
 - Paste context and the ⚙ settings (2026-11-19). ⌘⇧V in a job puts the
   browser's front tab into the pane in view — URL, title and the selected
   text, else the page's text — as one bracketed paste with nothing sent

@@ -151,6 +151,7 @@ export const retryJob = slugAction("/api/retry", { timeoutMs: SUBMIT_TIMEOUT_MS 
 export const archiveJob = slugAction("/api/archive");
 /** WATCH: pi is told to watch over the shipped work (the watch prompt) and the job parks in WATCHING; relaunches pi when it is gone */
 export const watchJob = slugAction("/api/watch", { timeoutMs: SUBMIT_TIMEOUT_MS });
+export const reviewJob = (slug: string, thread: number) => postJSON<OkResponse>("/api/review", { slug, thread });
 export const unarchiveJob = slugAction("/api/unarchive");
 export const deleteJob = slugAction("/api/delete");
 /** ⌘-click on a card (or the overlay's dir): open the job's directory in the editor — VS Code unless DRIVER_EDITOR says otherwise. */

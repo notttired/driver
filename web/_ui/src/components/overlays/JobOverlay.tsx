@@ -14,6 +14,7 @@ import {
   reactivateJob,
   retryJob,
   retryThread,
+  reviewJob,
   seenJob,
   setJobColor,
   stopJob,
@@ -372,6 +373,10 @@ function JobPanel({
           b("stop", "■ STOP", () => (cur.id ? stopThread(slug, cur.id) : stopJob(slug)), {
             disabled: !live,
             title: "send Escape to this tab's pane — interrupt what its pi is doing",
+          }),
+          b("review", "🔍 REVIEW", () => reviewJob(slug, cur.id), {
+            disabled: !live,
+            title: "ask this tab's pi for an adversarial review of its work from a second agent (ae-deep-reviewer); it reports the findings and changes nothing until you say",
           }),
           ...watch,
           b("done", "✓ DONE", () => doneJob(slug), { title: "kill the session, mark done" }),

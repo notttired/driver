@@ -144,6 +144,16 @@ A done job's pi is relaunched on its conversation with the prompt. The prompt
 is yours to edit: `✎` in the WATCHING head opens it (RESET brings the default
 back). Cards cannot be dragged into WATCHING; dragging one out just moves it,
 pi carries on.
+
+**Reviewing.** **🔍 REVIEW** (before WATCH, on a working or blocked job)
+asks the pi of the tab you are on for an adversarial review of its work: it
+spawns a second agent, `ae-deep-reviewer`, on the pull request or the diff,
+and reports the findings with its own view on each, changing no code until
+you say which to fix. The card has no column for it: it reads working while
+pi is on it. It needs the pi-subagents package and an agent named
+`ae-deep-reviewer` in `~/.pi/agent/agents/`; without them pi says so and
+stops.
+
 **Threads.** The tabs above the pane are the job's pis: the job's own first,
 then every thread you opened. `+` opens a thread — another pi with the same
 tools, in the same directory, starting from a copy of the conversation in the

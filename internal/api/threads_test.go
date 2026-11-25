@@ -197,3 +197,107 @@ func TestThreads(t *testing.T) {
 		t.Fatalf("a closed thread's record is still readable: %d %+v", code, conv)
 	}
 }
+
+func TestReview(t *testing.T) {
+	tmux := jobs.NewTmux()
+	if !tmux.Available() {
+		t.Skip("tmux not on PATH")
+	}
+	sock, err := os.MkdirTemp("", "drvtmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(sock) })
+	t.Setenv("TMUX_TMPDIR", sock)
+	t.Setenv("TMUX", "")
+	t.Cleanup(func() {
+		for _, s := range []string{"drv-r-1", "drv-r-1-t1"} {
+			tmux.KillSession(s)
+		}
+	})
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	home, work := t.TempDir(), t.TempDir()
+	fakePi := filepath.Join(t.TempDir(), "pi")
+	os.WriteFile(fakePi, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$DRIVER_JOB_DIR/argv\"\ncat > \"$DRIVER_JOB_DIR/typed\"\n"), 0o755)
+	svc := &jobs.Service{Store: st, Cfg: jobs.Config{Home: home, Port: 7781, PiBin: fakePi}, Tmux: tmux}
+	a := New(svc, jobs.NewDaemon(svc), "test")
+	mux := http.NewServeMux()
+	a.Register(mux)
+	call := func(method, body string) int {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(method, "/api/review", strings.NewReader(body)))
+		return rec.Code
+	}
+	read := func(dir, name string) string {
+		b, _ := os.ReadFile(filepath.Join(dir, name))
+		return string(b)
+	}
+	waitFor := func(what string, ok func() bool) {
+		t.Helper()
+		for deadline := time.Now().Add(5 * time.Second); !ok(); time.Sleep(20 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %s", what)
+			}
+		}
+	}
+	asked := func(dir string) int { return strings.Count(read(dir, "typed"), "Spawn the ae-deep-reviewer subagent") }
+	end := jobs.ReviewPrompt[strings.LastIndex(jobs.ReviewPrompt, "\n")+1:]
+
+	j, err := svc.Create("r", "", work, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := call("POST", `{"slug":"r"}`); code != http.StatusConflict {
+		t.Fatalf("a review from a job with no pi: %d", code)
+	}
+	if err := svc.Submit(j); err != nil {
+		t.Fatal(err)
+	}
+	j, _ = st.GetJobBySlug("r")
+	jobDir := filepath.Dir(j.PiSession)
+	waitFor("pi to start", func() bool { return read(jobDir, "argv") != "" })
+
+	if code := call("POST", `{"slug":"r"}`); code != http.StatusOK {
+		t.Fatalf("review: %d", code)
+	}
+	waitFor("the review prompt sent in the job's pane", func() bool { return strings.Contains(read(jobDir, "typed"), end) })
+	if asked(jobDir) != 1 {
+		t.Fatalf("the job's pi is asked once, for the ae-deep-reviewer subagent:\n%s", read(jobDir, "typed"))
+	}
+
+	th, err := svc.OpenThread(j, 0, "CI")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tdir := filepath.Dir(th.PiSession)
+	waitFor("the thread's pi to start", func() bool { return read(tdir, "argv") != "" })
+	if code := call("POST", `{"slug":"r","thread":`+jsonInt(th.ID)+`}`); code != http.StatusOK {
+		t.Fatalf("review on a thread: %d", code)
+	}
+	waitFor("the review prompt sent in the thread's pane", func() bool { return strings.Contains(read(tdir, "typed"), end) })
+	if asked(tdir) != 1 || asked(jobDir) != 1 {
+		t.Fatalf("only the tab asked gets the prompt: thread %d, job %d", asked(tdir), asked(jobDir))
+	}
+
+	if code := call("POST", `{"slug":"r","thread":99}`); code != http.StatusNotFound {
+		t.Fatalf("a review on an unknown thread: %d", code)
+	}
+	if code := call("POST", `{"slug":"nope"}`); code != http.StatusNotFound {
+		t.Fatalf("a review on an unknown job: %d", code)
+	}
+	if code := call("GET", ""); code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET review: %d", code)
+	}
+	if err := svc.CloseThread(j, th); err != nil {
+		t.Fatal(err)
+	}
+	if code := call("POST", `{"slug":"r","thread":`+jsonInt(th.ID)+`}`); code != http.StatusConflict {
+		t.Fatalf("a review on a closed thread: %d", code)
+	}
+}

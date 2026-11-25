@@ -82,6 +82,14 @@ Use the tools you have (gh, logs, dashboards) and do not change code unless I as
 // MaxWatchPromptLen bounds the watch prompt (in runes).
 const MaxWatchPromptLen = 8000
 
+const ReviewPrompt = `Get an adversarial review of your work on this job from a second agent, then tell me what it found.
+
+1. What to review: the pull request for this work if there is one, else the diff on your branch or worktree against its base.
+2. Spawn the ae-deep-reviewer subagent on it; this message is my go-ahead to delegate. Give it the directory to work in, the pull request or the base to diff against, and what the change is meant to do. Ask it to look for what is wrong, not to confirm that the work is right.
+3. Report its findings grouped as it gave them, with your own view on each: whether you agree, and why not when you don't.
+
+Do not change any code until I say which findings to fix. If ae-deep-reviewer cannot be spawned, say so and stop; do not review the work yourself in its place.`
+
 // Opened reports whether the job has (or had) a pi session: every stored
 // state but ” — the overlay shows the pane rather than the launch form.
 func Opened(j *store.Job) bool { return j.State != "" }
