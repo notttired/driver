@@ -135,61 +135,35 @@ func (a *API) jobThread(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-func (a *API) jobSeen(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Slug   string `json:"slug"`
-		Thread int64  `json:"thread"`
-	}
-	if !decodePost(w, r, &req) {
-		return
-	}
-	j, err := a.Svc.Lookup(strings.TrimSpace(req.Slug))
-	if err != nil {
-		writeFailure(w, "seen", err)
-		return
-	}
-	var t *store.Thread
-	if req.Thread != 0 {
-		if t, err = a.Svc.LookupThread(j, req.Thread); err != nil {
-			writeThreadFailure(w, err)
+func (a *API) tabAction(name string, f func(*store.Job, *store.Thread) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Slug   string `json:"slug"`
+			Thread int64  `json:"thread"`
+		}
+		if !decodePost(w, r, &req) {
 			return
 		}
-	}
-	if err := a.Svc.MarkSeen(j, t); err != nil {
-		writeFailure(w, "seen", err)
-		return
-	}
-	log.Printf("seen %s (tab %d)", j.Slug, req.Thread)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-func (a *API) jobReview(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Slug   string `json:"slug"`
-		Thread int64  `json:"thread"`
-	}
-	if !decodePost(w, r, &req) {
-		return
-	}
-	j, err := a.Svc.Lookup(strings.TrimSpace(req.Slug))
-	if err != nil {
-		writeFailure(w, "review", err)
-		return
-	}
-	var t *store.Thread
-	if req.Thread != 0 {
-		if t, err = a.Svc.LookupThread(j, req.Thread); err != nil {
-			writeThreadFailure(w, err)
+		j, err := a.Svc.Lookup(strings.TrimSpace(req.Slug))
+		if err != nil {
+			writeFailure(w, name, err)
 			return
 		}
+		var t *store.Thread
+		if req.Thread != 0 {
+			if t, err = a.Svc.LookupThread(j, req.Thread); err != nil {
+				writeThreadFailure(w, err)
+				return
+			}
+		}
+		if err := f(j, t); err != nil {
+			log.Printf("%s %s (tab %d): refused: %v", name, j.Slug, req.Thread, err)
+			writeFailure(w, name, err)
+			return
+		}
+		log.Printf("%s %s (tab %d)", name, j.Slug, req.Thread)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	}
-	if err := a.Svc.Review(j, t); err != nil {
-		log.Printf("review %s (tab %d): refused: %v", j.Slug, req.Thread, err)
-		writeFailure(w, "review", err)
-		return
-	}
-	log.Printf("review %s (tab %d)", j.Slug, req.Thread)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func writeThreadFailure(w http.ResponseWriter, err error) {

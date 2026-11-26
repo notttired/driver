@@ -318,6 +318,10 @@ func (s *Service) SetWatchPrompt(text string) error {
 }
 
 func (s *Service) Review(j *store.Job, t *store.Thread) error {
+	return s.ask(j, t, ReviewPrompt)
+}
+
+func (s *Service) ask(j *store.Job, t *store.Thread, prompt string) error {
 	sess := SessionName(j)
 	who := "job " + j.Slug
 	if t != nil {
@@ -327,7 +331,7 @@ func (s *Service) Review(j *store.Job, t *store.Thread) error {
 	if !s.Tmux.Available() || !s.Tmux.HasSession(sess) || s.Tmux.PaneDead(sess) {
 		return Refuse("%s has no live pane", who)
 	}
-	if err := s.Tmux.Paste(sess, ReviewPrompt); err != nil {
+	if err := s.Tmux.Paste(sess, prompt); err != nil {
 		return Refuse("%v", err)
 	}
 	return nil
