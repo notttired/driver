@@ -18,7 +18,7 @@ export interface PaletteItem {
   /** the slug when the title is a name, and the directory's last piece */
   subtitle: string;
   token: StatusToken;
-  /** the column the board shows it in: a state, WATCHING, a lane's name, ARCHIVED */
+  /** the column the board shows it in: a state, a lane's name, ARCHIVED */
   column: string;
   /** where a match outside the title came from (a link, a dir, a model…) */
   why?: string;

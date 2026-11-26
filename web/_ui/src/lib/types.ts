@@ -70,8 +70,6 @@ export interface WebJob {
   retryable?: boolean;
   /** the lane (a column of your own) the board shows it in; absent = the column its state names */
   lane?: number;
-  /** its pi is watching over the shipped work: the board shows it in WATCHING */
-  watching?: boolean;
   /** the job's tabs: its own pi (id 0, named as the job) first, then every open thread */
   threads?: WebThread[];
 }
@@ -111,10 +109,8 @@ export interface WebBoard {
   jobs: WebJob[];
   /** your own columns */
   lanes: WebLane[];
-  /** every column's key — draft, working, blocked, done, watching and lane:<id> — in display order */
+  /** every column's key — draft, working, blocked, done and lane:<id> — in display order */
   columns: string[];
-  /** what WATCH says to pi */
-  watch_prompt: string;
   contract: number;
   operator: string;
   default_dir: string;

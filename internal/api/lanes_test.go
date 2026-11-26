@@ -214,36 +214,36 @@ func TestColumns(t *testing.T) {
 		return strings.Join(b.Columns, " ")
 	}
 
-	if got := columns(); got != "draft working blocked done watching" {
+	if got := columns(); got != "draft working blocked done" {
 		t.Fatalf("fresh board: %q", got)
 	}
 	_, out := post("/api/lanes", `{"op":"add","name":"later"}`)
 	later := jsonInt(int64(out["lane"].(map[string]any)["id"].(float64)))
 	_, out = post("/api/lanes", `{"op":"add","name":"review"}`)
 	review := jsonInt(int64(out["lane"].(map[string]any)["id"].(float64)))
-	if got := columns(); got != "draft working blocked done watching lane:"+later+" lane:"+review {
+	if got := columns(); got != "draft working blocked done lane:"+later+" lane:"+review {
 		t.Fatalf("new lanes go last: %q", got)
 	}
 
 	if code, out := post("/api/columns", `{"columns":["lane:`+later+`","watching","draft","done","nope","lane:99","working"]}`); code != http.StatusOK {
 		t.Fatalf("reorder columns: %d %v", code, out)
 	}
-	if got := columns(); got != "lane:"+later+" watching draft done working blocked lane:"+review {
+	if got := columns(); got != "lane:"+later+" draft done working blocked lane:"+review {
 		t.Fatalf("reordered (unknown dropped, missing appended): %q", got)
 	}
 	_, out = post("/api/lanes", `{"op":"add","name":"someday"}`)
 	someday := jsonInt(int64(out["lane"].(map[string]any)["id"].(float64)))
-	if got := columns(); got != "lane:"+later+" watching draft done working blocked lane:"+review+" lane:"+someday {
+	if got := columns(); got != "lane:"+later+" draft done working blocked lane:"+review+" lane:"+someday {
 		t.Fatalf("a lane added after a reorder goes last: %q", got)
 	}
 	if code, out := post("/api/lanes", `{"op":"remove","id":`+later+`}`); code != http.StatusOK {
 		t.Fatalf("remove: %d %v", code, out)
 	}
-	if got := columns(); got != "watching draft done working blocked lane:"+review+" lane:"+someday {
+	if got := columns(); got != "draft done working blocked lane:"+review+" lane:"+someday {
 		t.Fatalf("after remove: %q", got)
 	}
-	if code, out := post("/api/reorder", `{"column":"watching","slugs":[]}`); code != http.StatusOK {
-		t.Fatalf("reorder WATCHING: %d %v", code, out)
+	if code, out := post("/api/reorder", `{"column":"watching","slugs":[]}`); code != http.StatusConflict {
+		t.Fatalf("WATCHING is not a column: %d %v", code, out)
 	}
 	if code, out := post("/api/columns", `{"columns":"draft"}`); code != http.StatusBadRequest {
 		t.Fatalf("bad body: %d %v", code, out)
@@ -295,60 +295,5 @@ func TestDoneLeavesTheLane(t *testing.T) {
 	order, _ := st.GetBoardOrder()
 	if got := order["done"]; len(got) != 1 || got[0] != j.ID {
 		t.Fatalf("done order %v", got)
-	}
-}
-
-func TestWatchPrompt(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
-	svc := &jobs.Service{Store: st, Cfg: jobs.Config{Home: t.TempDir()}, Tmux: jobs.NewTmux()}
-	a := New(svc, jobs.NewDaemon(svc), "test")
-	mux := http.NewServeMux()
-	a.Register(mux)
-	post := func(path, body string) int {
-		t.Helper()
-		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, strings.NewReader(body)))
-		return rec.Code
-	}
-	prompt := func() string {
-		t.Helper()
-		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/board", nil))
-		var b webBoard
-		if err := json.Unmarshal(rec.Body.Bytes(), &b); err != nil {
-			t.Fatalf("%s: %v", rec.Body.String(), err)
-		}
-		return b.WatchPrompt
-	}
-	if got := prompt(); got != jobs.DefaultWatchPrompt || !strings.Contains(got, "30 minutes") {
-		t.Fatalf("default prompt: %q", got)
-	}
-	if code := post("/api/watch-prompt", `{"text":"  Keep an eye on it.\n\nThen stop.  "}`); code != http.StatusOK {
-		t.Fatalf("set: %d", code)
-	}
-	if got := prompt(); got != "Keep an eye on it.\n\nThen stop." {
-		t.Fatalf("set prompt: %q", got)
-	}
-	if code := post("/api/watch-prompt", `{"text":"`+strings.Repeat("x", 8001)+`"}`); code != http.StatusBadRequest {
-		t.Fatalf("too long: %d", code)
-	}
-	if code := post("/api/watch-prompt", `{"text":""}`); code != http.StatusOK {
-		t.Fatalf("reset: %d", code)
-	}
-	if got := prompt(); got != jobs.DefaultWatchPrompt {
-		t.Fatalf("after reset: %q", got)
-	}
-	if _, err := svc.Create("draft", "", t.TempDir(), ""); err != nil {
-		t.Fatal(err)
-	}
-	if code := post("/api/watch", `{"slug":"draft"}`); code != http.StatusConflict {
-		t.Fatalf("watch a not-started draft: %d", code)
-	}
-	if code := post("/api/watch", `{"slug":"nope"}`); code != http.StatusNotFound {
-		t.Fatalf("watch a missing job: %d", code)
 	}
 }

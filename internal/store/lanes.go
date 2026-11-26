@@ -18,16 +18,9 @@ type Lane struct {
 
 const laneColumnPrefix = "lane:"
 
-// WatchingColumn is the board_order key of WATCHING, the built-in column a
-// job is parked in while its pi watches over the shipped work.
-const WatchingColumn = "watching"
-
 // ParkedColumn is the column a job is parked in, away from the one its state
-// names: WATCHING, its lane, or "" for neither.
+// names: its lane, or "" for none.
 func ParkedColumn(j *Job) string {
-	if j.WatchingAt != 0 {
-		return WatchingColumn
-	}
 	if j.LaneID != 0 {
 		return LaneColumn(j.LaneID)
 	}

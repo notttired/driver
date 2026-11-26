@@ -78,7 +78,7 @@ func (s *Store) AppendToColumn(column string, id int64) (bool, error) {
 		return false, nil
 	}
 	var parked Job
-	if err := tx.QueryRow(`SELECT lane_id, watching_at FROM jobs WHERE id = ?`, id).Scan(&parked.LaneID, &parked.WatchingAt); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRow(`SELECT lane_id FROM jobs WHERE id = ?`, id).Scan(&parked.LaneID); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return false, fmt.Errorf("append to column %s: %w", column, err)
 	}
 	if p := ParkedColumn(&parked); p != "" && column != p {

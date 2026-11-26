@@ -327,21 +327,12 @@ function JobPanel({
         {label}
       </button>
     );
-    const watch = job?.watching
-      ? []
-      : [
-          b("watch", "👁 WATCH", () => watchJob(slug), {
-            title: "tell pi to watch over the shipped work (the WATCHING column's prompt); the card sits in WATCHING until you mark it DONE",
-            flush: true,
-          }),
-        ];
     switch (effState) {
       case "draft":
         // two kinds of draft: not started (launch form, START) and opened
         // (pi at its prompt, nothing sent — the pane, DONE and CANCEL)
         return opened
           ? [
-              ...watch,
               b("done", "✓ DONE", () => doneJob(slug), { title: "close pi, mark done" }),
               b("cancel", "✕ CANCEL", () => killJob(slug), {
                 cls: "btn ghost danger",
@@ -378,7 +369,10 @@ function JobPanel({
             disabled: !live,
             title: "ask this tab's pi for an adversarial review of its work from a second agent (ae-deep-reviewer); it reports the findings and changes nothing until you say",
           }),
-          ...watch,
+          b("watch", "👁 WATCH", () => watchJob(slug, cur.id), {
+            disabled: !live,
+            title: "ask this tab's pi to watch over the shipped work: the merge, the deploy, then its health for 30 minutes",
+          }),
           b("done", "✓ DONE", () => doneJob(slug), { title: "kill the session, mark done" }),
           b("cancel", "✕ CANCEL", () => killJob(slug), {
             cls: "btn ghost danger",
@@ -393,7 +387,6 @@ function JobPanel({
             disabled: job?.reactivatable === false,
             title: job?.reactivatable === false ? "its directory is gone" : "relaunch pi on the same session",
           }),
-          ...watch,
           b("archive", "▣ ARCHIVE", () => archiveJob(slug), {
             disabled: live,
             title: live ? "a live session cannot be archived" : "archive (frees the slug)",

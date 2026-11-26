@@ -63,20 +63,6 @@ func (a *API) reorder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-func (a *API) watchPrompt(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Text string `json:"text"`
-	}
-	if !decodePost(w, r, &req) {
-		return
-	}
-	if err := a.Svc.SetWatchPrompt(req.Text); err != nil {
-		writeFailure(w, "watch-prompt", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
 func (a *API) columns(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Columns []string `json:"columns"`

@@ -12,15 +12,14 @@ import (
 
 // webBoard is GET /api/board (docs/API.md "Board").
 type webBoard struct {
-	Daemon      jobs.Status `json:"daemon"`
-	DaemonOK    bool        `json:"daemon_ok"`
-	Jobs        []webJob    `json:"jobs"`
-	Lanes       []webLane   `json:"lanes"`
-	Columns     []string    `json:"columns"`
-	WatchPrompt string      `json:"watch_prompt"`
-	Contract    int         `json:"contract"`
-	Operator    string      `json:"operator"`
-	DefaultDir  string      `json:"default_dir"`
+	Daemon     jobs.Status `json:"daemon"`
+	DaemonOK   bool        `json:"daemon_ok"`
+	Jobs       []webJob    `json:"jobs"`
+	Lanes      []webLane   `json:"lanes"`
+	Columns    []string    `json:"columns"`
+	Contract   int         `json:"contract"`
+	Operator   string      `json:"operator"`
+	DefaultDir string      `json:"default_dir"`
 }
 
 type webJob struct {
@@ -44,7 +43,6 @@ type webJob struct {
 	Attention     bool         `json:"attention,omitempty"` // turned blocked on its own, or a tab stopped, not looked at since
 	Retryable     bool         `json:"retryable,omitempty"`
 	Lane          int64        `json:"lane,omitempty"`
-	Watching      bool         `json:"watching,omitempty"`
 	Threads       []webThread  `json:"threads,omitempty"` // the job's tabs: its own pi first
 }
 
@@ -173,7 +171,7 @@ func (a *API) buildBoard() (*webBoard, error) {
 				HasNotes: j.Notes != "", Links: webLinksFrom(links[j.ID]),
 				StartedAt: j.StartedAt, FinishedAt: j.FinishedAt, MTime: j.UpdatedAt,
 				Reactivatable: j.State == "done", Attention: attention, Retryable: retryable,
-				Lane: j.LaneID, Watching: j.WatchingAt != 0, Threads: threads,
+				Lane: j.LaneID, Threads: threads,
 			})
 		}
 	}
@@ -188,14 +186,13 @@ func (a *API) buildBoard() (*webBoard, error) {
 	}
 	ds := a.Daemon.Status()
 	return &webBoard{
-		Daemon:      ds,
-		DaemonOK:    ds.LastTick != 0 && now-ds.LastTick <= daemonOKWindow,
-		Jobs:        out,
-		Lanes:       webLanes,
-		Columns:     columns,
-		WatchPrompt: a.Svc.WatchPrompt(),
-		Contract:    Contract,
-		Operator:    a.Svc.Cfg.Operator,
-		DefaultDir:  a.Svc.Cfg.DefaultDir,
+		Daemon:     ds,
+		DaemonOK:   ds.LastTick != 0 && now-ds.LastTick <= daemonOKWindow,
+		Jobs:       out,
+		Lanes:      webLanes,
+		Columns:    columns,
+		Contract:   Contract,
+		Operator:   a.Svc.Cfg.Operator,
+		DefaultDir: a.Svc.Cfg.DefaultDir,
 	}, nil
 }

@@ -66,9 +66,6 @@ describe("bucketJobs", () => {
     expect(columnOf(makeJob({ state: "blocked", lane: 7 }))).toBe("lane:7");
     expect(columnOf(makeJob({ state: "blocked" }))).toBe("blocked");
     expect(columnOf(makeJob({ state: "blocked", lane: 0 }))).toBe("blocked");
-    expect(columnOf(makeJob({ state: "working", watching: true }))).toBe("watching");
-    expect(columnOf(makeJob({ state: "working", watching: true, lane: 7 }))).toBe("watching");
-    expect(bucketJobs([]).byColumn.watching).toEqual([]);
   });
 });
 

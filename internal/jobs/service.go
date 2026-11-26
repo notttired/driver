@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -226,9 +225,9 @@ func (s *Service) Reactivate(j *store.Job) error {
 }
 
 // relaunch opens a fresh tmux session with pi resumed on the job's session
-// file, prompt (if any) as its first message, and hands back the fields the
-// state write needs: the job is working in that session from now.
-func (s *Service) relaunch(j *store.Job, prompt ...string) (map[string]any, error) {
+// file and hands back the fields the state write needs: the job is working
+// in that session from now.
+func (s *Service) relaunch(j *store.Job) (map[string]any, error) {
 	if j.Dir == "" || !util.IsDir(j.Dir) {
 		return nil, Refuse("dir %q is gone", j.Dir)
 	}
@@ -246,7 +245,7 @@ func (s *Service) relaunch(j *store.Job, prompt ...string) (map[string]any, erro
 	}
 	_ = os.Remove(filepath.Join(jobDir, "status.json"))
 	sessionFile := resumeFile(j, jobDir)
-	cmd := s.Cfg.LaunchCommand(j, piBin, jobDir, sessionFile, prompt...)
+	cmd := s.Cfg.LaunchCommand(j, piBin, jobDir, sessionFile)
 	if err := s.Tmux.NewSession(sess, j.Dir, j.Slug, j.Slug, cmd); err != nil {
 		_ = s.Tmux.KillSession(sess) // a half-made session must not linger
 		return nil, Refuse("%v", err)
@@ -257,64 +256,8 @@ func (s *Service) relaunch(j *store.Job, prompt ...string) (map[string]any, erro
 	}, nil
 }
 
-// Watch tells pi to watch over the shipped work (the watch prompt) and parks
-// the job in WATCHING: pasted into its pane when pi is up, else pi comes back
-// on the conversation with the prompt as its first message. The job stays in
-// WATCHING, whatever pi does next, until DONE or a drag takes it out.
-func (s *Service) Watch(j *store.Job) error {
-	if j.Archived() {
-		return Refuse("job %s is archived", j.ArchivedName)
-	}
-	if j.State == "" {
-		return Refuse("job %s is not started — there is no pi to watch with", j.Slug)
-	}
-	if j.WatchingAt != 0 {
-		return Refuse("job %s is already watching", j.Slug)
-	}
-	prompt := s.WatchPrompt()
-	fields := map[string]any{"watching_at": time.Now().Unix(), "lane_id": int64(0), "attention_at": int64(0), "own_attention_at": int64(0)}
-	sess := SessionName(j)
-	if s.Tmux.HasSession(sess) && !s.Tmux.PaneDead(sess) {
-		if err := s.Tmux.Paste(sess, prompt); err != nil {
-			return Refuse("%v", err)
-		}
-	} else {
-		launched, err := s.relaunch(j, prompt)
-		if err != nil {
-			return err
-		}
-		maps.Copy(fields, launched)
-	}
-	if _, err := s.Store.UpdateJobFields(j.ID, j.Rev, fields); err != nil {
-		return fmt.Errorf("watch %s: pi has the prompt but the state write failed: %w", j.Slug, mapStoreErr(err))
-	}
-	if _, err := s.Store.AppendToColumn(Watching, j.ID); err != nil {
-		log.Printf("watch %s: board order: %v", j.Slug, err)
-	}
-	return nil
-}
-
-const watchPromptKey = "watch-prompt"
-
-// WatchPrompt is what WATCH says to pi: the operator's text, or the default.
-func (s *Service) WatchPrompt() string {
-	text, err := s.Store.GetKV(watchPromptKey)
-	if err != nil || text == "" {
-		return DefaultWatchPrompt
-	}
-	return text
-}
-
-// SetWatchPrompt replaces the watch prompt; "" goes back to the default.
-func (s *Service) SetWatchPrompt(text string) error {
-	text = strings.TrimSpace(text)
-	if utf8.RuneCountInString(text) > MaxWatchPromptLen {
-		return fmt.Errorf("watch prompt is too long (max %d characters): %w", MaxWatchPromptLen, ErrBadInput)
-	}
-	if text == "" {
-		return s.Store.DeleteKV(watchPromptKey)
-	}
-	return s.Store.SetKV(watchPromptKey, text)
+func (s *Service) Watch(j *store.Job, t *store.Thread) error {
+	return s.ask(j, t, WatchPrompt)
 }
 
 func (s *Service) Review(j *store.Job, t *store.Thread) error {
@@ -449,7 +392,7 @@ func (s *Service) Done(j *store.Job) error {
 	}
 	_, err := s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{
 		"state": "done", "attention_at": int64(0), "own_attention_at": int64(0), "outcome": "accepted", "finished_at": time.Now().Unix(),
-		"lane_id": int64(0), "watching_at": int64(0),
+		"lane_id": int64(0),
 	})
 	if err != nil {
 		return mapStoreErr(err)
@@ -930,7 +873,7 @@ func (s *Service) FoldDuplicateLinks() (int, error) {
 // Reorder saves a column's full intended order; slugs the board no longer
 // shows in the column are dropped silently.
 func (s *Service) Reorder(column string, slugs []string) error {
-	if !IsBoardColumn(column) {
+	if !IsColumn(column) {
 		laneID, ok := store.ParseLaneColumn(column)
 		if !ok {
 			return Refuse("unknown column %q", util.OneLine(column, 24))
@@ -1001,9 +944,8 @@ func (s *Service) saveColumns(keys []string) error {
 }
 
 func orderColumns(keys []string, lanes []*store.Lane) []string {
-	builtin := append(append([]string{}, Columns...), Watching)
-	known := make(map[string]bool, len(builtin)+len(lanes))
-	for _, c := range builtin {
+	known := make(map[string]bool, len(Columns)+len(lanes))
+	for _, c := range Columns {
 		known[c] = true
 	}
 	for _, l := range lanes {
@@ -1017,7 +959,7 @@ func orderColumns(keys []string, lanes []*store.Lane) []string {
 			out = append(out, k)
 		}
 	}
-	for _, c := range builtin {
+	for _, c := range Columns {
 		if !seen[c] {
 			out = append(out, c)
 		}
@@ -1070,7 +1012,7 @@ func (s *Service) DeleteLane(id int64) error {
 }
 
 // SetLane parks j in a lane, at its end, or with 0 returns it to the end of
-// the column its state names; either way it is no longer in WATCHING.
+// the column its state names.
 func (s *Service) SetLane(j *store.Job, laneID int64) error {
 	if j.Archived() {
 		return Refuse("job %s is archived", j.ArchivedName)
@@ -1080,10 +1022,10 @@ func (s *Service) SetLane(j *store.Job, laneID int64) error {
 			return err
 		}
 	}
-	if j.LaneID == laneID && j.WatchingAt == 0 {
+	if j.LaneID == laneID {
 		return nil
 	}
-	if _, err := s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{"lane_id": laneID, "watching_at": int64(0)}); err != nil {
+	if _, err := s.Store.UpdateJobFields(j.ID, j.Rev, map[string]any{"lane_id": laneID}); err != nil {
 		return mapStoreErr(err)
 	}
 	moved, err := s.Store.GetJobByID(j.ID)

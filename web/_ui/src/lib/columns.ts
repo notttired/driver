@@ -3,13 +3,11 @@
 // drag table import it, and neither may import the other.
 export const COLUMNS = ["draft", "working", "blocked", "done"] as const;
 export type StateColumn = (typeof COLUMNS)[number];
-/** the built-in column a job sits in while its pi watches over the shipped work */
-export const WATCHING = "watching";
 export type LaneColumn = `lane:${number}`;
-export type Column = StateColumn | typeof WATCHING | LaneColumn;
+export type Column = StateColumn | LaneColumn;
 
 /** a column a card is parked in, away from the one its state names */
-export const isParking = (column: string): boolean => column === WATCHING || laneId(column) !== null;
+export const isParking = (column: string): boolean => laneId(column) !== null;
 
 export const laneColumn = (id: number): LaneColumn => `lane:${id}`;
 
@@ -27,7 +25,7 @@ export function isStateColumn(column: string): column is StateColumn {
 /** The board's column order: the saved order, less what is gone, then every
  *  column it leaves out — the state columns in their own order, then lanes. */
 export function columnOrder(saved: readonly string[], laneIds: readonly number[]): Column[] {
-  const known = new Set<string>([...COLUMNS, WATCHING, ...laneIds.map(laneColumn)]);
+  const known = new Set<string>([...COLUMNS, ...laneIds.map(laneColumn)]);
   const out: Column[] = [];
   for (const k of saved) {
     if (known.has(k) && !out.includes(k as Column)) out.push(k as Column);

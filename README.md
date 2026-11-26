@@ -135,24 +135,22 @@ Drag any column by its head to rearrange the board, the built-in ones
 included; `«` folds a column to a narrow strip (cards can still be dropped on
 it), and clicking the strip unfolds it.
 
-**Watching.** When the work is shipped, press **👁 WATCH** (beside DONE, for
-any job that has a pi). pi gets the watch prompt — wait for CI and the merge,
-follow the deploy, then watch the health for 30 minutes — and the card moves to
-the **WATCHING** column. It stays there: when pi reports and stops, the card
-reads blocked in WATCHING with its ring and notification, and DONE moves it on.
-A done job's pi is relaunched on its conversation with the prompt. The prompt
-is yours to edit: `✎` in the WATCHING head opens it (RESET brings the default
-back). Cards cannot be dragged into WATCHING; dragging one out just moves it,
-pi carries on.
+**Reviewing and watching.** Two buttons between STOP and DONE, on a working
+or blocked job, each send a fixed prompt to the pi of the tab you are on and
+do nothing else: no column, nothing stored. The card reads working while pi
+is on it and blocked, with its ring and notification, when pi reports. Both
+are greyed out on a tab whose pi is gone.
 
-**Reviewing.** **🔍 REVIEW** (before WATCH, on a working or blocked job)
-asks the pi of the tab you are on for an adversarial review of its work: it
-spawns a second agent, `ae-deep-reviewer`, on the pull request or the diff,
-and reports the findings with its own view on each, changing no code until
-you say which to fix. The card has no column for it: it reads working while
-pi is on it. It needs the pi-subagents package and an agent named
+**🔍 REVIEW** asks for an adversarial review of that pi's work: it spawns a
+second agent, `ae-deep-reviewer`, on the pull request or the diff, and
+reports the findings with its own view on each, changing no code until you
+say which to fix. It needs the pi-subagents package and an agent named
 `ae-deep-reviewer` in `~/.pi/agent/agents/`; without them pi says so and
 stops.
+
+**👁 WATCH**, for when the work is shipped, asks that pi to watch over it:
+wait for CI and the merge, follow the deploy, then watch the health for 30
+minutes, and say if anything looks wrong.
 
 **Threads.** The tabs above the pane are the job's pis: the job's own first,
 then every thread you opened. `+` opens a thread — another pi with the same

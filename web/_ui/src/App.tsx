@@ -8,7 +8,6 @@ import { Chrome } from "./components/chrome/Chrome.tsx";
 import { JobOverlay } from "./components/overlays/JobOverlay.tsx";
 import { NewJobOverlay } from "./components/overlays/NewJobOverlay.tsx";
 import { SettingsOverlay } from "./components/overlays/SettingsOverlay.tsx";
-import { WatchPromptOverlay } from "./components/overlays/WatchPromptOverlay.tsx";
 import { Toast, showToast } from "./components/overlays/Toast.tsx";
 import { closeThreadNow } from "./components/overlays/ThreadTabs.tsx";
 import { CommandPalette, type PalettePick } from "./components/palette/CommandPalette.tsx";
@@ -39,7 +38,6 @@ export function App() {
     [openKey],
   );
   const [newJob, setNewJob] = useState(false);
-  const [watchPrompt, setWatchPrompt] = useState(false);
   const [palette, setPalette] = useState(false);
   const [settings, setSettings] = useState(false);
   const { mutate } = board;
@@ -88,14 +86,13 @@ export function App() {
           if (err) showToast(err.message);
         });
       },
-      onEditWatchPrompt: () => setWatchPrompt(true),
     }),
     [mutate],
   );
 
   const closeOverlay = useCallback(() => setOpenKey(null), [setOpenKey]);
   const openJob = useCallback((slug: string) => setOpenKey(slug), [setOpenKey]);
-  const overlayOpen = openKey !== null || newJob || watchPrompt || settings;
+  const overlayOpen = openKey !== null || newJob || settings;
   const openPalette = useCallback(() => setPalette(true), []);
   const closePalette = useCallback(() => setPalette(false), []);
   // a pick lands on the pane: the job, on the tab asked for, over whatever
@@ -103,7 +100,6 @@ export function App() {
   const onPick = useCallback(
     (pick: PalettePick) => {
       setNewJob(false);
-      setWatchPrompt(false);
       setOpenKey(pick.key);
       setOpenThreadRaw(pick.thread);
       rememberThread(pick.key, pick.thread);
@@ -154,7 +150,6 @@ export function App() {
       }
       if (palette) setPalette(false);
       else if (settings) setSettings(false);
-      else if (watchPrompt) setWatchPrompt(false);
       else if (newJob) setNewJob(false);
       else if (openKey !== null) {
         // the tab in view goes — the first too, while another is open; the
@@ -168,7 +163,7 @@ export function App() {
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [overlayOpen, setOpenKey, setOpenThread, palette, settings, watchPrompt, newJob, openKey, openThread, byKey, board, pasteContext]);
+  }, [overlayOpen, setOpenKey, setOpenThread, palette, settings, newJob, openKey, openThread, byKey, board, pasteContext]);
 
   return (
     <>
@@ -206,13 +201,6 @@ export function App() {
         }}
       />
       <SettingsOverlay open={settings} onClose={() => setSettings(false)} onToast={showToast} />
-      <WatchPromptOverlay
-        open={watchPrompt}
-        onClose={() => setWatchPrompt(false)}
-        prompt={board.board?.watch_prompt ?? ""}
-        mutate={mutate}
-        onToast={showToast}
-      />
       <Toast />
     </>
   );

@@ -1,4 +1,4 @@
-import { COLUMNS, WATCHING, laneColumn, type Column, type StateColumn } from "./columns.ts";
+import { COLUMNS, laneColumn, type Column, type StateColumn } from "./columns.ts";
 import type { WebJob, WebLane } from "./types.ts";
 
 /** The eight job colours, at the names the server's colour route accepts. */
@@ -69,9 +69,8 @@ export function columnFor(state: string): StateColumn {
   return (COLUMNS as readonly string[]).includes(state) ? (state as StateColumn) : "draft";
 }
 
-/** The column the board shows a job in: WATCHING or its lane when parked, else its state's. */
-export function columnOf(job: Pick<WebJob, "state" | "lane" | "watching">): Column {
-  if (job.watching) return WATCHING;
+/** The column the board shows a job in: its lane when parked, else its state's. */
+export function columnOf(job: Pick<WebJob, "state" | "lane">): Column {
   return job.lane ? laneColumn(job.lane) : columnFor(job.state);
 }
 
@@ -86,7 +85,6 @@ export interface BoardBuckets {
 export function bucketJobs(jobs: readonly WebJob[], lanes: readonly WebLane[] = []): BoardBuckets {
   const byColumn = Object.fromEntries([
     ...COLUMNS.map((c) => [c, [] as WebJob[]]),
-    [WATCHING, [] as WebJob[]],
     ...lanes.map((l) => [laneColumn(l.id), [] as WebJob[]]),
   ]) as Record<Column, WebJob[]>;
   const archived: WebJob[] = [];

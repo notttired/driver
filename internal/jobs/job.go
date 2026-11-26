@@ -53,16 +53,8 @@ func DisplayState(j *store.Job) string {
 	return "draft"
 }
 
-// Watching is the built-in column a job sits in while its pi watches over
-// the shipped work; not a state — the job keeps its own underneath.
-const Watching = store.WatchingColumn
-
-// IsBoardColumn reports whether c is a built-in column: a state column or
-// WATCHING.
-func IsBoardColumn(c string) bool { return IsColumn(c) || c == Watching }
-
-// BoardColumn is where the board shows j: WATCHING or the lane it is parked
-// in, else the column its display state names.
+// BoardColumn is where the board shows j: the lane it is parked in, else
+// the column its display state names.
 func BoardColumn(j *store.Job) string {
 	if parked := store.ParkedColumn(j); parked != "" {
 		return parked
@@ -70,17 +62,14 @@ func BoardColumn(j *store.Job) string {
 	return DisplayState(j)
 }
 
-// DefaultWatchPrompt is what WATCH says to pi until the operator rewrites it.
-const DefaultWatchPrompt = `The work on this job is done. Watch over it now until it is live and healthy, then stop.
+// WatchPrompt is what WATCH says to pi.
+const WatchPrompt = `The work on this job is done. Watch over it now until it is live and healthy, then stop.
 
 1. Merging: wait for CI to pass and the pull request to merge. If a check fails, review is needed or there are conflicts, tell me; do not force anything.
 2. Deployment: follow the deploy until the change is in production.
 3. Health: for 30 minutes after it is live, check every few minutes for errors, failing requests, alerts or rollbacks related to this change.
 
 Use the tools you have (gh, logs, dashboards) and do not change code unless I ask. If anything looks wrong at any point, stop watching and tell me what you see. When the 30 minutes are up and all is well, say so in one line.`
-
-// MaxWatchPromptLen bounds the watch prompt (in runes).
-const MaxWatchPromptLen = 8000
 
 const ReviewPrompt = `Get an adversarial review of your work on this job from a second agent, then tell me what it found.
 

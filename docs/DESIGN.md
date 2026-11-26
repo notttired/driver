@@ -113,18 +113,6 @@ usage, accounts, self-update) is left out on purpose.
   overlay button) finishes the job and takes it out of the lane. Removing a
   lane returns its cards to their state columns too. The day-old-done sweep
   leaves parked cards alone.
-- WATCHING: a built-in parking column for the last mile. 👁 WATCH in the
-  overlay (beside DONE, for any job with a pi) pastes the watch prompt into
-  pi's pane — one bracketed paste, so a multi-line prompt arrives as one
-  message — or, when pi is gone (a done job, a dead pane), relaunches pi on
-  the conversation with the prompt as its first message; the job parks in
-  WATCHING. The prompt is one text for the board (kv `watch-prompt`,
-  `DefaultWatchPrompt` until edited; ✎ in the head edits it). The card stays
-  in WATCHING whatever pi does next — when pi reports and goes idle it reads
-  blocked there, ringed and notified like any other — until DONE (which
-  takes it out, last in DONE) or a drag. Nothing is dropped into WATCHING; a
-  card dragged out goes home or into a lane like any parked card, and pi
-  carries on.
 - Threads (2026-11-17): a job can carry more than one pi. The tabs above
   the pane are its pis — the job's own first, then every thread opened with
   `+`: a copy of the conversation in the current tab up to its finished work
@@ -154,7 +142,7 @@ usage, accounts, self-update) is left out on purpose.
   closes what is on top: the palette, a dialog, the thread tab in view
   (at once, as ✕ does — nothing is lost: the row and its conversation stay),
   else the job overlay; never the board. The first tab closes like the
-  rest while another is open: every job-level action (watch, fork, retry,
+  rest while another is open: every job-level action (fork, retry,
   reactivate, the record) works on the job's own pi, so closing it means
   the next open thread takes that place — `CloseOwnThread` kills the own
   session, keeps the old pi as a closed thread row (its session file where
@@ -171,7 +159,7 @@ usage, accounts, self-update) is left out on purpose.
   traffic light still does. ✕ closes a thread's pi; the row and its conversation stay
   (what it said is still part of the job: the tab goes, the record remains
   readable). DONE closes every thread, CANCEL drops them; the job's own pi
-  is the one fork, watch, reactivate and rename work on, and a job fork
+  is the one fork, reactivate and rename work on, and a job fork
   copies the job's own pi only. The daemon follows a thread's session file,
   scans it for links (scan key `<job id>/t<thread id>`) and brings it back
   at start as it does the job's. v10 adds `threads`.
@@ -241,21 +229,33 @@ usage, accounts, self-update) is left out on purpose.
 - Review (2026-11-25). REVIEW, before WATCH in the overlay of a working or
   blocked job, asks the pi of the tab in view for an adversarial review of
   its own work by a second agent: `/api/review` pastes `ReviewPrompt` into
-  that pane, as WATCH pastes its prompt, and that is all. No column and no
-  stored state: the tick moves the card to working while pi is on it and
-  back when it reports. The prompt names the `ae-deep-reviewer` subagent
+  that pane (one bracketed paste, then Enter, so a multi-line prompt
+  arrives as one message), and that is all. No column and no stored
+  state: the tick moves the card to working while pi is on it and back
+  when it reports. The prompt names the `ae-deep-reviewer` subagent
   (the operator's own, in `~/.pi/agent/agents/`, run through pi-subagents)
   and is the operator's go-ahead to delegate; it asks for the findings
   with pi's view on each and no code changes, and for pi to stop rather
   than review in the agent's place when the agent cannot be spawned. The
   agent is not shipped with driver: every pi a job runs loads the
-  operator's pi setup. The prompt is fixed, not editable like WATCH's,
-  since REVIEW has no column head to edit it from. The button is disabled
-  on a tab whose pi is gone.
+  operator's pi setup. The prompt is fixed. The button is disabled on a
+  tab whose pi is gone.
+- Watch is a prompt, not a column (2026-11-26). WATCH used to park the job
+  in a built-in WATCHING column, always spoke to the job's own pi,
+  relaunched a pi that was gone, and sent a prompt edited from the
+  column's head. It is REVIEW with another text now: `/api/watch` pastes
+  `WatchPrompt` (wait for the merge, follow the deploy, 30 minutes of
+  health) into the pane of the tab in view through the same
+  `Service.ask` and `tabAction`, on a working or blocked job whose pi is
+  up. Gone with the column: `jobs.watching_at` (v13 drops it, and the
+  column's saved order), `/api/watch-prompt`, `watch_prompt` and
+  `watching` on the board, the prompt editor, the drag rules for the
+  column. A `watching` key in a saved column order is dropped as any
+  unknown key is.
 - Paste context and the ⚙ settings (2026-11-19). ⌘⇧V in a job puts the
   browser's front tab into the pane in view — URL, title and the selected
   text, else the page's text — as one bracketed paste with nothing sent
-  (`Tmux.PasteOnly`; WATCH's paste with the Enter left off), headed
+  (`Tmux.PasteOnly`; REVIEW's paste with the Enter left off), headed
   "Context from my browser — <title>" so pi knows where it came from, cut
   at 20,000 characters. The daemon reads the tab over Apple events
   (`FrontTabContext`, beside `ListTabs`); the text step runs JavaScript in
@@ -270,7 +270,7 @@ usage, accounts, self-update) is left out on purpose.
   in driver's name there and then; buttons open the Full Disk Access and
   Automation panes and show the binary in the Finder (`OpenSystemPane`);
   "test" reads the front tab and says which of the two switches is missing.
-- Every column, state columns, WATCHING and lanes alike, is dragged by its head into
+- Every column, state columns and lanes alike, is dragged by its head into
   any order; the order is saved in the daemon (kv `board-columns`). `«` in a
   head folds the column to a strip (name, count; still a drop target) and the
   strip expands it; which columns are folded is this browser's to remember
@@ -356,7 +356,8 @@ existing session once more (attaching is idempotent). v4 added `jobs.name`. v5
 added `jobs.attention_at`: when the daemon moved the job into blocked on its own
 and it has not been opened since (0 otherwise). v8 added `lanes(id, name,
 position, created_at)` and `jobs.lane_id` (0 = none). v9 added
-`jobs.watching_at` (when WATCH was pressed; 0 = not watching). v10 added
+`jobs.watching_at` (when WATCH was pressed; 0 = not watching; v13 dropped
+it with the WATCHING column). v10 added
 `threads(id, job_id, name, pi_session, tmux, started_at, created_at,
 closed_at)`, cascading with its job: the job's further pis ("Threads"
 above; the job row carries the first). `closed_at` set = its pi was closed;
@@ -374,7 +375,7 @@ reactivate does), the daemon appends it to that column's order
 (`AppendToColumn`: a no-op when a drag already listed it there, otherwise out of
 every other column and onto the end). Cross-column drags do not reorder the
 destination, so they count as arrivals too. A lane's order is keyed
-`lane:<id>`, WATCHING's `watching`, and both read in arrival order;
+`lane:<id>` and reads in arrival order;
 `AppendToColumn` leaves a parked job alone unless the column is the one it is
 parked in (`ParkedColumn`), so the tick's state writes never pull it out.
 
@@ -682,8 +683,7 @@ until it is opened, and so does a card while one of its tabs rings. Cross-column
 | done → working, done → blocked | `/api/reactivate` |
 | done → archive drawer | `/api/archive` |
 | anything → a lane | `/api/job/lane {lane: id}`; no state change |
-| a lane or WATCHING → the column the card's state names | `/api/job/lane {lane: 0}`; only that column lights up |
-| anything → WATCHING | no-op (the WATCH button fills it) |
+| a lane → the column the card's state names | `/api/job/lane {lane: 0}`; only that column lights up |
 | anything else | no-op |
 
 Card click → the job overlay: head (name + rename, with `as <slug>` beside a name that differs from the slug, dir, colour swatch, actions:

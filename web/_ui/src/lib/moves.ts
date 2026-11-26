@@ -12,7 +12,7 @@ import {
   stopJob,
   SUBMIT_ENDPOINT,
 } from "../api/client.ts";
-import { WATCHING, isParking, laneId, type Column, type StateColumn } from "./columns.ts";
+import { isParking, laneId, type Column, type StateColumn } from "./columns.ts";
 
 export { LANE_ENDPOINT, SUBMIT_ENDPOINT };
 
@@ -83,12 +83,10 @@ export const MOVES: Readonly<Record<StateColumn, readonly DropColumn[]>> = Objec
 
 export function resolveMove(from: Column, to: DropColumn, ctx: MoveContext = {}): Move | null {
   if (from === to) return { kind: "reorder" };
-  // WATCHING is the WATCH button's to fill, never a drop's
-  if (to === WATCHING) return null;
   // into a lane: park it, whatever it is doing
   const toLane = laneId(to);
   if (toLane !== null) return post(LANE_ENDPOINT, (slug) => setJobLane(slug, toLane));
-  // out of a lane or WATCHING: only back to the column its state names, no state change
+  // out of a lane: only back to the column its state names, no state change
   if (isParking(from)) {
     if (to === ARCHIVED || (ctx.state !== undefined && to !== ctx.state)) return null;
     return post(LANE_ENDPOINT, (slug) => setJobLane(slug, 0));

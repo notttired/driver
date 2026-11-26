@@ -530,7 +530,7 @@ describe("BoardView (DOM smoke test)", () => {
 
     const lane = await findColumn("lane:3");
     const cols = [...document.querySelectorAll<HTMLElement>(".col[data-col]")].map((c) => c.dataset.col);
-    expect(cols).toEqual(["draft", "working", "blocked", "done", "watching", "lane:3", "lane:5", "add"]);
+    expect(cols).toEqual(["draft", "working", "blocked", "done", "lane:3", "lane:5", "add"]);
     expect(within(lane).getByRole("button", { name: "later" })).toBeInTheDocument();
     expect(within(lane).getByText("1")).toBeInTheDocument();
     expect(within(lane).getByText("parked-fix")).toBeInTheDocument();
@@ -587,12 +587,12 @@ describe("BoardView (DOM smoke test)", () => {
   it("lays the columns out in the board's order, lanes among the state columns, any it leaves out last", async () => {
     const board = fixtureBoard();
     board.lanes = [{ id: 3, name: "later" }, { id: 5, name: "review" }];
-    board.columns = ["lane:3", "draft", "done", "lane:99", "working"];
+    board.columns = ["lane:3", "draft", "done", "lane:99", "watching", "working"];
     installFetch(board);
     render(<App />);
     await findColumn("lane:3");
     const cols = [...document.querySelectorAll<HTMLElement>(".col[data-col]")].map((c) => c.dataset.col);
-    expect(cols).toEqual(["lane:3", "draft", "done", "working", "blocked", "watching", "lane:5", "add"]);
+    expect(cols).toEqual(["lane:3", "draft", "done", "working", "blocked", "lane:5", "add"]);
   });
 
   it("collapses a column to a strip that still shows its count, and remembers it", async () => {
@@ -617,44 +617,10 @@ describe("BoardView (DOM smoke test)", () => {
     expect(localStorage.getItem("driver-collapsed-columns")).toBe("[]");
   });
 
-  it("has WATCH beside DONE for a job with a pi, and for a done one; a watched job has none", async () => {
-    const board = fixtureBoard();
-    board.jobs.push(makeJob({ slug: "on-watch", state: "working", watching: true, live: true, pi: { state: "working", ts: NOW - 5 } }));
-    installFetch(board);
-    render(<App />);
-    const overlay = document.getElementById("job-overlay")!;
-
-    fireEvent.click((await screen.findByText("onboarding-copy")).closest(".card")!);
-    const watch = await within(overlay).findByRole("button", { name: /WATCH/ });
-    const buttons = within(overlay).getAllByRole("button").map((b) => b.textContent ?? "");
-    expect(buttons.indexOf(buttons.find((t) => /WATCH/.test(t))!)).toBe(buttons.indexOf(buttons.find((t) => /DONE/.test(t))!) - 1);
-    fireEvent.click(watch);
-    await waitFor(() => expect(bodies).toContainEqual({ path: "/api/watch", slug: "onboarding-copy" }));
-    await act(async () => {
-      fireEvent.keyDown(document, { key: "Escape" });
-    });
-
-    fireEvent.click((await screen.findByText("rate-limits")).closest(".card")!);
-    expect(await within(overlay).findByRole("button", { name: /WATCH/ })).toBeInTheDocument();
-    await act(async () => {
-      fireEvent.keyDown(document, { key: "Escape" });
-    });
-
-    fireEvent.click((await screen.findByText("flaky-ci")).closest(".card")!);
-    await within(overlay).findByRole("button", { name: /START/ });
-    expect(within(overlay).queryByRole("button", { name: /WATCH/ })).toBeNull();
-    await act(async () => {
-      fireEvent.keyDown(document, { key: "Escape" });
-    });
-
-    const watching = await findColumn("watching");
-    expect(within(watching).getByText("on-watch")).toBeInTheDocument();
-    fireEvent.click(within(watching).getByText("on-watch").closest(".card")!);
-    await within(overlay).findByRole("button", { name: /DONE/ });
-    expect(within(overlay).queryByRole("button", { name: /WATCH/ })).toBeNull();
-  });
-
-  it("has REVIEW before WATCH for a job with a pi up, and asks the tab in view for the review", async () => {
+  it.each([
+    ["REVIEW", "/api/review"],
+    ["WATCH", "/api/watch"],
+  ])("has %s for a job with a pi up, and asks the tab in view", async (label, path) => {
     const board = fixtureBoard();
     const NOW2 = Math.floor(Date.now() / 1000);
     board.jobs.push(
@@ -673,58 +639,47 @@ describe("BoardView (DOM smoke test)", () => {
     installFetch(board);
     render(<App />);
     const overlay = document.getElementById("job-overlay")!;
-    const review = () => within(overlay).getByRole("button", { name: /REVIEW/ });
+    const button = () => within(overlay).getByRole("button", { name: new RegExp(label) });
 
     fireEvent.click((await screen.findByText("threaded")).closest(".card")!);
-    await within(overlay).findByRole("button", { name: /REVIEW/ });
+    await within(overlay).findByRole("button", { name: new RegExp(label) });
     const buttons = within(overlay).getAllByRole("button").map((b) => b.textContent ?? "");
-    expect(buttons.indexOf(buttons.find((t) => /REVIEW/.test(t))!)).toBe(buttons.indexOf(buttons.find((t) => /WATCH/.test(t))!) - 1);
-    fireEvent.click(review());
-    await waitFor(() => expect(bodies).toContainEqual({ path: "/api/review", slug: "threaded", thread: 0 }));
-    await waitFor(() => expect(review()).not.toBeDisabled());
+    const at = (name: RegExp) => buttons.findIndex((t) => name.test(t));
+    expect([at(/REVIEW/), at(/WATCH/), at(/DONE/)]).toEqual([at(/STOP/) + 1, at(/STOP/) + 2, at(/STOP/) + 3]);
+    fireEvent.click(button());
+    await waitFor(() => expect(bodies).toContainEqual({ path, slug: "threaded", thread: 0 }));
+    await waitFor(() => expect(button()).not.toBeDisabled());
 
     fireEvent.click(within(overlay).getByRole("tab", { name: /CI/ }));
-    fireEvent.click(review());
-    await waitFor(() => expect(bodies).toContainEqual({ path: "/api/review", slug: "threaded", thread: 5 }));
-    await waitFor(() => expect(review()).not.toBeDisabled());
+    fireEvent.click(button());
+    await waitFor(() => expect(bodies).toContainEqual({ path, slug: "threaded", thread: 5 }));
+    await waitFor(() => expect(button()).not.toBeDisabled());
 
     // a tab whose pi is gone has nobody to ask
     fireEvent.click(within(overlay).getByRole("tab", { name: /Docs/ }));
-    expect(review()).toBeDisabled();
+    expect(button()).toBeDisabled();
     await act(async () => {
       fireEvent.keyDown(document, { key: "Escape" });
     });
 
     fireEvent.click((await screen.findByText("rate-limits")).closest(".card")!);
     await within(overlay).findByRole("button", { name: /REACTIVATE/ });
-    expect(within(overlay).queryByRole("button", { name: /REVIEW/ })).toBeNull();
+    expect(within(overlay).queryByRole("button", { name: new RegExp(label) })).toBeNull();
     await act(async () => {
       fireEvent.keyDown(document, { key: "Escape" });
     });
 
     fireEvent.click((await screen.findByText("flaky-ci")).closest(".card")!);
     await within(overlay).findByRole("button", { name: /START/ });
-    expect(within(overlay).queryByRole("button", { name: /REVIEW/ })).toBeNull();
+    expect(within(overlay).queryByRole("button", { name: new RegExp(label) })).toBeNull();
   });
 
-  it("edits the watch prompt from the WATCHING head, and resets it to the default", async () => {
+  it("has no WATCHING column, and nowhere to edit a watch prompt", async () => {
     render(<App />);
-    const watching = await findColumn("watching");
-    expect(within(watching).getByText("WATCHING")).toBeInTheDocument();
-    expect(within(watching).queryByRole("button", { name: /remove column/ })).toBeNull();
-    fireEvent.click(within(watching).getByRole("button", { name: "edit the watch prompt" }));
-    const dialog = document.getElementById("watch-prompt-overlay")!;
-    expect(dialog).not.toHaveAttribute("hidden");
-    const text = within(dialog).getByLabelText("watch prompt") as HTMLTextAreaElement;
-    expect(text.value).toBe("Watch over it until it is live.");
-    fireEvent.change(text, { target: { value: "Watch it for an hour." } });
-    fireEvent.click(within(dialog).getByRole("button", { name: /SAVE/ }));
-    await waitFor(() => expect(bodies).toContainEqual({ path: "/api/watch-prompt", text: "Watch it for an hour." }));
-    await waitFor(() => expect(dialog).toHaveAttribute("hidden"));
-
-    fireEvent.click(within(watching).getByRole("button", { name: "edit the watch prompt" }));
-    fireEvent.click(within(dialog).getByRole("button", { name: /RESET/ }));
-    await waitFor(() => expect(bodies).toContainEqual({ path: "/api/watch-prompt", text: "" }));
+    await findColumn("done");
+    expect(document.querySelector('.col[data-col="watching"]')).toBeNull();
+    expect(screen.queryByRole("button", { name: "edit the watch prompt" })).toBeNull();
+    expect(document.getElementById("watch-prompt-overlay")).toBeNull();
   });
 
   it("shows the session-ended banner for a finished job's terminal", async () => {

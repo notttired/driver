@@ -21,7 +21,7 @@ vi.mock("../api/client.ts", () => {
   };
 });
 
-import { COLUMNS, WATCHING, type Column } from "./columns.ts";
+import { COLUMNS, type Column } from "./columns.ts";
 import { ARCHIVED, isLegalTarget, LANE_ENDPOINT, MOVES, resolveMove, SUBMIT_ENDPOINT, type DropColumn } from "./moves.ts";
 
 const TARGETS: readonly DropColumn[] = [...COLUMNS, ARCHIVED];
@@ -128,20 +128,6 @@ describe("resolveMove — lanes", () => {
     expect(resolveMove("lane:3", "lane:3")).toEqual({ kind: "reorder" });
     expect(isLegalTarget("lane:3", "draft")).toBe(true);
     expect(isLegalTarget("lane:3", ARCHIVED)).toBe(false);
-  });
-});
-
-describe("resolveMove — WATCHING", () => {
-  it("is not a drop target; a watched card goes back to its state column or into a lane", () => {
-    for (const from of [...COLUMNS, "lane:3" as const]) {
-      expect(resolveMove(from, WATCHING, { opened: true, state: "blocked" }), from).toBeNull();
-    }
-    expect(resolveMove(WATCHING, WATCHING)).toEqual({ kind: "reorder" });
-    expect(resolveMove(WATCHING, "working", { state: "working" })).toMatchObject({ kind: "post", endpoint: LANE_ENDPOINT });
-    expect(resolveMove(WATCHING, "done", { state: "working" })).toBeNull();
-    expect(resolveMove(WATCHING, ARCHIVED, { state: "done" })).toBeNull();
-    expect(resolveMove(WATCHING, "lane:3")).toMatchObject({ kind: "post", endpoint: LANE_ENDPOINT });
-    expect(isLegalTarget("draft", WATCHING)).toBe(false);
   });
 });
 

@@ -1,6 +1,6 @@
 import type { BoardModel } from "../../hooks/useBoard.ts";
 import { useCollapsedColumns } from "../../hooks/useCollapsedColumns.ts";
-import { WATCHING, isStateColumn, laneId } from "../../lib/columns.ts";
+import { isStateColumn, laneId } from "../../lib/columns.ts";
 import { jobKey } from "../../lib/jobKey.ts";
 import type { WebJob } from "../../lib/types.ts";
 import { ArchiveDrawer } from "./ArchiveDrawer.tsx";
@@ -28,8 +28,6 @@ export interface BoardActions {
   onAddLane(name: string): void;
   onRenameLane(id: number, name: string): void;
   onRemoveLane(id: number): void;
-  /** WATCHING's ✎: open the watch prompt editor */
-  onEditWatchPrompt(): void;
 }
 
 export interface BoardViewProps {
@@ -67,25 +65,6 @@ export function BoardView({ board, actions, onSearch }: BoardViewProps) {
                   label={col.toUpperCase()}
                   head={col === "blocked" ? <RetryAll jobs={byColumn.blocked} onRetry={actions.onRetry} /> : undefined}
                   footer={col === "done" ? <ArchiveDrawer archived={archived} actions={actions} /> : undefined}
-                />
-              );
-            }
-            if (col === WATCHING) {
-              return (
-                <BoardColumn
-                  key={col}
-                  {...shared}
-                  label="WATCHING"
-                  head={
-                    <button
-                      className="col-edit"
-                      aria-label="edit the watch prompt"
-                      title="edit what WATCH says to pi"
-                      onClick={actions.onEditWatchPrompt}
-                    >
-                      ✎
-                    </button>
-                  }
                 />
               );
             }
