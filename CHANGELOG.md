@@ -6,6 +6,14 @@ Each entry names its commit; the schema version it moved `driver.db` to is
 given where there was one. [docs/DESIGN.md](docs/DESIGN.md) has the reasoning
 behind each, [docs/API.md](docs/API.md) the wire contract.
 
+## 2026-11-26
+
+- **WATCH is a prompt, not a column** (`0fa25e0`, schema v13). 👁 WATCH
+  now works as 🔍 REVIEW does: it sends the watch prompt to the pi of the
+  tab you are on, on a working or blocked job, and nothing else. The
+  WATCHING column, its prompt editor and the relaunch of a done job's pi
+  are gone; the prompt is the built-in one.
+
 ## 2026-11-25
 
 - **🔍 REVIEW asks for an adversarial review by a second agent** (`5ab58de`).
