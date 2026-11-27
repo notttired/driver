@@ -6,6 +6,16 @@ Each entry names its commit; the schema version it moved `driver.db` to is
 given where there was one. [docs/DESIGN.md](docs/DESIGN.md) has the reasoning
 behind each, [docs/API.md](docs/API.md) the wire contract.
 
+## 2026-11-27
+
+- **👁 WATCH gets the work merged by itself** (`a19517c`). It used to
+  wait and report. Now pi fixes failing checks, review comments and
+  conflicts, merges once the work is approved and green, merges again
+  when a merge fails, and does not stop before the merge. It asks you
+  only about a critical design decision, or for something only you can
+  clear. After the merge it follows the deploy and watches for 30 minutes
+  as before.
+
 ## 2026-11-26
 
 - **WATCH is a prompt, not a column** (`0fa25e0`, schema v13). 👁 WATCH
