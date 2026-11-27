@@ -8,6 +8,13 @@ behind each, [docs/API.md](docs/API.md) the wire contract.
 
 ## 2026-11-27
 
+- **One notification per tab, and a click opens it** (`6665b34`). The last
+  thread to stop was told twice, once for the thread and once for the
+  card. Now each tab sends one when its pi stops or exits, and the card
+  sends none. Driver.app posts them itself, so a click brings Driver
+  forward with that job open on that tab; macOS asks once whether Driver
+  may send notifications. Without the app the daemon posts them as
+  before.
 - **👁 WATCH gets the work merged by itself** (`a19517c`). It used to
   wait and report. Now pi fixes failing checks, review comments and
   conflicts, merges once the work is approved and green, merges again
