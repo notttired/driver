@@ -8,6 +8,10 @@ behind each, [docs/API.md](docs/API.md) the wire contract.
 
 ## 2026-11-27
 
+- **⌘⇧T brings back the tab you closed last, and tabs can be dragged**
+  (`0b0c7f9`). The tab comes back with its conversation, in the slot it
+  had; press again for the one closed before it. Drag any tab, the first
+  too, to move it; the order is kept with the job.
 - **One notification per tab, and a click opens it** (`6665b34`). The last
   thread to stop was told twice, once for the thread and once for the
   card. Now each tab sends one when its pi stops or exits, and the card
