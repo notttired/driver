@@ -75,7 +75,7 @@ usage, accounts, self-update) is left out on purpose.
   links into one when it starts (every mention, the earliest arrival and the
   latest pin kept). The cost: a link to one commit or line opens the pull
   request or the file; the exact URL stays clickable in the record.
-- macOS notifications when a job turns blocked (needs you) or its pi exits.
+- macOS notifications when a tab's pi stops for you or exits ("Notices" below).
 - Retry (2026-11-02): network drops leave pi up but stuck on a failed turn
   ("Connection error.", "Request timed out.", "terminated" — after its own
   three retries), and a console logout kills every pi at once (dead panes,
@@ -130,9 +130,8 @@ usage, accounts, self-update) is left out on purpose.
   same tools; they share one checkout, so the operator's rule is a git
   worktree per thread that changes code. The card folds its threads
   together: working while any works, else blocked when any waits (the first
-  such pi speaks for the card), with the one-tick hold and the ring as ever;
-  a thread that stops while the card stays working sends its own
-  notification (`<job> · <thread> — <reason>`). Each tab has its own pane
+  such pi speaks for the card), with the one-tick hold and the ring as ever.
+  Each tab has its own pane
   (`/api/term?thread=`), its own record (`/api/job/conversation?thread=`),
   STOP and RETRY; the tab a job is left on is remembered per job (this
   browser's, in localStorage, like the folded columns); ⌘⇧] / ⌘⇧[ step
@@ -269,6 +268,30 @@ usage, accounts, self-update) is left out on purpose.
   After the merge the prompt is as before: follow the deploy, watch for
   30 minutes, change no code, report. A watch can now run for as long as
   review takes; the card reads working throughout.
+- Notices (2026-11-27). A notification used to come from two places: the
+  card, when its stored state turned blocked, and a thread, when it
+  stopped. The thread's fired at once and the card's after the one-tick
+  hold, so the last thread to stop was told twice, two seconds apart. Now
+  there is one source: a tab. `Daemon.ring`, which already decides a
+  tab's ring, hands back the reason when a pi stops on its own (never
+  `aborted`), or when a pi that was waiting exits, and the tick makes a
+  `Notice{slug, thread, title, body}` of it: `<job> · <thread>` (the
+  job's name alone for a first tab that carries it) and the reason. The
+  card posts nothing. The cost: a pi that stopped while the daemon itself
+  was down is not told about, since a tab's first reading has nothing to
+  compare with; the card's ring still shows it.
+  A click has to lead to the tab, and a banner posted by `osascript`
+  belongs to Script Editor. So Driver.app posts them: it keeps
+  `GET /api/notices` open (held 25 s, by `URLSession` rather than the
+  page, whose timers stop when the window is hidden), posts each notice
+  through `UNUserNotificationCenter` with the slug and thread in its
+  `userInfo`, and on a click comes forward and tells the page
+  (`window.driverPendingOpen` and a `driver:open` event; the page opens
+  the job on that tab once its board has loaded, as the palette does).
+  While a request is waiting the daemon hands the notice over and posts
+  nothing itself; with no app listening, or one the operator has not
+  allowed to notify, it falls back to `osascript`. The log says which
+  (`notice … (app)` or `(banner)`).
 - Paste context and the ⚙ settings (2026-11-19). ⌘⇧V in a job puts the
   browser's front tab into the pane in view — URL, title and the selected
   text, else the page's text — as one bracketed paste with nothing sent
@@ -530,9 +553,7 @@ A `blocked` derived for a working job must be observed on two consecutive ticks
 before it is written (kraken's one-tick hold: it hides one-tick misreads and the
 idle a resumed session reports at `session_start` before pi picks the conversation
 back up). Ready → working is written at once: that is pi starting on the first
-message. On a write to `blocked` the daemon posts a
-notification `driver ⚑ <name> — <reason>` (the slug when the job has no name) via
-`osascript -e 'display notification … with title …'`, and — unless the reason
+message. On a write to `blocked` the daemon — unless the reason
 is `aborted`, an interrupt the operator sent (Escape, STOP, the working → blocked
 drag) — sets `attention_at`, which the board shows as a ring around the card
 until the job leaves blocked or the operator opens it (`POST /api/job/seen`,

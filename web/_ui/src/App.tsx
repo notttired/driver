@@ -107,6 +107,21 @@ export function App() {
     [setOpenKey],
   );
 
+  const boardLoaded = board.board !== undefined;
+  useEffect(() => {
+    const open = () => {
+      const asked = window.driverPendingOpen;
+      if (!asked || !boardLoaded) return;
+      window.driverPendingOpen = undefined;
+      setPalette(false);
+      setSettings(false);
+      onPick({ key: asked.slug, thread: asked.thread });
+    };
+    open();
+    window.addEventListener("driver:open", open);
+    return () => window.removeEventListener("driver:open", open);
+  }, [onPick, boardLoaded]);
+
   // ⌘⇧V: the browser's front tab, pasted into the tab in view (the job's
   // own pi or the thread), nothing sent — the question is yours to add
   const pasteContext = useCallback(() => {

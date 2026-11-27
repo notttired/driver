@@ -55,6 +55,7 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/job/threads/update", a.jobThreadsUpdate)
 	mux.HandleFunc("/api/job/threads/history", a.jobThreadsHistory)
 	mux.HandleFunc("/api/job/threads/rename", a.jobThreadsRename)
+	mux.HandleFunc("/api/notices", a.notices)
 	mux.HandleFunc("/api/job/paste", a.jobPaste)
 	mux.HandleFunc("/api/context/browser", a.browserContext)
 	mux.HandleFunc("/api/settings", a.settings)

@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -400,6 +401,147 @@ func TestTabRings(t *testing.T) {
 	}
 	if card, _ := st.GetJobBySlug("multi"); card.OwnAttentionAt != ringed || OwnName(card) != "CI" {
 		t.Fatalf("the thread taking the first tab's place brings its ring: %+v, want %d", card, ringed)
+	}
+}
+
+func TestNoticesPerTab(t *testing.T) {
+	svc, st, work := threadsFixture(t)
+	svc.Cfg.Notify = true
+	d := NewDaemon(svc)
+	var banners []Notice
+	d.Banner = func(n Notice) { banners = append(banners, n) }
+	tick := func() {
+		t.Helper()
+		svc.Tmux.Invalidate()
+		if _, err := d.tick(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	j, err := svc.Create("multi", "Multi", work, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Submit(j); err != nil {
+		t.Fatal(err)
+	}
+	j, _ = st.GetJobBySlug("multi")
+	jobDir := filepath.Dir(j.PiSession)
+	waitFor(t, "pi to start", func() bool { return readFile(filepath.Join(jobDir, "argv")) != "" })
+	os.WriteFile(j.PiSession, []byte(threadHeader+threadUser+threadAnswer), 0o644)
+	ownStatus := func(state string) {
+		os.WriteFile(filepath.Join(jobDir, "status.json"), []byte(`{"state":"`+state+`"}`), 0o644)
+	}
+	ownStatus("working")
+	th, err := svc.OpenThread(j, 0, "CI")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tdir := filepath.Dir(th.PiSession)
+	waitFor(t, "the thread's pi to start", func() bool { return readFile(filepath.Join(tdir, "argv")) != "" })
+	threadStatus := func(state string) {
+		os.WriteFile(filepath.Join(tdir, "status.json"), []byte(`{"state":"`+state+`"}`), 0o644)
+	}
+	threadStatus("working")
+	tick()
+	tick()
+	if len(banners) != 0 {
+		t.Fatalf("both working: %+v", banners)
+	}
+
+	ownStatus("idle")
+	tick()
+	tick()
+	if len(banners) != 1 || banners[0] != (Notice{Slug: "multi", Thread: 0, Title: "Multi", Body: "idle"}) {
+		t.Fatalf("the first tab stopping while a thread works is told once, as its tab: %+v", banners)
+	}
+
+	threadStatus("idle")
+	tick()
+	tick()
+	tick()
+	if card, _ := st.GetJobBySlug("multi"); card.State != "blocked" {
+		t.Fatalf("every tab stopped: %+v", card)
+	}
+	if len(banners) != 2 || banners[1] != (Notice{Slug: "multi", Thread: th.ID, Title: "Multi · CI", Body: "idle"}) {
+		t.Fatalf("the last tab to stop is told once, as its tab, and the card adds nothing: %+v", banners)
+	}
+
+	threadStatus("working")
+	tick()
+	threadStatus("aborted")
+	tick()
+	tick()
+	tick()
+	if len(banners) != 2 {
+		t.Fatalf("a tab you stopped yourself is not news: %+v", banners)
+	}
+
+	threadStatus("working")
+	tick()
+	threadStatus("idle")
+	tick()
+	tick()
+	if len(banners) != 3 {
+		t.Fatalf("the thread stops again: %+v", banners)
+	}
+	svc.Tmux.run("send-keys", "-t", "="+th.Tmux+":", "C-d")
+	waitFor(t, "the thread's pi to exit", func() bool { return svc.Tmux.PaneDead(th.Tmux) })
+	tick()
+	tick()
+	if len(banners) != 4 || banners[3] != (Notice{Slug: "multi", Thread: th.ID, Title: "Multi · CI", Body: "exited"}) {
+		t.Fatalf("a waiting tab whose pi then exits is told once more: %+v", banners)
+	}
+	tick()
+	if len(banners) != 4 {
+		t.Fatalf("and only once: %+v", banners)
+	}
+}
+
+func TestNoticesGoToTheApp(t *testing.T) {
+	svc, _, _ := threadsFixture(t)
+	svc.Cfg.Notify = true
+	d := NewDaemon(svc)
+	var banners []Notice
+	d.Banner = func(n Notice) { banners = append(banners, n) }
+	one := Notice{Slug: "multi", Thread: 7, Title: "Multi · CI", Body: "idle"}
+
+	d.Notify(one)
+	if len(banners) != 1 {
+		t.Fatalf("nobody listening: the banner is the daemon's own: %+v", banners)
+	}
+
+	got := make(chan []Notice, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { got <- d.Listen(ctx) }()
+	waitFor(t, "the app to listen", func() bool { return d.Listening() })
+	d.Notify(one)
+	select {
+	case heard := <-got:
+		if len(heard) != 1 || heard[0] != one {
+			t.Fatalf("the app hears the notice: %+v", heard)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the app heard nothing")
+	}
+	if len(banners) != 1 {
+		t.Fatalf("a notice the app took is not posted twice: %+v", banners)
+	}
+
+	waitFor(t, "the app to have left", func() bool { return !d.Listening() })
+	idle := make(chan []Notice, 1)
+	quiet, stop := context.WithCancel(context.Background())
+	go func() { idle <- d.Listen(quiet) }()
+	waitFor(t, "the app to listen again", func() bool { return d.Listening() })
+	stop()
+	if heard := <-idle; len(heard) != 0 {
+		t.Fatalf("a wait that ends with no news: %+v", heard)
+	}
+
+	svc.Cfg.Notify = false
+	d.Notify(one)
+	if len(banners) != 1 {
+		t.Fatalf("DRIVER_NOTIFY=off: %+v", banners)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -39,16 +40,26 @@ type Daemon struct {
 
 	tickN        int
 	blockedSince map[int64]int     // job id → tick the current hold began
-	lastReason   map[int64]string  // job id → last blocked reason seen
 	elsewhere    map[string]string // scan key → a session path pi reported outside its dir, logged once
 	goneAtStart  map[string]bool   // scan key → its pi was not live on the first tick
-	threadState  map[int64]string  // thread id → the state last observed
 	tabState     map[string]string
 	tabHold      map[string]int
+	tabReason    map[string]string
 	scanner      *sessionScanner
 	prBackoff    map[string]time.Time // PR url → last failed gh call
 	ghMissing    bool
 	prBusy       atomic.Bool // a refreshPRs run is in flight
+
+	Banner    func(Notice)
+	mu        sync.Mutex
+	listeners map[chan Notice]struct{}
+}
+
+type Notice struct {
+	Slug   string `json:"slug"`
+	Thread int64  `json:"thread"`
+	Title  string `json:"title"`
+	Body   string `json:"body"`
 }
 
 // NewDaemon builds a Daemon over svc.
@@ -56,15 +67,16 @@ func NewDaemon(svc *Service) *Daemon {
 	d := &Daemon{
 		svc:          svc,
 		blockedSince: map[int64]int{},
-		lastReason:   map[int64]string{},
 		elsewhere:    map[string]string{},
 		goneAtStart:  map[string]bool{},
-		threadState:  map[int64]string{},
 		tabState:     map[string]string{},
 		tabHold:      map[string]int{},
+		tabReason:    map[string]string{},
+		listeners:    map[chan Notice]struct{}{},
 		scanner:      newSessionScanner(svc.Store),
 		prBackoff:    map[string]time.Time{},
 	}
+	d.Banner = d.banner
 	st := Status{PID: os.Getpid(), StartedAt: time.Now().Unix()}
 	d.status.Store(&st)
 	return d
@@ -128,7 +140,6 @@ func (d *Daemon) tick() (live int, firstErr error) {
 	now := time.Now().Unix()
 	seen := map[int64]bool{}
 	seenKeys := map[string]bool{}
-	seenThreads := map[int64]bool{}
 	for _, j := range jobs {
 		if j.State != "ready" && j.State != "working" && j.State != "blocked" {
 			continue
@@ -147,16 +158,21 @@ func (d *Daemon) tick() (live int, firstErr error) {
 			note(d.followSession(j, st.Session))
 		}
 		own := Observe(j, isLive, st, now)
-		note(d.ring(jobKey(j), own, j.OwnAttentionAt, now, func(at int64) error { return d.svc.Store.SetOwnAttention(j.ID, at) }))
+		tab := func(key string, o Observation, ringAt, thread int64, title string, set func(int64) error) {
+			reason, err := d.ring(key, o, ringAt, now, set)
+			note(err)
+			if reason != "" {
+				d.Notify(Notice{Slug: j.Slug, Thread: thread, Title: title, Body: reason})
+			}
+		}
+		tab(jobKey(j), own, j.OwnAttentionAt, 0, OwnPiName(j), func(at int64) error { return d.svc.Store.SetOwnAttention(j.ID, at) })
 		all := []Observation{own}
 		threads, err := d.svc.OpenThreads(j)
 		if err != nil {
 			note(err)
 		}
-		var turned []threadTurn
 		for _, t := range threads {
 			seenKeys[threadKey(j, t)] = true
-			seenThreads[t.ID] = true
 			tsess := ThreadSessionName(j, t)
 			tlive := snap.Live(tsess)
 			if tlive {
@@ -169,13 +185,9 @@ func (d *Daemon) tick() (live int, firstErr error) {
 				note(d.followThreadSession(j, t, tst.Session))
 			}
 			tobs := ObserveThread(j.State, t.StartedAt, tlive, tst, now)
-			note(d.ring(threadKey(j, t), tobs, t.AttentionAt, now, func(at int64) error {
+			tab(threadKey(j, t), tobs, t.AttentionAt, t.ID, ThreadPiName(j, t), func(at int64) error {
 				return d.svc.Store.UpdateThreadFields(t.ID, map[string]any{"attention_at": at})
-			}))
-			if was := d.threadState[t.ID]; tobs.State == "blocked" && was != "" && was != "blocked" && tobs.Pi.Reason != "aborted" {
-				turned = append(turned, threadTurn{t, tobs.Pi.Reason})
-			}
-			d.threadState[t.ID] = tobs.State
+			})
 			all = append(all, tobs)
 			if d.goneAtStart[threadKey(j, t)] && d.tickN > 1 {
 				delete(d.goneAtStart, threadKey(j, t))
@@ -199,7 +211,6 @@ func (d *Daemon) tick() (live int, firstErr error) {
 		if obs.Pi != nil {
 			reason = obs.Pi.Reason
 		}
-		wroteBlocked := false
 		if state != j.State {
 			tr := classify(j.State, state, reason)
 			fields := map[string]any{"state": state}
@@ -221,27 +232,7 @@ func (d *Daemon) tick() (live int, firstErr error) {
 					note(fmt.Errorf("%s: board order: %w", j.Slug, err))
 				}
 			}
-			if state == "blocked" {
-				wroteBlocked = true
-				d.notify(fmt.Sprintf("driver ⚑ %s — %s", j.DisplayName(), reason))
-			}
 			j.State, j.Rev = state, rev
-		} else if j.State == "blocked" && reason == "exited" && d.lastReason[j.ID] != "" && d.lastReason[j.ID] != "exited" {
-			// already blocked (idle) and now pi is gone: the exit itself is
-			// worth a notification (design: "or its pi exits")
-			d.notify(fmt.Sprintf("driver ⚑ %s — exited", j.DisplayName()))
-		}
-		if !wroteBlocked {
-			// a thread that stopped for you while the job stays working (or
-			// was blocked already) is its own news
-			for _, tt := range turned {
-				d.notify(fmt.Sprintf("driver ⚑ %s · %s — %s", j.DisplayName(), tt.thread.Name, tt.reason))
-			}
-		}
-		if state == "blocked" {
-			d.lastReason[j.ID] = reason
-		} else {
-			delete(d.lastReason, j.ID)
 		}
 		if d.goneAtStart[jobKey(j)] && (isLive || j.State == "blocked") {
 			delete(d.goneAtStart, jobKey(j))
@@ -264,11 +255,6 @@ func (d *Daemon) tick() (live int, firstErr error) {
 			delete(d.blockedSince, id)
 		}
 	}
-	for id := range d.lastReason {
-		if !seen[id] {
-			delete(d.lastReason, id)
-		}
-	}
 	for key := range d.elsewhere {
 		if !seenKeys[key] {
 			delete(d.elsewhere, key)
@@ -283,11 +269,7 @@ func (d *Daemon) tick() (live int, firstErr error) {
 		if !seenKeys[key] {
 			delete(d.tabState, key)
 			delete(d.tabHold, key)
-		}
-	}
-	for id := range d.threadState {
-		if !seenThreads[id] {
-			delete(d.threadState, id)
+			delete(d.tabReason, key)
 		}
 	}
 	for _, j := range jobs {
@@ -318,7 +300,7 @@ func (d *Daemon) tick() (live int, firstErr error) {
 	return live, firstErr
 }
 
-func (d *Daemon) ring(key string, o Observation, ringAt, now int64, set func(int64) error) error {
+func (d *Daemon) ring(key string, o Observation, ringAt, now int64, set func(int64) error) (string, error) {
 	prev := d.tabState[key]
 	held, hold := holdBlocked(prev, o.State, d.tabHold[key], d.tickN)
 	if hold == 0 {
@@ -327,26 +309,80 @@ func (d *Daemon) ring(key string, o Observation, ringAt, now int64, set func(int
 		d.tabHold[key] = hold
 	}
 	d.tabState[key] = held
-	if prev == "" {
-		return nil
-	}
 	reason := ""
 	if o.Pi != nil {
 		reason = o.Pi.Reason
 	}
+	was := d.tabReason[key]
+	if held == "blocked" {
+		d.tabReason[key] = reason
+	} else {
+		delete(d.tabReason, key)
+	}
+	if prev == "" {
+		return "", nil
+	}
 	switch tr := classify(prev, held, reason); {
 	case tr.attention > 0:
-		return set(now)
+		return reason, set(now)
 	case tr.attention < 0 && ringAt != 0:
-		return set(0)
+		return "", set(0)
 	}
-	return nil
+	if held == "blocked" && reason == "exited" && was != "" && was != "exited" {
+		return reason, nil
+	}
+	return "", nil
 }
 
-// threadTurn is a thread that stopped for the operator this tick.
-type threadTurn struct {
-	thread *store.Thread
-	reason string
+func (d *Daemon) Notify(n Notice) {
+	if !d.svc.Cfg.Notify {
+		return
+	}
+	d.mu.Lock()
+	heard := len(d.listeners) > 0
+	for l := range d.listeners {
+		select {
+		case l <- n:
+		default:
+		}
+	}
+	d.mu.Unlock()
+	if !heard {
+		log.Printf("notice %s — %s (banner)", n.Title, n.Body)
+		d.Banner(n)
+		return
+	}
+	log.Printf("notice %s — %s (app)", n.Title, n.Body)
+}
+
+func (d *Daemon) Listen(ctx context.Context) []Notice {
+	l := make(chan Notice, 16)
+	d.mu.Lock()
+	d.listeners[l] = struct{}{}
+	d.mu.Unlock()
+	out := []Notice{}
+	select {
+	case <-ctx.Done():
+	case n := <-l:
+		out = append(out, n)
+	}
+	d.mu.Lock()
+	delete(d.listeners, l)
+	d.mu.Unlock()
+	for {
+		select {
+		case n := <-l:
+			out = append(out, n)
+		default:
+			return out
+		}
+	}
+}
+
+func (d *Daemon) Listening() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return len(d.listeners) > 0
 }
 
 // transition is what a stored-state change means for the board beyond the
@@ -383,13 +419,11 @@ func reasonSuffix(reason string) string {
 	return " (" + reason + ")"
 }
 
-// notify posts a macOS notification through osascript unless DRIVER_NOTIFY=off.
-// Fire-and-forget: a failure is logged, never fatal — the board is the
-// durable signal.
-func (d *Daemon) notify(msg string) {
-	if !d.svc.Cfg.Notify {
-		return
-	}
+// banner posts a macOS notification through osascript: the daemon's own,
+// for when no app is listening. Fire-and-forget: a failure is logged, never
+// fatal — the board is the durable signal.
+func (d *Daemon) banner(n Notice) {
+	msg := fmt.Sprintf("driver ⚑ %s — %s", n.Title, n.Body)
 	script := fmt.Sprintf("display notification %s with title %s", appleScriptString(util.OneLine(msg, 120)), appleScriptString("driver"))
 	go func() {
 		if out, err := exec.Command("osascript", "-e", script).CombinedOutput(); err != nil {

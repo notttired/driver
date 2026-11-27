@@ -674,6 +674,45 @@ describe("BoardView (DOM smoke test)", () => {
     expect(within(overlay).queryByRole("button", { name: new RegExp(label) })).toBeNull();
   });
 
+  it.each([
+    ["while the board is up", false],
+    ["before the board is up", true],
+  ])("opens the job on the tab a clicked notification names, asked by the shell %s", async (_when, early) => {
+    const board = fixtureBoard();
+    const NOW2 = Math.floor(Date.now() / 1000);
+    board.jobs.push(
+      makeJob({
+        slug: "threaded",
+        state: "blocked",
+        live: true,
+        pi: { state: "idle", reason: "idle", ts: NOW2 },
+        threads: [
+          { id: 0, name: "threaded", live: true, pi: { state: "idle", reason: "idle", ts: NOW2 } },
+          { id: 5, name: "CI", live: true, pi: { state: "idle", reason: "idle", ts: NOW2 } },
+        ],
+      }),
+    );
+    installFetch(board);
+    const ask = () => {
+      window.driverPendingOpen = { slug: "threaded", thread: 5 };
+      window.dispatchEvent(new CustomEvent("driver:open"));
+    };
+    if (early) ask();
+    render(<App />);
+    const overlay = document.getElementById("job-overlay")!;
+    if (!early) {
+      await screen.findByText("threaded");
+      expect(overlay).toHaveAttribute("hidden");
+      fireEvent.keyDown(document, { key: "k", metaKey: true });
+      expect(screen.getByRole("combobox")).toBeInTheDocument();
+      act(ask);
+    }
+    await waitFor(() => expect(overlay).not.toHaveAttribute("hidden"));
+    await waitFor(() => expect(within(overlay).getByRole("tab", { name: /CI/ })).toHaveAttribute("aria-selected", "true"));
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(window.driverPendingOpen).toBeUndefined();
+  });
+
   it("has no WATCHING column, and nowhere to edit a watch prompt", async () => {
     render(<App />);
     await findColumn("done");

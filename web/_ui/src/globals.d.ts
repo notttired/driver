@@ -15,5 +15,6 @@ declare global {
       getAccent(): string;
       setAccent(accent: string): void;
     };
+    driverPendingOpen?: { slug: string; thread: number };
   }
 }

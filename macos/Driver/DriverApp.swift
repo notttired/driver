@@ -8,7 +8,7 @@ import WebKit
 // kraken's (macos/Kraken/KrakenApp.swift over there), lifted and trimmed to
 // what driver's board has — see docs/DESIGN.md.
 //
-// The native layer does exactly four jobs, the first three invisible when
+// The native layer does exactly five jobs, the first three invisible when
 // they work:
 //
 //   1. Window chrome — a window-level mouse monitor makes the chrome row's
@@ -24,6 +24,9 @@ import WebKit
 //      nowhere else to put them.
 //   4. Page zoom — Cmd+= / Cmd+- / Cmd+0 drive `WKWebView.pageZoom` on a
 //      browser-style ladder, persisted like a browser's remembered zoom.
+//   5. Notifications — the daemon's notices are posted from here, so a click
+//      on one comes back to this app and opens that job on that tab
+//      (Notices.swift).
 //
 // After first paint, liveness is the SPA's own job: its chrome already shows
 // the daemon's health, so the native failure notice exists only for loads
@@ -141,6 +144,7 @@ struct DriverApp: App {
     /// @AppStorage is the one channel both sides already speak. Persisted
     /// like a browser's remembered zoom.
     @AppStorage(ShellMetrics.zoomKey) private var pageZoom = ShellMetrics.zoomDefault
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
         Window("Driver", id: "board") {
@@ -550,6 +554,7 @@ struct BoardWebView: NSViewRepresentable {
             // when the view kept it across the load, the repair if it didn't.
             webView.pageZoom = zoom
             webView.evaluateJavaScript(BoardWebView.shellPadJS(at: zoom))
+            Notices.shared.pageLoading()
         }
 
         /// Once the page is loaded (styles applied — didCommit is too early,
@@ -562,6 +567,7 @@ struct BoardWebView: NSViewRepresentable {
         /// navigation — acceptable for a backstop the injected
         /// overscroll-behavior rule keeps out of sight.
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            Notices.shared.pageLoaded(webView)
             webView.evaluateJavaScript(
                 "getComputedStyle(document.documentElement).backgroundColor"
             ) { value, _ in
