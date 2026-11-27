@@ -179,6 +179,10 @@ export const retryThread = (slug: string, id: number) =>
   postJSON<OkResponse>(THREAD_ENDPOINT, { slug, op: "retry", id }, { timeoutMs: SUBMIT_TIMEOUT_MS });
 export const renameThread = (slug: string, id: number, name: string) =>
   postJSON<OkResponse>(THREAD_ENDPOINT, { slug, op: "rename", id, name });
+export const restoreThread = (slug: string) =>
+  postJSON<OpenThreadResult>(THREAD_ENDPOINT, { slug, op: "restore" }, { timeoutMs: SUBMIT_TIMEOUT_MS });
+export const orderThreads = (slug: string, order: readonly number[]) =>
+  postJSON<OkResponse>(THREAD_ENDPOINT, { slug, op: "order", order });
 
 /** Put text into a pane's pi editor, nothing sent (thread 0: the job's own pi). */
 export const pasteIntoJob = (slug: string, thread: number, text: string) =>

@@ -49,7 +49,21 @@ func (a *API) threadsOf(j *store.Job, own webThread, ownObs jobs.Observation, no
 		}
 		tabs, all = append(tabs, wt), append(all, obs)
 	}
-	return tabs, all, nil
+	return a.orderTabs(j, tabs), all, nil
+}
+
+func (a *API) orderTabs(j *store.Job, tabs []webThread) []webThread {
+	ids := make([]int64, len(tabs))
+	byID := make(map[int64]webThread, len(tabs))
+	for i, t := range tabs {
+		ids[i] = t.ID
+		byID[t.ID] = t
+	}
+	out := make([]webThread, 0, len(tabs))
+	for _, id := range a.Svc.TabOrder(j, ids) {
+		out = append(out, byID[id])
+	}
+	return out
 }
 
 func threadKey(j *store.Job, t *store.Thread) string {
@@ -70,14 +84,15 @@ func (a *API) threadParam(j *store.Job, r *http.Request) (*store.Thread, error) 
 }
 
 // jobThread is POST /api/job/thread: {"slug", "op": open | close | stop |
-// retry | rename, "id"?, "from"?, "name"?}.
+// retry | rename | restore | order, "id"?, "from"?, "name"?, "order"?}.
 func (a *API) jobThread(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Slug string `json:"slug"`
-		Op   string `json:"op"`
-		ID   int64  `json:"id"`
-		From int64  `json:"from"`
-		Name string `json:"name"`
+		Slug  string  `json:"slug"`
+		Op    string  `json:"op"`
+		ID    int64   `json:"id"`
+		From  int64   `json:"from"`
+		Name  string  `json:"name"`
+		Order []int64 `json:"order"`
 	}
 	if !decodePost(w, r, &req) {
 		return
@@ -96,6 +111,26 @@ func (a *API) jobThread(w http.ResponseWriter, r *http.Request) {
 		log.Printf("thread %s: opened %q (%d)", j.Slug, t.Name, t.ID)
 		live := a.Svc.Tmux.HasSession(jobs.ThreadSessionName(j, t))
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "thread": webThread{ID: t.ID, Name: t.Name, Live: live, StartedAt: t.StartedAt}})
+		return
+	}
+	if req.Op == "restore" {
+		t, err := a.Svc.RestoreThread(j)
+		if err != nil {
+			log.Printf("thread restore %s: refused: %v", j.Slug, err)
+			writeThreadFailure(w, err)
+			return
+		}
+		log.Printf("thread %s: restored %q (%d)", j.Slug, t.Name, t.ID)
+		live := a.Svc.Tmux.HasSession(jobs.ThreadSessionName(j, t))
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "thread": webThread{ID: t.ID, Name: t.Name, Live: live, StartedAt: t.StartedAt}})
+		return
+	}
+	if req.Op == "order" {
+		if err := a.Svc.SetTabOrder(j, req.Order); err != nil {
+			writeThreadFailure(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return
 	}
 	if req.ID == 0 && req.Op == "close" {
@@ -123,7 +158,7 @@ func (a *API) jobThread(w http.ResponseWriter, r *http.Request) {
 	case "rename":
 		err = a.Svc.RenameThread(j, t, req.Name)
 	default:
-		writeError(w, http.StatusBadRequest, "op must be open, close, stop, retry or rename")
+		writeError(w, http.StatusBadRequest, "op must be open, close, stop, retry, rename, restore or order")
 		return
 	}
 	if err != nil {

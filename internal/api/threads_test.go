@@ -353,3 +353,118 @@ func TestReviewAndWatch(t *testing.T) {
 		t.Fatalf("the watch prompt is not editable: %d", code)
 	}
 }
+
+func TestThreadRestoreAndOrder(t *testing.T) {
+	tmux := jobs.NewTmux()
+	if !tmux.Available() {
+		t.Skip("tmux not on PATH")
+	}
+	sock, err := os.MkdirTemp("", "drvtmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(sock) })
+	t.Setenv("TMUX_TMPDIR", sock)
+	t.Setenv("TMUX", "")
+	t.Cleanup(func() {
+		for _, s := range []string{"drv-multi-1", "drv-multi-1-t1", "drv-multi-1-t2"} {
+			tmux.KillSession(s)
+		}
+	})
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	home, work := t.TempDir(), t.TempDir()
+	fakePi := filepath.Join(t.TempDir(), "pi")
+	os.WriteFile(fakePi, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$DRIVER_JOB_DIR/argv\"\ncat > \"$DRIVER_JOB_DIR/typed\"\n"), 0o755)
+	svc := &jobs.Service{Store: st, Cfg: jobs.Config{Home: home, Port: 7781, PiBin: fakePi}, Tmux: tmux}
+	a := New(svc, jobs.NewDaemon(svc), "test")
+	mux := http.NewServeMux()
+	a.Register(mux)
+	post := func(body string) (int, map[string]any) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/job/thread", strings.NewReader(body)))
+		var out map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatalf("%s: %s: %v", body, rec.Body.String(), err)
+		}
+		return rec.Code, out
+	}
+	tabs := func() string {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/board", nil))
+		var b webBoard
+		if err := json.Unmarshal(rec.Body.Bytes(), &b); err != nil {
+			t.Fatalf("%s: %v", rec.Body.String(), err)
+		}
+		names := []string{}
+		for _, tab := range b.Jobs[0].Threads {
+			names = append(names, tab.Name)
+		}
+		return strings.Join(names, " ")
+	}
+	opened := func(name string) string {
+		t.Helper()
+		code, out := post(`{"slug":"multi","op":"open","name":"` + name + `"}`)
+		if code != http.StatusOK {
+			t.Fatalf("open %s: %d %v", name, code, out)
+		}
+		return jsonInt(int64(out["thread"].(map[string]any)["id"].(float64)))
+	}
+
+	j, err := svc.Create("multi", "Multi", work, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, out := post(`{"slug":"multi","op":"restore"}`); code != http.StatusConflict {
+		t.Fatalf("restore on a not-started job: %d %v", code, out)
+	}
+	if err := svc.Submit(j); err != nil {
+		t.Fatal(err)
+	}
+	ci, docs := opened("CI"), opened("Docs")
+	if got := tabs(); got != "Multi CI Docs" {
+		t.Fatalf("as opened: %q", got)
+	}
+
+	if code, out := post(`{"slug":"multi","op":"order","order":[` + docs + `,0,` + ci + `]}`); code != http.StatusOK {
+		t.Fatalf("order: %d %v", code, out)
+	}
+	if got := tabs(); got != "Docs Multi CI" {
+		t.Fatalf("rearranged, the first tab too: %q", got)
+	}
+	if code, out := post(`{"slug":"multi","op":"order","order":"Docs"}`); code != http.StatusBadRequest {
+		t.Fatalf("a bad order: %d %v", code, out)
+	}
+	if code, out := post(`{"slug":"nope","op":"order","order":[0]}`); code != http.StatusNotFound {
+		t.Fatalf("order on an unknown job: %d %v", code, out)
+	}
+
+	if code, out := post(`{"slug":"multi","op":"close","id":` + docs + `}`); code != http.StatusOK {
+		t.Fatalf("close: %d %v", code, out)
+	}
+	if got := tabs(); got != "Multi CI" {
+		t.Fatalf("closed: %q", got)
+	}
+	code, out := post(`{"slug":"multi","op":"restore"}`)
+	if code != http.StatusOK {
+		t.Fatalf("restore: %d %v", code, out)
+	}
+	if th := out["thread"].(map[string]any); jsonInt(int64(th["id"].(float64))) != docs || th["name"] != "Docs" || th["live"] != true {
+		t.Fatalf("the tab closed last comes back: %v", out)
+	}
+	if got := tabs(); got != "Docs Multi CI" {
+		t.Fatalf("in the slot it had: %q", got)
+	}
+	if code, out := post(`{"slug":"multi","op":"restore"}`); code != http.StatusConflict || !strings.Contains(out["error"].(string), "no closed tab") {
+		t.Fatalf("nothing left to bring back: %d %v", code, out)
+	}
+	if code, out := post(`{"slug":"nope","op":"restore"}`); code != http.StatusNotFound {
+		t.Fatalf("restore on an unknown job: %d %v", code, out)
+	}
+}

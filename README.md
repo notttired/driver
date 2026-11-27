@@ -176,7 +176,10 @@ its own and you have not looked at it since, and the card rings while any
 of its tabs does, even while another thread works. Looking at a tab takes
 its ring off, so the card's goes once you have seen every tab that rang. ✕ on a tab (or ⌘W on it) closes its pi — what it
 said stays with the job — the first tab included, in which case the next
-thread takes its place as the job's own pi; the last tab always stays. A
+thread takes its place as the job's own pi; the last tab always stays.
+**⌘⇧T** brings the tab closed last back, with its conversation and in
+the slot it had; press it again for the one closed before. Drag a tab
+to move it — any tab, the first too; the order is kept with the job. A
 double-click renames a thread. A thread also names itself once you tell it
 what it is for ("you're the thread for topic E"): its tab and pi's footer
 turn into a few words for that purpose. It never names itself on a guess or

@@ -146,6 +146,10 @@ struct DriverApp: App {
     @AppStorage(ShellMetrics.zoomKey) private var pageZoom = ShellMetrics.zoomDefault
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
+    init() {
+        NSWindow.allowsAutomaticWindowTabbing = false
+    }
+
     var body: some Scene {
         Window("Driver", id: "board") {
             DriverRoot()

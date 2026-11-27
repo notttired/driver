@@ -545,6 +545,124 @@ func TestNoticesGoToTheApp(t *testing.T) {
 	}
 }
 
+func TestRestoreThreadAndTabOrder(t *testing.T) {
+	svc, st, work := threadsFixture(t)
+	j, err := svc.Create("multi", "Multi", work, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.RestoreThread(j); !IsRefusal(err) {
+		t.Fatalf("a not-started job has no tab to bring back: %v", err)
+	}
+	if err := svc.Submit(j); err != nil {
+		t.Fatal(err)
+	}
+	j, _ = st.GetJobBySlug("multi")
+	first := j.PiSession
+	jobDir := filepath.Dir(first)
+	waitFor(t, "pi to start", func() bool { return readFile(filepath.Join(jobDir, "argv")) != "" })
+	os.WriteFile(first, []byte(threadHeader+threadUser+threadAnswer), 0o644)
+	if _, err := svc.RestoreThread(j); !IsRefusal(err) {
+		t.Fatalf("nothing closed yet: %v", err)
+	}
+	open := func(name string) *store.Thread {
+		t.Helper()
+		th, err := svc.OpenThread(j, 0, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, name+"'s pi to start", func() bool { return readFile(filepath.Join(filepath.Dir(th.PiSession), "argv")) != "" })
+		return th
+	}
+	a, b, c := open("A"), open("B"), open("C")
+	tabs := func() []int64 {
+		t.Helper()
+		j, _ = st.GetJobBySlug("multi")
+		threads, err := svc.OpenThreads(j)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := []int64{0}
+		for _, th := range threads {
+			ids = append(ids, th.ID)
+		}
+		return svc.TabOrder(j, ids)
+	}
+	is := func(what string, got []int64, want ...int64) {
+		t.Helper()
+		if !equalIDs(got, want) {
+			t.Fatalf("%s: tabs %v, want %v", what, got, want)
+		}
+	}
+	is("as opened", tabs(), 0, a.ID, b.ID, c.ID)
+
+	if err := svc.SetTabOrder(j, []int64{c.ID, 0, 99, a.ID, c.ID}); err != nil {
+		t.Fatal(err)
+	}
+	is("rearranged: unknown and repeated ids dropped, a tab left out goes last", tabs(), c.ID, 0, a.ID, b.ID)
+	d := open("D")
+	is("a new tab goes last", tabs(), c.ID, 0, a.ID, b.ID, d.ID)
+
+	for _, th := range []*store.Thread{b, d, a} {
+		if err := svc.CloseThread(j, th); err != nil {
+			t.Fatal(err)
+		}
+	}
+	is("closed tabs leave the row", tabs(), c.ID, 0)
+
+	adir := filepath.Dir(a.PiSession)
+	os.Remove(filepath.Join(adir, "argv"))
+	back, err := svc.RestoreThread(j)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.ID != a.ID || back.Closed() || back.Name != "A" || back.PiSession != a.PiSession {
+		t.Fatalf("the tab closed last comes back: %+v", back)
+	}
+	waitFor(t, "A's pi to come back", func() bool { return readFile(filepath.Join(adir, "argv")) != "" })
+	if args := readFile(filepath.Join(adir, "argv")); !strings.Contains(args, "--session\n"+a.PiSession+"\n") || !strings.Contains(args, "--name\nMulti · A\n") || strings.Contains(args, "continue") || svc.Tmux.PaneDead(back.Tmux) {
+		t.Fatalf("its pi is back on its conversation, at its prompt:\n%s", args)
+	}
+	is("in the slot it had", tabs(), c.ID, 0, a.ID)
+	if back, err := svc.RestoreThread(j); err != nil || back.ID != d.ID {
+		t.Fatalf("then the one closed before it: %+v %v", back, err)
+	}
+	if back, err := svc.RestoreThread(j); err != nil || back.ID != b.ID {
+		t.Fatalf("and the one before that: %+v %v", back, err)
+	}
+	is("all back", tabs(), c.ID, 0, a.ID, b.ID, d.ID)
+	if _, err := svc.RestoreThread(j); !IsRefusal(err) {
+		t.Fatalf("nothing left to bring back: %v", err)
+	}
+
+	j, _ = st.GetJobBySlug("multi")
+	if err := svc.CloseOwnThread(j); err != nil {
+		t.Fatal(err)
+	}
+	j, _ = st.GetJobBySlug("multi")
+	if OwnName(j) != "A" {
+		t.Fatalf("the oldest thread takes the first tab's place: %+v", j)
+	}
+	is("the row keeps its order when the job's own pi is closed", tabs(), c.ID, 0, b.ID, d.ID)
+	old, err := svc.RestoreThread(j)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old.PiSession != first || old.Name != "Multi" || old.Closed() {
+		t.Fatalf("the job's first pi comes back as a tab like any other: %+v", old)
+	}
+	is("in the slot it had", tabs(), c.ID, old.ID, 0, b.ID, d.ID)
+
+	j, _ = st.GetJobBySlug("multi")
+	if err := svc.Done(j); err != nil {
+		t.Fatal(err)
+	}
+	j, _ = st.GetJobBySlug("multi")
+	if _, err := svc.RestoreThread(j); !IsRefusal(err) {
+		t.Fatalf("a done job has no tab to bring back: %v", err)
+	}
+}
+
 func TestThreadKillAndRetryAtStart(t *testing.T) {
 	svc, st, work := threadsFixture(t)
 	j, err := svc.Create("k", "", work, "")

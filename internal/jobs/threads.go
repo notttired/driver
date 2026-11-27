@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -161,7 +162,114 @@ func (s *Service) CloseThread(j *store.Job, t *store.Thread) error {
 	if err := s.Tmux.KillSession(ThreadSessionName(j, t)); err != nil {
 		return Refuse("%v", err)
 	}
-	return s.Store.UpdateThreadFields(t.ID, map[string]any{"closed_at": time.Now().Unix()})
+	at, err := s.closeStamp(j)
+	if err != nil {
+		return err
+	}
+	return s.Store.UpdateThreadFields(t.ID, map[string]any{"closed_at": at})
+}
+
+func (s *Service) closeStamp(j *store.Job) (int64, error) {
+	all, err := s.Store.ListThreads(j.ID)
+	if err != nil {
+		return 0, err
+	}
+	at := time.Now().Unix()
+	for _, t := range all {
+		if t.ClosedAt >= at {
+			at = t.ClosedAt + 1
+		}
+	}
+	return at, nil
+}
+
+func (s *Service) RestoreThread(j *store.Job) (*store.Thread, error) {
+	if j.Archived() {
+		return nil, Refuse("job %s is archived", j.ArchivedName)
+	}
+	if j.State == "" || j.State == "done" {
+		return nil, Refuse("job %s is not open (%s) — a thread joins a running job", j.Slug, stage(j))
+	}
+	all, err := s.Store.ListThreads(j.ID)
+	if err != nil {
+		return nil, err
+	}
+	var last *store.Thread
+	for _, t := range all {
+		if !t.Closed() {
+			continue
+		}
+		if last == nil || t.ClosedAt > last.ClosedAt || (t.ClosedAt == last.ClosedAt && t.ID > last.ID) {
+			last = t
+		}
+	}
+	if last == nil {
+		return nil, Refuse("job %s has no closed tab to bring back", j.Slug)
+	}
+	if err := s.restartThread(j, last, false); err != nil {
+		return nil, err
+	}
+	if err := s.Store.UpdateThreadFields(last.ID, map[string]any{"closed_at": int64(0), "attention_at": int64(0)}); err != nil {
+		return nil, err
+	}
+	return s.Store.GetThread(last.ID)
+}
+
+func tabOrderKey(j *store.Job) string {
+	return "tab-order:" + strconv.FormatInt(j.ID, 10)
+}
+
+func (s *Service) SetTabOrder(j *store.Job, ids []int64) error {
+	all, err := s.Store.ListThreads(j.ID)
+	if err != nil {
+		return err
+	}
+	known := map[int64]bool{0: true}
+	for _, t := range all {
+		known[t.ID] = true
+	}
+	order := []int64{}
+	for _, id := range ids {
+		if known[id] {
+			known[id] = false
+			order = append(order, id)
+		}
+	}
+	raw, err := json.Marshal(order)
+	if err != nil {
+		return err
+	}
+	return s.Store.SetKV(tabOrderKey(j), string(raw))
+}
+
+func (s *Service) TabOrder(j *store.Job, tabs []int64) []int64 {
+	open := make(map[int64]bool, len(tabs))
+	for _, id := range tabs {
+		open[id] = true
+	}
+	out := make([]int64, 0, len(tabs))
+	for _, id := range s.placedTabs(j, tabs) {
+		if open[id] {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func (s *Service) placedTabs(j *store.Job, tabs []int64) []int64 {
+	var saved []int64
+	if raw, err := s.Store.GetKV(tabOrderKey(j)); err == nil {
+		_ = json.Unmarshal([]byte(raw), &saved)
+	}
+	seen := make(map[int64]bool, len(saved)+len(tabs))
+	out := make([]int64, 0, len(saved)+len(tabs))
+	for _, id := range append(saved, tabs...) {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // CloseOwnThread closes the job's own pi — the first tab — and hands its
@@ -182,13 +290,29 @@ func (s *Service) CloseOwnThread(j *store.Job) error {
 		return Refuse("job %s has one thread left — it stays", j.Slug)
 	}
 	next := open[0]
+	tabs := []int64{0}
+	for _, t := range open {
+		tabs = append(tabs, t.ID)
+	}
+	order := s.placedTabs(j, tabs)
 	if err := s.killIfPresent(j); err != nil {
 		return err
 	}
-	now := time.Now().Unix()
-	old := &store.Thread{JobID: j.ID, Name: OwnName(j), PiSession: j.PiSession, Tmux: j.Tmux, StartedAt: j.StartedAt, ClosedAt: now}
+	at, err := s.closeStamp(j)
+	if err != nil {
+		return err
+	}
+	old := &store.Thread{JobID: j.ID, Name: OwnName(j), PiSession: j.PiSession, Tmux: j.Tmux, StartedAt: j.StartedAt, ClosedAt: at}
 	if _, err := s.Store.CreateThread(old); err != nil {
 		return err
+	}
+	for i, id := range order {
+		switch id {
+		case 0:
+			order[i] = old.ID
+		case next.ID:
+			order[i] = 0
+		}
 	}
 	// the scanner's place in each session follows the session
 	s.moveScanKeys(jobKey(j), threadKey(j, old))
@@ -198,7 +322,10 @@ func (s *Service) CloseOwnThread(j *store.Job) error {
 	}); err != nil {
 		return mapStoreErr(err)
 	}
-	return s.Store.DeleteThread(next.ID)
+	if err := s.Store.DeleteThread(next.ID); err != nil {
+		return err
+	}
+	return s.SetTabOrder(j, order)
 }
 
 // moveScanKeys carries a session's scan offset and pending PR calls from
@@ -340,6 +467,7 @@ func (s *Service) dropThreads(j *store.Job) error {
 		_ = s.Store.DeleteKV(scanOffsetKey(threadKey(j, t)))
 		_ = s.Store.DeleteKV(scanPendingKey(threadKey(j, t)))
 	}
+	_ = s.Store.DeleteKV(tabOrderKey(j))
 	return s.Store.DeleteThreads(j.ID)
 }
 

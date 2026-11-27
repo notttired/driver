@@ -292,6 +292,28 @@ usage, accounts, self-update) is left out on purpose.
   nothing itself; with no app listening, or one the operator has not
   allowed to notify, it falls back to `osascript`. The log says which
   (`notice … (app)` or `(banner)`).
+- Tabs: bring one back, move them (2026-11-27). ⌘⇧T is the browser's:
+  `RestoreThread` takes the job's thread closed last, starts its pi again
+  on its session file (`restartThread`, at its prompt) and clears
+  `closed_at`. "Last" needs an order finer than a second, since DONE and a
+  run of ⌘W close several at once: every close stamps `closed_at` later
+  than any other on the job (`closeStamp`), so the stamps are the stack.
+  A first tab that was closed comes back as a thread like any other.
+  A tab is moved by dragging it (dnd-kit, its own context: the board's
+  does not reach the overlay; mouse and touch only, so Space and Enter on
+  a tab stay a click). The order is the daemon's, one list of tab ids per
+  job (kv `tab-order:<job id>`, 0 = the job's own pi), read as the
+  board's column order is: ids that are no tab now are skipped, tabs it
+  leaves out follow in the order they were opened. Closed tabs keep
+  their place in the list, which is how a restored one finds its slot.
+  The job's own pi is a tab like the rest and sits wherever it is put:
+  which pi the job row carries is the daemon's business, not the row's.
+  When that pi is closed and the oldest thread takes its place, the list
+  swaps the two ids, so nothing moves on screen. Only the tabs follow
+  the order (and ⌘⇧] / ⌘⇧[ through them); `driver_threads` and the
+  peers' context still read oldest first. Driver.app turns AppKit's
+  window tabbing off: with it on, View ▸ Show Tab Bar holds ⇧⌘T and the
+  page never sees the key.
 - Paste context and the ⚙ settings (2026-11-19). ⌘⇧V in a job puts the
   browser's front tab into the pane in view — URL, title and the selected
   text, else the page's text — as one bracketed paste with nothing sent

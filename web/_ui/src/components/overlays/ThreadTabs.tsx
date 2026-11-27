@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { DndContext, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, arrayMove, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
-import { closeThread, openThread, renameThread } from "../../api/client.ts";
+import { closeThread, openThread, orderThreads, renameThread, restoreThread } from "../../api/client.ts";
+import { MOUSE_ACTIVATION, TOUCH_ACTIVATION } from "../../hooks/useDragReorder.ts";
 import { threadStatusToken } from "../../lib/status.ts";
 import type { WebThread } from "../../lib/types.ts";
 
 export interface ThreadTabsProps {
   slug: string;
-  /** the job's tabs, its own pi first (WebJob.threads) */
+  /** the job's tabs, in their order (WebJob.threads) */
   threads: WebThread[];
   /** the tab shown: a thread id, 0 for the job's own pi */
   current: number;
@@ -44,13 +47,46 @@ export function suggestThreadName(threads: readonly Pick<WebThread, "name">[]): 
   }
 }
 
+const tabSortId = (id: number) => `tab:${id}`;
+
+interface SortableTabProps {
+  id: number;
+  children: (tab: { ref: (el: HTMLElement | null) => void; style: CSSProperties; handle: Record<string, (e: never) => void>; dragging: boolean }) => ReactNode;
+}
+
+function SortableTab({ id, children }: SortableTabProps) {
+  const { setNodeRef, listeners, transform, transition, isDragging } = useSortable({ id: tabSortId(id) });
+  const handle = useMemo(() => {
+    const out: Record<string, (e: never) => void> = {};
+    for (const [name, fn] of Object.entries(listeners ?? {})) {
+      out[name] = (e: never) => {
+        const target = (e as unknown as { target?: EventTarget | null }).target;
+        if (target instanceof Element && target.closest(".thread-close, input")) return;
+        (fn as (ev: unknown) => void)(e);
+      };
+    }
+    return out;
+  }, [listeners]);
+  return (
+    <>
+      {children({
+        ref: setNodeRef,
+        style: { transform: transform ? `translate3d(${Math.round(transform.x)}px, 0, 0)` : undefined, transition: transition ?? undefined },
+        handle,
+        dragging: isDragging,
+      })}
+    </>
+  );
+}
+
 /**
  * The tabs above a job's pane: one per pi — the job's own first, then every
- * open thread — each with a dot for its state. `+` opens a thread from the
- * current tab (a copy of its conversation under a name you type); ✕ closes
- * a tab's pi (the conversation stays with the job; closing the first tab
- * hands its place to the next), never the last one; a double-click renames
- * a thread.
+ * open thread, until you drag them into another order — each with a dot for
+ * its state. `+` opens a thread from the current tab (a copy of its
+ * conversation under a name you type); ✕ closes a tab's pi (the conversation
+ * stays with the job; closing the first tab hands its place to the next),
+ * never the last one, and ⌘⇧T brings the tab closed last back; a
+ * double-click renames a thread.
  */
 export function ThreadTabs({ slug, threads, current, onSelect, onChanged, onToast }: ThreadTabsProps) {
   const [adding, setAdding] = useState(false);
@@ -58,13 +94,36 @@ export function ThreadTabs({ slug, threads, current, onSelect, onChanged, onToas
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState<{ id: number; value: string } | null>(null);
+  const [moved, setMoved] = useState<number[] | null>(null);
   const inFlight = useRef(false);
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: MOUSE_ACTIVATION }),
+    useSensor(TouchSensor, { activationConstraint: TOUCH_ACTIVATION }),
+  );
+  const shown = useMemo(() => {
+    if (!moved) return threads;
+    const placed = moved.map((id) => threads.find((t) => t.id === id)).filter((t): t is WebThread => t !== undefined);
+    return [...placed, ...threads.filter((t) => !moved.includes(t.id))];
+  }, [threads, moved]);
+  const sortIds = useMemo(() => shown.map((t) => tabSortId(t.id)), [shown]);
+  const onDragEnd = (e: DragEndEvent) => {
+    const from = sortIds.indexOf(String(e.active.id));
+    const to = e.over ? sortIds.indexOf(String(e.over.id)) : -1;
+    if (from < 0 || to < 0 || from === to) return;
+    const next = arrayMove(shown, from, to).map((t) => t.id);
+    setMoved(next);
+    void orderThreads(slug, next)
+      .then(() => onChanged?.())
+      .catch((err: unknown) => onToast(`move tab: ${err instanceof Error ? err.message : String(err)}`))
+      .finally(() => setMoved(null));
+  };
 
   // another job's tabs must not carry a half-typed name along
   useEffect(() => {
     setAdding(false);
     setError("");
     setRenaming(null);
+    setMoved(null);
   }, [slug]);
 
   // ⌘⇧] / ⌘⇧[: the next / previous tab, round the end. On the document, so
@@ -129,6 +188,27 @@ export function ThreadTabs({ slug, threads, current, onSelect, onChanged, onToas
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onToast]);
+  // ⌘⇧T: the tab closed last comes back, as in a browser
+  const restoring = useRef(false);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!e.metaKey || !e.shiftKey || e.altKey || e.ctrlKey || e.key.toLowerCase() !== "t") return;
+      e.preventDefault();
+      if (restoring.current) return;
+      restoring.current = true;
+      void restoreThread(slug)
+        .then(async (res) => {
+          await onChanged?.();
+          onSelect(res.thread.id);
+        })
+        .catch((err: unknown) => onToast(`restore tab: ${err instanceof Error ? err.message : String(err)}`))
+        .finally(() => {
+          restoring.current = false;
+        });
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [slug, onChanged, onSelect, onToast]);
   const close = (t: WebThread) => closeThreadNow(slug, t, { current, onSelect, onChanged, onToast });
   const rename = () => {
     if (!renaming) return;
@@ -144,62 +224,72 @@ export function ThreadTabs({ slug, threads, current, onSelect, onChanged, onToas
   return (
     <div className="thread-tabs" data-no-drag>
       <div className="thread-row" role="tablist" aria-label="threads">
-        {threads.map((t) => {
-          const tok = threadStatusToken(t);
-          const selected = t.id === current;
-          return (
-            <button
-              key={t.id}
-              role="tab"
-              type="button"
-              className={"thread-tab" + (selected ? " selected" : "") + (t.live ? "" : " dead") + (t.attention ? " attention" : "")}
-              aria-selected={selected}
-              title={`${t.name} — ${tok.text}${tok.detail ? ` ${tok.detail}` : ""}${t.attention ? ", stopped since you last looked at it" : ""}${t.id ? "\ndouble-click to rename" : ""}${threads.length > 1 ? " · ✕ or ⌘W closes its pi\n⌘⇧] / ⌘⇧[ next / previous tab" : ""}`}
-              onClick={() => onSelect(t.id)}
-              onDoubleClick={() => {
-                if (t.id) setRenaming({ id: t.id, value: t.name });
-              }}
-            >
-              <span className={`thread-dot status-${tok.variant}`} aria-hidden="true" />
-              {renaming?.id === t.id ? (
-                <input
-                  className="thread-rename"
-                  autoFocus
-                  value={renaming.value}
-                  spellCheck={false}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(e) => setRenaming({ id: t.id, value: e.target.value })}
-                  onBlur={rename}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      rename();
-                    } else if (e.key === "Escape") {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setRenaming(null);
-                    }
-                  }}
-                />
-              ) : (
-                <span className="thread-name">{t.name}</span>
-              )}
-              {threads.length > 1 ? (
-                <span
-                  className="thread-close"
-                  role="button"
-                  aria-label={`close ${t.name}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    close(t);
-                  }}
-                >
-                  ✕
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+          <SortableContext items={sortIds} strategy={horizontalListSortingStrategy}>
+            {shown.map((t) => {
+              const tok = threadStatusToken(t);
+              const selected = t.id === current;
+              return (
+                <SortableTab key={t.id} id={t.id}>
+                  {(tab) => (
+                    <button
+                      ref={tab.ref}
+                      style={tab.style}
+                      {...tab.handle}
+                      role="tab"
+                      type="button"
+                      className={"thread-tab" + (selected ? " selected" : "") + (t.live ? "" : " dead") + (t.attention ? " attention" : "") + (tab.dragging ? " dragging" : "")}
+                      aria-selected={selected}
+                      title={`${t.name} — ${tok.text}${tok.detail ? ` ${tok.detail}` : ""}${t.attention ? ", stopped since you last looked at it" : ""}${t.id ? "\ndouble-click to rename" : ""}${threads.length > 1 ? " · drag to move · ✕ or ⌘W closes its pi (⌘⇧T brings it back)\n⌘⇧] / ⌘⇧[ next / previous tab" : ""}`}
+                      onClick={() => onSelect(t.id)}
+                      onDoubleClick={() => {
+                        if (t.id) setRenaming({ id: t.id, value: t.name });
+                      }}
+                    >
+                      <span className={`thread-dot status-${tok.variant}`} aria-hidden="true" />
+                      {renaming?.id === t.id ? (
+                        <input
+                          className="thread-rename"
+                          autoFocus
+                          value={renaming.value}
+                          spellCheck={false}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => setRenaming({ id: t.id, value: e.target.value })}
+                          onBlur={rename}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              rename();
+                            } else if (e.key === "Escape") {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setRenaming(null);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <span className="thread-name">{t.name}</span>
+                      )}
+                      {threads.length > 1 ? (
+                        <span
+                          className="thread-close"
+                          role="button"
+                          aria-label={`close ${t.name}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            close(t);
+                          }}
+                        >
+                          ✕
+                        </span>
+                      ) : null}
+                    </button>
+                  )}
+                </SortableTab>
+              );
+            })}
+          </SortableContext>
+        </DndContext>
         <button
           type="button"
           className="thread-add"

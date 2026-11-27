@@ -70,7 +70,7 @@ export interface WebJob {
   retryable?: boolean;
   /** the lane (a column of your own) the board shows it in; absent = the column its state names */
   lane?: number;
-  /** the job's tabs: its own pi (id 0, named as the job) first, then every open thread */
+  /** the job's tabs, in the order you put them: until you move one, its own pi (id 0, named as the job) first, then every open thread */
   threads?: WebThread[];
 }
 
