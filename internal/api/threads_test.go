@@ -242,9 +242,21 @@ func TestReviewAndWatch(t *testing.T) {
 		}
 	}
 
-	for _, verb := range []struct{ slug, path, prompt, opening string }{
-		{"r", "/api/review", jobs.ReviewPrompt, "Get an adversarial review of your work"},
-		{"w", "/api/watch", jobs.WatchPrompt, "Watch over it now"},
+	for _, verb := range []struct {
+		slug, path, prompt, opening string
+		says                        []string
+	}{
+		{"r", "/api/review", jobs.ReviewPrompt, "Get an adversarial review of your work", []string{
+			"Spawn the ae-deep-reviewer subagent",
+			"Do not change any code until I say which findings to fix",
+		}},
+		{"w", "/api/watch", jobs.WatchPrompt, "Get it merged", []string{
+			"Do not stop before it is merged",
+			"fix it and push",
+			"make the change and reply",
+			"fix the reason and merge again",
+			"Ask me only about a critical design decision",
+		}},
 	} {
 		t.Run(verb.path, func(t *testing.T) {
 			asked := func(dir string) int { return strings.Count(read(dir, "typed"), verb.opening) }
@@ -272,6 +284,11 @@ func TestReviewAndWatch(t *testing.T) {
 			waitFor("the prompt sent in the job's pane", func() bool { return strings.Contains(read(jobDir, "typed"), end) })
 			if asked(jobDir) != 1 {
 				t.Fatalf("the job's pi is asked once:\n%s", read(jobDir, "typed"))
+			}
+			for _, want := range verb.says {
+				if !strings.Contains(read(jobDir, "typed"), want) {
+					t.Fatalf("the prompt says %q:\n%s", want, read(jobDir, "typed"))
+				}
 			}
 
 			th, err := svc.OpenThread(j, 0, "CI")

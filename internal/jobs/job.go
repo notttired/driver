@@ -63,13 +63,20 @@ func BoardColumn(j *store.Job) string {
 }
 
 // WatchPrompt is what WATCH says to pi.
-const WatchPrompt = `The work on this job is done. Watch over it now until it is live and healthy, then stop.
+const WatchPrompt = `The work on this job is done. Get it merged, then watch over it until it is live and completely stable. Do not stop before it is merged.
 
-1. Merging: wait for CI to pass and the pull request to merge. If a check fails, review is needed or there are conflicts, tell me; do not force anything.
+1. Merging: keep at it until the pull request is merged, and clear whatever stands in the way yourself:
+   - a failing check or a bug: find the cause, fix it and push. Re-run a check only when the failure is not from this change.
+   - a review comment: make the change and reply with what you changed, or reply with why it should stay as it is.
+   - a conflict, or a branch that has fallen behind: bring it up to date and resolve it.
+   - a merge that fails or is dropped from the queue: fix the reason and merge again.
+   When it is approved and the checks pass, merge it, through the merge queue where there is one. While there is nothing to do but wait (checks running, a reviewer yet to look), wait and look again every few minutes.
 2. Deployment: follow the deploy until the change is in production.
-3. Health: for 30 minutes after it is live, check every few minutes for errors, failing requests, alerts or rollbacks related to this change.
+3. Stable: for 30 minutes after it is live, check every few minutes for errors, failing requests, alerts or rollbacks related to this change.
 
-Use the tools you have (gh, logs, dashboards) and do not change code unless I ask. If anything looks wrong at any point, stop watching and tell me what you see. When the 30 minutes are up and all is well, say so in one line.`
+Decide the small things yourself. Ask me only about a critical design decision: one that changes what the work does or how it is built beyond what we agreed. The one other reason to stop before the merge is something only I can clear (an expired login, a missing permission): say exactly what you need. Do not get it merged by going around the rules: no skipped or disabled checks, no merge without the approvals the repository requires, no force-push over someone else's commits.
+
+After the merge, do not change code unless I ask: if anything looks wrong, tell me what you see. When the 30 minutes are up and all is well, say so in one line.`
 
 const ReviewPrompt = `Get an adversarial review of your work on this job from a second agent, then tell me what it found.
 

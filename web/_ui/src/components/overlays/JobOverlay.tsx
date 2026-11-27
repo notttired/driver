@@ -371,7 +371,7 @@ function JobPanel({
           }),
           b("watch", "👁 WATCH", () => watchJob(slug, cur.id), {
             disabled: !live,
-            title: "ask this tab's pi to watch over the shipped work: the merge, the deploy, then its health for 30 minutes",
+            title: "ask this tab's pi to get the work merged, fixing failing checks, review comments and conflicts itself and asking you only about critical design decisions; then to follow the deploy and watch it for 30 minutes",
           }),
           b("done", "✓ DONE", () => doneJob(slug), { title: "kill the session, mark done" }),
           b("cancel", "✕ CANCEL", () => killJob(slug), {

@@ -148,9 +148,17 @@ say which to fix. It needs the pi-subagents package and an agent named
 `ae-deep-reviewer` in `~/.pi/agent/agents/`; without them pi says so and
 stops.
 
-**👁 WATCH**, for when the work is shipped, asks that pi to watch over it:
-wait for CI and the merge, follow the deploy, then watch the health for 30
-minutes, and say if anything looks wrong.
+**👁 WATCH**, for when the work is up for review, asks that pi to get it
+merged and not to stop before it is. It fixes whatever stands in the way
+itself: a failing check or a bug, a review comment (it makes the change
+and replies), a conflict, a merge that fails (it merges again). It waits
+and looks again while checks run or a reviewer has yet to look, and merges
+once the work is approved and green. It comes back to you before the merge
+only for a critical design decision, or for something only you can clear
+(an expired login, a missing permission), and never goes around the
+rules: no skipped checks, no merge without the required approvals. After
+the merge it follows the deploy and watches for 30 minutes, changing
+nothing more; it says so if anything looks wrong.
 
 **Threads.** The tabs above the pane are the job's pis: the job's own first,
 then every thread you opened. `+` opens a thread — another pi with the same

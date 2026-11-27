@@ -244,14 +244,31 @@ usage, accounts, self-update) is left out on purpose.
   in a built-in WATCHING column, always spoke to the job's own pi,
   relaunched a pi that was gone, and sent a prompt edited from the
   column's head. It is REVIEW with another text now: `/api/watch` pastes
-  `WatchPrompt` (wait for the merge, follow the deploy, 30 minutes of
-  health) into the pane of the tab in view through the same
+  `WatchPrompt` into the pane of the tab in view through the same
   `Service.ask` and `tabAction`, on a working or blocked job whose pi is
   up. Gone with the column: `jobs.watching_at` (v13 drops it, and the
   column's saved order), `/api/watch-prompt`, `watch_prompt` and
   `watching` on the board, the prompt editor, the drag rules for the
   column. A `watching` key in a saved column order is dropped as any
   unknown key is.
+- Watch gets it merged (2026-11-27). The watch prompt used to wait: a
+  failing check, a review comment or a conflict was reported and pi
+  stopped, changing no code. That left the operator to carry every small
+  thing to the merge. `WatchPrompt` now makes the merge pi's job: fix
+  failing checks and bugs, make the change a review comment asks for and
+  reply, bring a stale or conflicting branch up to date, merge once it is
+  approved and green, merge again when a merge fails, and wait (looking
+  again every few minutes) while there is nothing else to do. It is not to
+  stop before the merge. It asks the operator only about a critical design
+  decision (one that changes what the work does or how it is built beyond
+  what was agreed); the one other reason to stop is something only the
+  operator can clear, such as an expired login, since the alternative is
+  a pi retrying for ever. The old "do not force anything" stays as rules
+  it may not go around: no skipped or disabled checks, no merge without
+  the required approvals, no force-push over someone else's commits.
+  After the merge the prompt is as before: follow the deploy, watch for
+  30 minutes, change no code, report. A watch can now run for as long as
+  review takes; the card reads working throughout.
 - Paste context and the ⚙ settings (2026-11-19). ⌘⇧V in a job puts the
   browser's front tab into the pane in view — URL, title and the selected
   text, else the page's text — as one bracketed paste with nothing sent
